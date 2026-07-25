@@ -36,9 +36,10 @@ class FaceScanWorker(QThread):
     # Keep face scanning responsive to the app: detection still runs in a
     # worker thread, but each committed batch rebuilds the People snapshot and
     # touches SQLite. Very small batches make that bookkeeping dominate UI use.
-    BATCH_SIZE = 16
-    QUEUE_TARGET_SIZE = 64
-    BATCH_IDLE_MS = 150
+    # ⭐ 优化：降低批处理大小并增加间隔，确保视频播放流畅
+    BATCH_SIZE = 16           # ⭐ 从64降到16，减少单次CPU占用时间
+    QUEUE_TARGET_SIZE = 128    # 从64增加到128，匹配更大的批处理大小
+    BATCH_IDLE_MS = 1000       # ⭐ 默认1秒间隔
 
     def __init__(
         self,
@@ -58,6 +59,10 @@ class FaceScanWorker(QThread):
         self._queued_ids: set[str] = set()
         self._input_closed = False
         self._cancelled = False
+        # ⭐ 动态批处理间隔和暂停机制
+        self._base_batch_idle_ms = 1000  # ⭐ 默认1秒
+        self._current_batch_idle_ms = 1000
+        self._paused_for_video = False  # 视频播放时暂停标志
 
     def enqueue_rows(self, rows: Iterable[dict]) -> None:
         for row in rows:
@@ -78,6 +83,19 @@ class FaceScanWorker(QThread):
     def cancel(self) -> None:
         self._cancelled = True
         self._input_closed = True
+
+    def set_video_playing(self, is_playing: bool) -> None:
+        """⭐ 动态调整人脸扫描优先级：视频播放时完全暂停处理"""
+        if is_playing:
+            self._paused_for_video = True  # 暂停处理
+            self._current_batch_idle_ms = 3000  # 增加间隔到3秒
+            self.statusChanged.emit("人脸扫描已暂停（视频播放中）")
+            LOGGER.info("Face scan paused due to video playback")
+        else:
+            self._paused_for_video = False  # 恢复处理
+            self._current_batch_idle_ms = self._base_batch_idle_ms  # 恢复1秒
+            self.statusChanged.emit("正在扫描人脸...")
+            LOGGER.info("Face scan resumed after video playback")
 
     def run(self) -> None:  # type: ignore[override]
         try:
@@ -134,11 +152,17 @@ class FaceScanWorker(QThread):
                         LOGGER.warning("Failed to top up pending rows on drain", exc_info=True)
                     if self._queue.empty():
                         return
-                # Brief idle to avoid busy-waiting and let the UI thread breathe.
-                self.msleep(self.BATCH_IDLE_MS)
+                # ⭐ 视频播放时使用更长的等待时间
+                wait_ms = 3000 if self._paused_for_video else self._current_batch_idle_ms
+                self.msleep(wait_ms)
                 continue
 
             try:
+                # ⭐ 视频播放时暂停处理，跳过批处理
+                if self._paused_for_video:
+                    self.msleep(2000)  # 等待2秒后再检查
+                    continue
+
                 if not model_ready:
                     self.statusChanged.emit("正在下载人脸检测模型，首次需要下载约 120MB，请稍候...")
                 committed = self._process_batch(
@@ -156,7 +180,7 @@ class FaceScanWorker(QThread):
                     self.peopleIndexUpdated.emit()
                 # Brief pause between batches to reduce CPU/IO pressure and let
                 # the UI thread process events.
-                self.msleep(self.BATCH_IDLE_MS)
+                self.msleep(self._current_batch_idle_ms)
             except PeopleSnapshotCommittedError as exc:
                 LOGGER.error("Face scan bookkeeping failed after commit: %s", exc, exc_info=True)
                 for asset_id in [str(row.get("id") or "") for row in batch if row.get("id")]:

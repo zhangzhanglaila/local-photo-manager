@@ -494,6 +494,15 @@ class ScanCoordinatorMixin:
         self.faceScanStatusChanged.emit("Face scan complete.")
 
     # ------------------------------------------------------------------
+    # Video playback integration
+    # ------------------------------------------------------------------
+    def set_video_playing(self, is_playing: bool) -> None:
+        """⭐ 动态调整人脸扫描优先级：视频播放时降低I/O频率"""
+        face_scanner = self._current_face_scanner
+        if face_scanner is not None and face_scanner.isRunning():
+            face_scanner.set_video_playing(is_playing)
+
+    # ------------------------------------------------------------------
     # OCR integration
     # ------------------------------------------------------------------
 

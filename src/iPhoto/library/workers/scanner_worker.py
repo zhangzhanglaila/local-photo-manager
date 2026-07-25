@@ -112,7 +112,10 @@ class ScannerWorker(QRunnable):
 
         rows: List[dict] = []
         try:
-            ensure_work_dir(self._root)
+            # ⭐ 修复：只为library_root创建工作目录，不为子目录创建
+            # 避免在自定义工作区中为每个月份子目录创建单独的.iPhoto文件夹
+            work_root = self._library_root if self._library_root else self._root
+            ensure_work_dir(work_root)
 
             # Emit an initial indeterminate update
             self._signals.progressUpdated.emit(self._root, 0, -1)

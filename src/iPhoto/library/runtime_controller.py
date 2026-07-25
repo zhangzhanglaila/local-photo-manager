@@ -92,6 +92,13 @@ class LibraryRuntimeController(
         self._debounce.setInterval(500)
         self._pending_watch_paths: set[Path] = set()
         self._watch_scan_queue: list[Path] = []
+        # ⭐ 防抖：为人脸扫描UI更新添加防抖机制，避免频繁刷新导致卡顿
+        self._people_update_debounce = QTimer(self)
+        self._people_update_debounce.setSingleShot(True)
+        self._people_update_debounce.setInterval(2000)  # 默认2秒防抖
+        self._people_update_debounce.timeout.connect(self._emit_people_update_deferred)
+        # ⭐ 视频播放状态跟踪：视频播放时增加防抖间隔减少I/O竞争
+        self._video_playing_count = 0  # 跟踪当前播放的视频数量
         # ``_watch_suspend_depth`` tracks how many in-flight operations asked us to
         # ignore file-system notifications. We use a counter instead of a boolean
         # to correctly handle nested operations that may overlap (e.g., multiple
@@ -563,8 +570,51 @@ class LibraryRuntimeController(
         self._people_index_coordinator = None
 
     def _on_people_snapshot_committed(self, event: object) -> None:
+        # ⭐ 防抖：使用定时器延迟发射信号，合并频繁更新
+        # 根据视频播放状态动态调整防抖间隔
+        if self._video_playing_count > 0:
+            self._people_update_debounce.setInterval(5000)  # 视频播放时5秒防抖
+        else:
+            self._people_update_debounce.setInterval(2000)  # 默认2秒防抖
+        # 如果定时器已在运行，会重置计时（setSingleShot=True）
+        self._people_update_debounce.start()
+        # 保存事件以备延迟发射使用
+        self._pending_people_event = event
+
+    def _emit_people_update_deferred(self) -> None:
+        """延迟发射人脸扫描更新信号（防抖回调）"""
+        # 发射更新信号
         self.peopleIndexUpdated.emit()
-        self.peopleSnapshotCommitted.emit(event)
+        # 如果有待处理的事件，也发射快照信号
+        if hasattr(self, '_pending_people_event'):
+            self.peopleSnapshotCommitted.emit(self._pending_people_event)
+
+    def register_video_playing(self) -> None:
+        """注册视频播放开始，增加防抖间隔减少I/O竞争"""
+        self._video_playing_count += 1
+        if self._video_playing_count == 1:
+            # 第一个视频开始播放，增加防抖间隔
+            self._people_update_debounce.setInterval(5000)
+            # 通知扫描协调器调整人脸扫描频率
+            self.set_video_playing(True)
+
+    def unregister_video_playing(self) -> None:
+        """注销视频播放结束，恢复正常防抖间隔"""
+        self._video_playing_count = max(0, self._video_playing_count - 1)
+        if self._video_playing_count == 0:
+            # 没有视频播放，恢复正常间隔
+            self._people_update_debounce.setInterval(2000)
+            # 通知扫描协调器恢复正常人脸扫描频率
+            self.set_video_playing(False)
+
+    def set_video_playing(self, is_playing: bool) -> None:
+        """⭐ 转发视频播放状态到扫描协调器"""
+        # 使用 ScanCoordinatorMixin 提供的方法
+        try:
+            super().set_video_playing(is_playing)
+        except (AttributeError, TypeError):
+            # 如果父类没有这个方法，忽略错误（向后兼容）
+            pass
 
     # ------------------------------------------------------------------
     # Internal helpers (coordinator-level)
