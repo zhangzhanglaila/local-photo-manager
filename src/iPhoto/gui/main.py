@@ -379,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     # overlay repaint before the next heavy synchronous operation begins.
     coordinator_ref: list = []
     _scan_finished = False  # 跟踪扫描是否完成
+    _step5_executed = False  # 防止 _step5_select_photos 被重复调用导致 overlay 二次访问
 
     # ⭐ 关键修改：先连接信号，再启动扫描，避免信号丢失
     def _connect_scan_signals() -> None:
@@ -393,10 +394,12 @@ def main(argv: list[str] | None = None) -> int:
 
         def _on_scan_finished(root: Path, success: bool) -> None:
             nonlocal _scan_finished
+            if _scan_finished:
+                return  # signal may fire from multiple sources
             _scan_finished = True
             _logger.info("startup: scan finished, success=%s", success)
             # 扫描完成后继续下一步
-            QTimer.singleShot(0, _step4_select_photos)
+            QTimer.singleShot(0, _step5_select_photos)
 
         # 连接信号
         context.facade.scanProgress.connect(_on_scan_progress)
@@ -512,7 +515,8 @@ def main(argv: list[str] | None = None) -> int:
                 # 数据库已存在，不需要等待扫描
                 _scan_finished = True
                 _logger.info("startup: existing DB found, will not wait for scan")
-                QTimer.singleShot(0, _step5_select_photos)
+                if not _step5_executed:
+                    QTimer.singleShot(0, _step5_select_photos)
             else:
                 # 需要等待扫描完成，设置超时
                 _logger.info("startup: no DB found, waiting for scan")
@@ -524,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
     def _check_scan_timeout() -> None:
         """检查扫描是否超时（5秒后）。"""
         nonlocal _scan_finished
+        if _step5_executed:
+            return  # _step5 已经执行过（如扫描完成后被触发），不要再重复触发
         if not _scan_finished:
             _logger.warning("startup: scan timeout, continuing anyway")
             _scan_finished = True
@@ -537,7 +543,8 @@ def main(argv: list[str] | None = None) -> int:
             if gallery_store is None:
                 return
 
-            preload_count = min(30, gallery_store.rowCount())
+            # ⭐ 修复：使用 count() 而不是 rowCount()
+            preload_count = min(30, gallery_store.count())
             if preload_count <= 0:
                 return
 
@@ -575,11 +582,27 @@ def main(argv: list[str] | None = None) -> int:
 
     def _step5_select_photos() -> None:
         """选择照片并完成启动。"""
+        nonlocal _step5_executed
         try:
+            # ⭐ 防重入：_step5 可能从 _on_scan_finished / _step4 / _check_scan_timeout
+            # 三条路径触发，必须保证只执行一次，否则会再次访问已删除的 overlay。
+            if _step5_executed:
+                _logger.info("startup step 5: already executed, skipping")
+                return
+            _step5_executed = True
+
             # 确保扫描已完成后再继续
             if not _scan_finished:
+                _step5_executed = False  # 允许下次重新执行
                 _logger.info("startup step 5: scan still in progress, waiting...")
                 QTimer.singleShot(100, _step5_select_photos)
+                return
+
+            # ⭐ 检查 overlay 是否仍然有效
+            if overlay is None or not hasattr(overlay, "_label"):
+                _logger.warning("startup step 5: overlay already deleted, skipping")
+                coordinator = coordinator_ref[0]
+                coordinator.finish_startup()
                 return
 
             overlay.set_message(tr("startup.loading_photos"))
@@ -595,14 +618,62 @@ def main(argv: list[str] | None = None) -> int:
                     if potential_path.exists():
                         valid_path_arg = potential_path
 
+            # ⭐ 检查是否已绑定图库
+            library_root = context.library.root()
+            if library_root is None:
+                # 没有绑定图库，显示友好提示
+                _logger.info("startup step 5: no library bound, showing empty state")
+                # 设置空状态提示
+                grid_view = getattr(window.ui.gallery_page, "grid_view", None)
+                if grid_view and hasattr(grid_view, "set_empty_mode"):
+                    grid_view.set_empty_mode("no_library")
+                coordinator.finish_startup()
+                overlay.dismiss()
+                _logger.info("startup complete (no library)")
+                return
+
             if valid_path_arg:
                 _logger.info("startup step 5: opening album from CLI argument %s", valid_path_arg)
                 coordinator.open_album_from_path(valid_path_arg)
             else:
-                _logger.info("startup step 5: selecting All Photos in sidebar")
-                window.ui.sidebar.select_all_photos(emit_signal=True)
+                _logger.info("startup step 5: selecting All Photos")
+                _logger.info("[DIAG] _step5: library_root=%s", library_root)
+                _logger.info("[DIAG] _step5: store.count before open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
+                _logger.info("[DIAG] _step5: asset_query_service=%s", coordinator._asset_query_service() if hasattr(coordinator, "_asset_query_service") else "no_method")
+                # ⭐ 关键修复：直接调用 navigation_coordinator.open_all_photos()
+                # 而不是通过 sidebar 信号链（sidebar signal chain 可能在 sidebar model 还没 refresh 时失效）
+                coordinator._navigation.open_all_photos()
+                # ⭐ 关键修复：强制刷新 sidebar model，确保 "All Photos" 节点存在
+                # 否则 select_all_photos 会因为 index 无效而失败
+                try:
+                    sidebar_model = window.ui.sidebar._model
+                    if sidebar_model is not None:
+                        _logger.info("[DIAG] _step5: forcing sidebar model refresh before select_all_photos")
+                        sidebar_model.refresh()
+                except Exception:
+                    _logger.debug("sidebar model refresh failed", exc_info=True)
+                # 仍然尝试更新 sidebar UI 选择状态（不影响加载逻辑）
+                try:
+                    window.ui.sidebar.select_all_photos(emit_signal=False)
+                except Exception:
+                    _logger.debug("sidebar select_all_photos failed (non-critical)", exc_info=True)
+                _logger.info("[DIAG] _step5: store.count after open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
 
             coordinator.finish_startup()
+
+            # ⭐ 关键修复：清除所有加载/扫描图层
+            # grid view 在 setModel 时设置了 _query_loading=True，
+            # 而 _on_loading_timeout 需要 2s 才触发，期间用户会看到"加载中"。
+            # 显式调用 dismiss_loading_state 立即清除这些图层。
+            gallery_page = getattr(window.ui, "gallery_page", None)
+            if gallery_page:
+                grid_view = getattr(gallery_page, "grid_view", None)
+                if grid_view and hasattr(grid_view, "dismiss_loading_state"):
+                    grid_view.dismiss_loading_state()
+                # 同时强制 stack 切换到 grid_view，避免 _loading_widget 残留
+                if hasattr(gallery_page, "_stack") and hasattr(gallery_page, "grid_view"):
+                    if gallery_page._stack.currentWidget() is not gallery_page.grid_view:
+                        gallery_page._stack.setCurrentWidget(gallery_page.grid_view)
 
             # ⭐ 启动缓存预热：在后台预加载可见区域的缩略图
             # 这可以显著改善首次浏览时的流畅度

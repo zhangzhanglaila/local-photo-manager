@@ -93,6 +93,9 @@ class GalleryCollectionStore:
         self._pending_scan_rels: set[str] = set()
         self._pending_scan_sort_keys: set[tuple[str, str]] = set()
         self._direct_mode = False
+        # ⭐ 跟踪在 asset_query_service 绑定后需要重新触发的加载
+        self._pending_load_after_service_bind: bool = False
+        self._pending_load_range: tuple[int, int] | None = None
 
         # Async loading state
         self._load_worker: Optional[GalleryLoadWorker] = None
@@ -114,6 +117,13 @@ class GalleryCollectionStore:
         self._library_root = root
         self._reset_window_state()
         self.data_changed.emit()
+        # ⭐ 库根改变后，如果已有活动根和 asset_query_service，触发加载
+        if (
+            root is not None
+            and self._active_root is not None
+            and self._asset_query_service is not None
+        ):
+            self._load_initial_window()
 
     def set_asset_query_service(
         self,
@@ -124,6 +134,16 @@ class GalleryCollectionStore:
         self._asset_query_service = asset_query_service
         self._reset_window_state()
         self.data_changed.emit()
+        # ⭐ 服务刚绑定上，如果有 pending load 就触发它
+        if (
+            asset_query_service is not None
+            and self._pending_load_after_service_bind
+            and self._active_root is not None
+        ):
+            self._pending_load_after_service_bind = False
+            first, last = self._pending_load_range or (0, self.INITIAL_VISIBLE_ROWS - 1)
+            self._pending_load_range = None
+            self._load_initial_window()
 
     def rebind_asset_query_service(
         self,
@@ -134,7 +154,38 @@ class GalleryCollectionStore:
         self.set_library_root(library_root)
 
     def set_active_root(self, root: Optional[Path]) -> None:
+        if self._active_root == root:
+            return
         self._active_root = root
+        import logging
+        # ⭐ 关键修复：不管 _pending_scan_refresh 是否为 True，只要服务已绑定且
+        # 当前没有正在进行的加载，就触发加载。这是修复"All Photos 启动时不显示"的根因：
+        # 数据库已存在时 _pending_scan_refresh=False，导致 set_active_root 不触发加载。
+        if (
+            root is not None
+            and self._asset_query_service is not None
+            and self._current_query is not None
+        ):
+            if self._visible_range is None:
+                self._load_initial_window()
+            else:
+                first, last = self._visible_range
+                self._reload_window_for_visible_range(first, last, emit_signals=True)
+            return
+        # 保持原有逻辑作为 fallback
+        if (
+            root is not None
+            and self._pending_scan_refresh
+            and self._asset_query_service is not None
+        ):
+            if self._current_query is None:
+                from iPhoto.domain.models.query import AssetQuery
+                self._current_query = AssetQuery()
+            if self._visible_range is None:
+                self._load_initial_window()
+            else:
+                first, last = self._visible_range
+                self._reload_window_for_visible_range(first, last, emit_signals=True)
 
     def active_root(self) -> Optional[Path]:
         return self._active_root
@@ -182,11 +233,17 @@ class GalleryCollectionStore:
             self._load_query(self._selection_query)
 
     def _load_query(self, query: AssetQuery) -> None:
+        import logging
         self._selection_query = self._clone_query(query)
         self._selection_direct_assets = None
         self._selection_library_root = self._library_root
         self._current_query = self._clone_query(query)
         self._direct_mode = False
+        logging.getLogger(__name__).info(
+            "[DIAG] _load_query: active_root=%s library_root=%s service=%s query=%s",
+            self._active_root, self._library_root,
+            self._asset_query_service is not None, query,
+        )
         self._reset_window_state()
         self._load_initial_window()
 
@@ -466,8 +523,46 @@ class GalleryCollectionStore:
         self._ensure_row_loaded(row, emit_signals=True)
 
     def handle_scan_chunk(self, scan_root: Path, chunk: List[dict]) -> None:
-        if not chunk or self._current_query is None or self._active_root is None:
+        if not chunk:
             return
+        # ⭐ 关键修复：在第一次加载完成前，不响应 rescan chunk
+        # 避免 rescan 的 handle_scan_chunk 与 _load_query 时序冲突，
+        # 导致 All Photos 加载时被打断、row_cache 被重置为 0 行
+        if self._load_worker is not None:
+            # 正在初次加载，忽略 scan chunk
+            return
+        # ⭐ 修复：即使没有活动根目录，也记录扫描到的路径以便后续加载
+        # 这允许在初始化查询时也能显示扫描到的照片
+        if self._active_root is None:
+            # 仍然尝试映射 - 这允许后续 set_active_root 触发加载
+            if self._library_root is not None:
+                try:
+                    scan_root_resolved = scan_root.resolve()
+                    view_root_resolved = self._library_root.resolve()
+                except OSError:
+                    return
+                # 兼容直接匹配或父子关系
+                is_compatible = (
+                    scan_root_resolved == view_root_resolved
+                    or scan_root_resolved in view_root_resolved.parents
+                    or view_root_resolved in scan_root_resolved.parents
+                )
+                if is_compatible:
+                    # 暂存 chunk 中的 rel 路径
+                    self._pending_scan_rels.update(
+                        str(row.get("rel", "")) for row in chunk
+                        if isinstance(row, dict) and isinstance(row.get("rel"), str)
+                    )
+                    self._pending_scan_sort_keys.update(
+                        (row.get("dt", ""), str(row.get("id", "")))
+                        for row in chunk
+                        if isinstance(row, dict)
+                        and isinstance(row.get("dt"), str)
+                        and row.get("dt")
+                    )
+                    self._pending_scan_refresh = True
+            return
+
         mapped_entries = self._map_scan_rows_to_active_entries(scan_root, chunk)
         if not mapped_entries:
             return
@@ -485,7 +580,12 @@ class GalleryCollectionStore:
             # Gallery was empty on first load — reload the initial window so
             # newly scanned rows appear without requiring the user to navigate
             # away and back.
-            self._load_initial_window()
+            # ⭐ 如果没有查询，先创建默认查询
+            if self._current_query is None and self._asset_query_service is not None:
+                from iPhoto.domain.models.query import AssetQuery
+                self._current_query = AssetQuery()
+            if self._current_query is not None:
+                self._load_initial_window()
             return
 
         visible_first, visible_last = self._visible_range
@@ -493,9 +593,17 @@ class GalleryCollectionStore:
             self._flush_pending_scan_refresh()
 
     def handle_scan_finished(self, root: Path, success: bool) -> None:
-        if not success or self._current_query is None or self._active_root is None:
+        if not success:
             return
+        # ⭐ 关键修复：在第一次加载完成前，不响应 scan_finished
+        # 避免 rescan 完成后立即触发 reload，打断正在进行的初次加载
+        if self._load_worker is not None:
+            # 正在初次加载，等加载完成后再处理
+            return
+        # ⭐ 修复：即使查询为空也尝试加载，以便在扫描完成后显示照片
+        # 这处理了"All Photos"视图在扫描过程中逐渐加载的情况
         if not self._scan_root_matches_active_root(root):
+            # 不匹配当前活动的根目录，忽略
             return
         self._pending_scan_refresh = True
         if self._visible_range is not None:
@@ -506,7 +614,14 @@ class GalleryCollectionStore:
             self._load_initial_window()
 
     def _flush_pending_scan_refresh(self) -> None:
-        if not self._pending_scan_refresh or self._current_query is None:
+        if not self._pending_scan_refresh:
+            return
+        # ⭐ 如果查询为空但有活动根目录，创建默认查询
+        if self._current_query is None and self._active_root is not None and self._asset_query_service is not None:
+            from iPhoto.domain.models.query import AssetQuery
+            self._current_query = AssetQuery()
+
+        if self._current_query is None:
             self._pending_scan_refresh = False
             self._pending_scan_rels.clear()
             self._pending_scan_sort_keys.clear()
@@ -527,14 +642,30 @@ class GalleryCollectionStore:
         self._reload_window_for_visible_range(0, visible_last, emit_signals=True)
 
     def _reload_window_for_visible_range(self, first: int, last: int, *, emit_signals: bool) -> None:
+        # ⭐ 如果查询为空但有活动根目录，尝试加载"All Photos"
         if self._current_query is None:
-            return
+            if self._active_root is not None and self._asset_query_service is not None:
+                # 创建一个默认查询来加载所有照片
+                from iPhoto.domain.models.query import AssetQuery
+                default_query = AssetQuery()
+                self._current_query = default_query
+            else:
+                if self._asset_query_service is None:
+                    old_total = self._total_count
+                    self._reset_window_state()
+                    if emit_signals and old_total != 0:
+                        self.count_changed.emit(old_total, 0)
+                        self.data_changed.emit()
+                    # ⭐ 如果 _active_root 已设置但服务还没绑定，等待服务绑定后再加载
+                    if self._active_root is not None:
+                        self._pending_load_after_service_bind = True
+                    return
+
+        # ⭐ 如果服务还没绑定但有 root，等待绑定
         if self._asset_query_service is None:
-            old_total = self._total_count
-            self._reset_window_state()
-            if emit_signals and old_total != 0:
-                self.count_changed.emit(old_total, 0)
-                self.data_changed.emit()
+            if self._active_root is not None:
+                self._pending_load_after_service_bind = True
+                self._pending_load_range = (first, last)
             return
 
         # Cancel any in-flight load.
@@ -544,6 +675,12 @@ class GalleryCollectionStore:
 
         self._load_generation += 1
         gen = self._load_generation
+        import logging
+        logging.getLogger(__name__).info(
+            "[DIAG] _reload_window_for_visible_range: starting worker gen=%s first=%s last=%s total=%s active_root=%s service=%s",
+            gen, first, last, self._total_count, self._active_root,
+            self._asset_query_service is not None,
+        )
 
         # Lazily create a single signals object reused across loads.
         if self._load_signals is None:
@@ -568,7 +705,16 @@ class GalleryCollectionStore:
 
     def _on_load_finished(self, generation: int, row_cache: dict, total: int) -> None:
         """Handle async load completion on the main thread."""
+        import logging
+        logging.getLogger(__name__).info(
+            "[DIAG] _on_load_finished: gen=%s (expected=%s) row_cache=%d total=%d active_root=%s library_root=%s has_query=%s",
+            generation, self._load_generation, len(row_cache), total,
+            self._active_root, self._library_root, self._current_query is not None,
+        )
         if generation != self._load_generation:
+            logging.getLogger(__name__).info(
+                "[DIAG] _on_load_finished: STALE (gen mismatch), discarding"
+            )
             return  # stale result, discard
         self._load_worker = None
 
@@ -596,6 +742,24 @@ class GalleryCollectionStore:
                 pinned_dto = None
             if pinned_dto is not None:
                 row_cache[pinned_row] = pinned_dto
+
+        # ⭐ 修复：设置 _window_range，否则 _window_needs_reload 一直返回 True
+        # 导致 prioritize_rows 反复触发 _reload_window_for_visible_range，
+        # 进而触发 modelReset，gallery view 一直显示"加载中"
+        if row_cache:
+            loaded_first = min(row_cache.keys())
+            loaded_last = max(row_cache.keys())
+            self._window_range = (loaded_first, loaded_last)
+            if self._visible_range is None:
+                self._visible_range = (loaded_first, loaded_last)
+        elif total > 0:
+            # total > 0 但 row_cache 为空（所有 row 都被过滤），
+            # 也要设置 _window_range 以避免无限重载循环
+            self._window_range = (0, total - 1)
+            if self._visible_range is None:
+                self._visible_range = (0, total - 1)
+        else:
+            self._window_range = None
 
         self._generation += 1
         self._pending_scan_refresh = False

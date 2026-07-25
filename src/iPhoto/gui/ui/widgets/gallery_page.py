@@ -292,7 +292,13 @@ class GalleryPageWidget(QWidget):
         self._stop_timer()
         self._progress_bar.hide()
         self._detail_label.hide()
-        self._stack.setCurrentWidget(self.grid_view)
+        # ⭐ 强制切换到 grid_view，加载完成后立即显示照片
+        # 即使 _loading_widget 因某种原因被显示，也强制回到 grid_view
+        if self._stack.currentWidget() is not self.grid_view:
+            self._stack.setCurrentWidget(self.grid_view)
+        # ⭐ 通知 grid view 清除加载状态
+        if hasattr(self.grid_view, "dismiss_loading_state"):
+            self.grid_view.dismiss_loading_state()
 
     def show_search_results_header(self, query: str, count: int) -> None:
         """Show search results header with back button.

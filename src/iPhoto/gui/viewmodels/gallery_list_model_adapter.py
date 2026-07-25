@@ -327,7 +327,15 @@ class GalleryListModelAdapter(QAbstractListModel):
         count = self._store.count()
         generation = self._store.generation
         current_snapshot = (count, generation)
+        import logging
+        logging.getLogger(__name__).info(
+            "[DIAG] _on_source_changed: count=%s gen=%s last_snapshot=%s",
+            count, generation, self._last_snapshot,
+        )
         if self._last_snapshot == current_snapshot:
+            logging.getLogger(__name__).info(
+                "[DIAG] _on_source_changed: snapshot unchanged, skipping"
+            )
             return
         self._duration_cache.clear()
         self.beginResetModel()
@@ -335,6 +343,30 @@ class GalleryListModelAdapter(QAbstractListModel):
         self._last_snapshot = current_snapshot
         if self._current_row >= count:
             self._current_row = -1
+        # ⭐ 关键修复：模型有数据时立即清除加载图层
+        # 不依赖 grid view 的 _on_loading_timeout 定时器
+        if count > 0:
+            from PySide6.QtCore import QTimer
+            # 延迟到下一个事件循环，让 Qt 完成 reset 流程后再清除
+            QTimer.singleShot(0, self._dismiss_loading_overlays)
+
+    def _dismiss_loading_overlays(self) -> None:
+        """通知 grid view 清除所有加载/扫描图层。
+
+        当模型有数据后，立即清除 _loading_label / _scanning_label / _empty_label，
+        避免用户看到持续显示的"加载中"或"扫描中"图层。
+        """
+        # 找到 grid view 并调用 dismiss_loading_state
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is None:
+            return
+        for widget in app.allWidgets():
+            if hasattr(widget, "dismiss_loading_state") and hasattr(widget, "_loading_label"):
+                try:
+                    widget.dismiss_loading_state()
+                except Exception:
+                    pass
 
     def _on_window_changed(self, first: int, last: int) -> None:
         # Same thread-safety guard as _on_source_changed.

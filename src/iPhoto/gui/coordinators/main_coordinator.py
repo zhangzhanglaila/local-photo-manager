@@ -535,6 +535,9 @@ class MainCoordinator(QObject):
         ui.video_area.nextItemRequested.connect(self._playback.select_next)
         ui.video_area.prevItemRequested.connect(self._playback.select_previous)
 
+        # ⭐ 视频播放状态跟踪：连接到runtime controller以动态调整人脸扫描频率
+        ui.video_area.playbackStateChanged.connect(self._on_video_playback_state_changed)
+
         # Prev / Next overlay buttons
         if hasattr(ui.detail_page, "prev_button"):
             ui.detail_page.prev_button.clicked.connect(self._playback.select_previous)
@@ -1109,6 +1112,16 @@ class MainCoordinator(QObject):
                 QTimer.singleShot(0, self._gallery_store.reload_current_selection)
         finally:
             self._media_failure_cleanup_paths.discard(path_key)
+
+    def _on_video_playback_state_changed(self, is_playing: bool) -> None:
+        """⭐ 视频播放状态改变时，通知runtime controller调整人脸扫描频率"""
+        library_manager = getattr(self._context, "library", None)
+        if library_manager is None:
+            return
+        if is_playing:
+            library_manager.register_video_playing()
+        else:
+            library_manager.unregister_video_playing()
 
     def _on_asset_clicked(self, index: QModelIndex):
         if self._selection_controller and self._selection_controller.is_active():
@@ -2075,11 +2088,32 @@ class MainCoordinator(QObject):
         stored = self._context.settings.get("ui.checked_library_paths", []) or []
         if not stored:
             return
-        paths = set(stored)
-        self._window.ui.sidebar.set_checked_root_paths(paths)
+        # ⭐ 关键修复：验证存储的路径是否仍然对应当前 library roots
+        # 如果存储的路径已被移除或 library 已重新绑定到不同的 root，
+        # 这些路径会导致 SQL album_paths 过滤掉所有照片
         from pathlib import Path as PathType
         resolved = [PathType(p) for p in stored]
-        self._gallery_vm.set_checked_album_paths(resolved)
+        current_roots = self._library_root_holder() if hasattr(self, "_library_root_holder") else None
+        library_roots = self._context.library.roots()
+        root_set = {str(p.resolve()).lower().replace("\\", "/") for p in library_roots}
+        valid_resolved = []
+        for p in resolved:
+            p_lower = str(p.resolve()).lower().replace("\\", "/") if p.exists() else str(p).lower().replace("\\", "/")
+            if p_lower in root_set:
+                valid_resolved.append(p)
+                continue
+            # 兼容父子关系
+            for r in root_set:
+                if p_lower.startswith(r + "/") or r.startswith(p_lower + "/"):
+                    valid_resolved.append(p)
+                    break
+        if not valid_resolved:
+            # ⭐ 所有存储的路径都已失效，清除 settings 避免下次再出问题
+            self._context.settings.set("ui.checked_library_paths", [])
+            return
+        paths = set(str(p) for p in valid_resolved)
+        self._window.ui.sidebar.set_checked_root_paths(paths)
+        self._gallery_vm.set_checked_album_paths(valid_resolved)
 
     # --- Public Accessors for Window ---
     def toggle_playback(self):

@@ -644,6 +644,7 @@ class AlbumSidebar(QWidget):
     def select_static_node(self, title: str, emit_signal: bool = False) -> None:
         """Select the static node matching *title* when present."""
 
+        import logging
         self._current_selection = None
         self._current_static_selection = title
         self._current_pinned_selection = None
@@ -651,7 +652,14 @@ class AlbumSidebar(QWidget):
         index = self._find_static_index(title)
         if not index.isValid():
             _logger.debug("select_static_node: '%s' not found in model", title)
+            logging.getLogger(__name__).warning(
+                "[DIAG] select_static_node: '%s' not found, model rowCount=%s root_child_count=%s",
+                title, self._model.rowCount(), self._model.rowCount(self._model.index(0, 0)),
+            )
             return
+        logging.getLogger(__name__).info(
+            "[DIAG] select_static_node: '%s' found, emit_signal=%s", title, emit_signal,
+        )
 
         # Check whether the target index is already selected.  When the caller
         # requests signal emission but the selection model considers the index

@@ -52,11 +52,34 @@ class StartupOverlay(QWidget):
         )
         layout.addWidget(self._progress, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        # ⭐ Track dismissal so callers that hold stale references can no-op
+        # safely instead of crashing on deleted C++ objects.
+        self._dismissed = False
+
         self.hide()
+
+    def _is_alive(self) -> bool:
+        """Return True if the underlying Qt widget is still valid."""
+        if self._dismissed:
+            return False
+        # After deleteLater() the C++ object is gone but the Python wrapper
+        # remains; accessing it raises RuntimeError.  Try a cheap attribute
+        # first to detect this without crashing.
+        try:
+            _ = self.isVisible()
+        except RuntimeError:
+            return False
+        return True
 
     def set_message(self, text: str) -> None:
         """Update the loading message."""
-        self._label.setText(text)
+        if not self._is_alive():
+            return
+        try:
+            self._label.setText(text)
+        except RuntimeError:
+            # Underlying C++ object was deleted between the guard and now.
+            self._dismissed = True
 
     def show_scan_progress(self, current: int, total: int) -> None:
         """显示扫描进度。
@@ -65,31 +88,50 @@ class StartupOverlay(QWidget):
             current: 当前已处理的文件数
             total: 总文件数（-1 表示未知）
         """
-        self._scan_label.show()
-        if total > 0 and total != -1:
-            # 显示具体进度
-            percentage = int((current / total) * 100) if total > 0 else 0
-            self._scan_label.setText(f"正在扫描照片... {current}/{total} ({percentage}%)")
-            self._progress.setRange(0, total)
-            self._progress.setValue(current)
-        else:
-            # 显示不确定进度
-            self._scan_label.setText(f"正在扫描照片... 已处理 {current} 个文件")
-            self._progress.setRange(0, 0)  # 不确定模式
+        if not self._is_alive():
+            return
+        try:
+            self._scan_label.show()
+            if total > 0 and total != -1:
+                # 显示具体进度
+                percentage = int((current / total) * 100) if total > 0 else 0
+                self._scan_label.setText(f"正在扫描照片... {current}/{total} ({percentage}%)")
+                self._progress.setRange(0, total)
+                self._progress.setValue(current)
+            else:
+                # 显示不确定进度
+                self._scan_label.setText(f"正在扫描照片... 已处理 {current} 个文件")
+                self._progress.setRange(0, 0)  # 不确定模式
+        except RuntimeError:
+            self._dismissed = True
 
     def show_overlay(self) -> None:
         """Show the overlay and resize to match parent."""
-        if self.parent() is not None:
-            self.resize(self.parent().size())
-        self.raise_()
-        self.show()
+        if not self._is_alive():
+            return
+        try:
+            if self.parent() is not None:
+                self.resize(self.parent().size())
+            self.raise_()
+            self.show()
+        except RuntimeError:
+            self._dismissed = True
 
     def dismiss(self) -> None:
         """Hide and delete the overlay."""
-        self.hide()
-        self.deleteLater()
+        if self._dismissed:
+            return  # idempotent — second call is a no-op
+        self._dismissed = True
+        try:
+            self.hide()
+            self.deleteLater()
+        except RuntimeError:
+            pass
 
     def eventFilter(self, obj, event):  # type: ignore[override]
-        if obj is self.parent() and event.type() == QEvent.Type.Resize:
-            self.resize(obj.size())
+        if not self._dismissed and obj is self.parent() and event.type() == QEvent.Type.Resize:
+            try:
+                self.resize(obj.size())
+            except RuntimeError:
+                self._dismissed = True
         return super().eventFilter(obj, event)

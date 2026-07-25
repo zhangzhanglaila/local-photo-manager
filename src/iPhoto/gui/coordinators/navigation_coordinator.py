@@ -184,6 +184,8 @@ class NavigationCoordinator(QObject):
         )
 
     def open_all_photos(self) -> None:
+        import logging
+        logging.getLogger(__name__).info("[DIAG] navigation_coordinator.open_all_photos called")
         self._reset_playback()
         self._gallery_vm.open_all_photos()
         self._set_grid_empty_mode(None)
@@ -349,17 +351,57 @@ class NavigationCoordinator(QObject):
                 self._context.library.shutdown()
             self._sidebar.refresh_tree_model()
 
+            # ⭐ 修复：删除相册后立即清空画廊，无论是否有剩余相册
+            self._clear_gallery_after_removal()
+
             # ⭐ 修复：删除相册后刷新画廊视图
             if not remaining:
                 # 如果没有剩余的根目录，导航到绑定库界面
                 self.bindLibraryRequested.emit()
             elif current_root == matching_root:
                 # 如果当前正在查看被删除的根目录，导航到"All Photos"
+                # ⭐ 需要更新选中路径，移除已删除的相册
+                self._update_checked_album_paths_after_removal(matching_root)
                 self.open_all_photos()
             else:
                 # 其他情况，刷新当前视图
+                # ⭐ 也需要更新选中路径，移除已删除的相册
+                self._update_checked_album_paths_after_removal(matching_root)
                 self._gallery_vm.reload_current_selection()
             return
+
+    def _clear_gallery_after_removal(self) -> None:
+        """⭐ 删除相册后立即清空画廊显示"""
+        # 清空当前选中的相册路径
+        self._gallery_vm.set_checked_album_paths(None)
+        # ⭐ 关键修复：同步更新 settings，避免旧路径残留
+        self._context.settings.set("ui.checked_library_paths", [])
+        # 清空当前视图的显示
+        self._gallery_vm.clear_display()
+        # 显示友好的空状态提示
+        if self._grid_view is not None and hasattr(self._grid_view, "set_empty_mode"):
+            self._grid_view.set_empty_mode("no_library")
+
+    def _update_checked_album_paths_after_removal(self, removed_root: Path) -> None:
+        """Update checked album paths after removing a library root."""
+        # Get all remaining roots
+        remaining = self._context.library.roots()
+        if not remaining:
+            # No remaining albums, clear checked paths
+            self._gallery_vm.set_checked_album_paths(None)
+            # ⭐ 关键修复：同步更新 settings，避免旧路径残留
+            # 否则下次启动时 _restore_checked_library_paths 会恢复旧路径
+            self._context.settings.set("ui.checked_library_paths", [])
+            return
+
+        # Assume remaining albums stay checked after removal
+        remaining_paths = list(remaining)
+        self._gallery_vm.set_checked_album_paths(remaining_paths)
+        # ⭐ 关键修复：同步更新 settings，避免旧路径残留
+        self._context.settings.set(
+            "ui.checked_library_paths",
+            [str(p) for p in remaining_paths],
+        )
 
         # Find the root that contains this path.
         owning_root = library_root

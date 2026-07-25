@@ -164,16 +164,38 @@ class GalleryViewModel(BaseViewModel):
         )
 
     def open_all_photos(self) -> None:
+        import logging
+        logging.getLogger(__name__).info("[DIAG] GalleryViewModel.open_all_photos called")
         root = self._context.library.root()
         if root is None:
+            logging.getLogger(__name__).warning("[DIAG] open_all_photos: library root is None!")
             self.bind_library_requested.emit()
             return
+        logging.getLogger(__name__).info("[DIAG] open_all_photos: root=%s", root)
         self._clear_cluster_gallery_context()
         query = AssetQuery()
         # Only use album_paths filter when a proper subset is checked.
         # When all folders are checked (or none), use the fast SQL path.
+        # ⭐ 关键修复：如果 _checked_album_paths 中的路径与当前 library.roots()
+        # 不匹配（来自旧的 settings），清除它们以避免过滤掉所有照片
         if self._checked_album_paths and self._has_unchecked_folders():
-            query.album_paths = self._checked_album_paths
+            # 验证 checked paths 中至少有一个匹配当前 root
+            library_roots = self._context.library.roots()
+            root_set = {str(p.resolve()).lower().replace("\\", "/") for p in library_roots}
+            valid_checked = [
+                p for p in self._checked_album_paths
+                if p.lower().replace("\\", "/") in root_set
+                or any(p.lower().replace("\\", "/").startswith(r + "/") for r in root_set)
+                or any(r.startswith(p.lower().replace("\\", "/") + "/") for r in root_set)
+            ]
+            if valid_checked:
+                query.album_paths = valid_checked
+            else:
+                logging.getLogger(__name__).warning(
+                    "[DIAG] open_all_photos: _checked_album_paths=%s 不匹配当前 root=%s，清除",
+                    self._checked_album_paths, root,
+                )
+                self._checked_album_paths = None
         self._load_query(
             section="all_photos",
             static_selection=ALL_PHOTOS_TITLE,
@@ -711,6 +733,11 @@ class GalleryViewModel(BaseViewModel):
         root: Path,
         query: AssetQuery,
     ) -> None:
+        import logging
+        logging.getLogger(__name__).info(
+            "[DIAG] GalleryViewModel._load_query: section=%s root=%s store_count_before=%s",
+            section, root, self._store.count(),
+        )
         self._store.cancel_pending_load()
         self.current_section.value = section
         self.static_selection.value = static_selection
@@ -718,11 +745,15 @@ class GalleryViewModel(BaseViewModel):
         self.current_query.value = query
         self.current_direct_assets.value = None
         self.can_return_to_map.value = False
-        # Defer heavy DB query to next event-loop tick so the sidebar can render first.
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, lambda: self._store.load_selection(root, query=query))
+        # ⭐ 立即加载查询而不是延迟，以便在扫描时能显示照片
+        # 如果扫描正在进行，handle_scan_chunk 会更新显示
+        self._store.load_selection(root, query=query)
         self.cluster_gallery_mode_changed.emit(False)
         self.route_requested.emit("gallery")
+        logging.getLogger(__name__).info(
+            "[DIAG] GalleryViewModel._load_query: after load_selection store_count=%s",
+            self._store.count(),
+        )
 
     def show_search_results(self, asset_ids: list[str]) -> None:
         """Display search results in the gallery.
@@ -750,6 +781,25 @@ class GalleryViewModel(BaseViewModel):
         # Load the search results
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, lambda: self._store.load_selection(root, query=query))
+        self.cluster_gallery_mode_changed.emit(False)
+        self.route_requested.emit("gallery")
+
+    def clear_display(self) -> None:
+        """Clear the gallery display by resetting the store state."""
+        self._store.cancel_pending_load()
+        # 重置存储状态以清空显示
+        old_count = self._store.count()
+        self._store._reset_window_state()
+        # 发出信号通知视图更新
+        self._store.count_changed.emit(old_count, 0)
+        self._store.data_changed.emit()
+        # 清空视图模型状态
+        self.current_section.value = "empty"
+        self.static_selection.value = None
+        self.active_root.value = None
+        self.current_query.value = None
+        self.current_direct_assets.value = []
+        self.can_return_to_map.value = False
         self.cluster_gallery_mode_changed.emit(False)
         self.route_requested.emit("gallery")
 
