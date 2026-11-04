@@ -61,10 +61,22 @@ def has_usable_gaode_online_map(timeout_seconds: float = 0.35) -> bool:
 class SessionMapRuntimeService(MapRuntimePort):
     """Compute one capability snapshot shared by the active GUI session."""
 
-    def __init__(self, package_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        package_root: Path | None = None,
+        *,
+        allow_native_widget_probe: bool = True,
+    ) -> None:
         self._package_root = (
             Path(package_root).resolve() if package_root is not None else _MAPS_PACKAGE_ROOT
         )
+        # Loading the native widget DLL can terminate the process on Windows with
+        # STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139) when its bundled Qt runtime
+        # conflicts with the Qt build already resident in this process. That is a
+        # fatal Windows exception, not a Python one, so the ``try/except`` inside
+        # ``probe_native_widget_runtime`` cannot contain it. Non-GUI sessions have
+        # no map surface to render and therefore must never trigger the load.
+        self._allow_native_widget_probe = bool(allow_native_widget_probe)
         self._capabilities = self._detect_capabilities()
 
     def is_available(self) -> bool:
@@ -91,9 +103,9 @@ class SessionMapRuntimeService(MapRuntimePort):
 
         native_widget_available = False
         if (
-            has_qt_app
-            and
-            not opengl_disabled
+            self._allow_native_widget_probe
+            and has_qt_app
+            and not opengl_disabled
             and prefer_osmand_native_widget()
             and has_usable_osmand_native_widget(self._package_root)
         ):

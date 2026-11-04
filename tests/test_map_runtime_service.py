@@ -127,3 +127,71 @@ def test_map_runtime_service_prefers_gaode_when_online_map_is_reachable(
     assert capabilities.preferred_backend == "gaode_standard"
     assert capabilities.display_available is True
     assert capabilities.osmand_extension_available is True
+
+
+def _patch_probe_environment(monkeypatch, probe: list[Path]) -> None:
+    """Make every gate before the native probe pass, so only the flag decides."""
+
+    monkeypatch.setattr(map_runtime_service_module, "_has_qt_application", lambda: True)
+    monkeypatch.setattr(map_runtime_service_module, "check_opengl_support", lambda: True)
+    monkeypatch.setattr(map_runtime_service_module, "has_usable_gaode_online_map", lambda: False)
+    monkeypatch.setattr(map_runtime_service_module, "prefer_osmand_native_widget", lambda: True)
+    monkeypatch.setattr(
+        map_runtime_service_module, "has_usable_osmand_native_widget", lambda root: True
+    )
+    monkeypatch.setattr(
+        map_runtime_service_module,
+        "probe_native_widget_runtime",
+        lambda root: probe.append(root) or (True, None),
+    )
+    monkeypatch.setattr(
+        map_runtime_service_module,
+        "choose_default_map_source",
+        lambda root, **_kwargs: MapSourceSpec.osmand_default(root),
+    )
+    monkeypatch.setattr(
+        map_runtime_service_module,
+        "has_usable_osmand_search_extension",
+        lambda package_root=None: False,
+    )
+
+
+def test_map_runtime_service_skips_native_widget_probe_when_disallowed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    probe: list[Path] = []
+    _patch_probe_environment(monkeypatch, probe)
+
+    capabilities = SessionMapRuntimeService(
+        tmp_path, allow_native_widget_probe=False
+    ).capabilities()
+
+    assert probe == []
+    assert capabilities.native_widget_available is False
+    assert capabilities.preferred_backend == "osmand_python"
+
+
+def test_headless_library_session_never_loads_the_native_widget(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A headless session has no map surface and must not touch the DLL.
+
+    The load is fatal rather than catchable on Windows: when the widget DLL's
+    bundled Qt runtime conflicts with the Qt build already resident in the
+    process, the loader raises ``STATUS_ENTRYPOINT_NOT_FOUND`` (0xc0000139) and
+    the process dies before ``probe_native_widget_runtime``'s ``try/except`` can
+    run. A CLI run or a test process that merely owns a ``QApplication`` must
+    not be able to trigger that.
+    """
+
+    probe: list[Path] = []
+    _patch_probe_environment(monkeypatch, probe)
+
+    from iPhoto.bootstrap.library_session import create_headless_library_session
+
+    session = create_headless_library_session(tmp_path)
+
+    assert probe == []
+    assert session.maps.capabilities().native_widget_available is False

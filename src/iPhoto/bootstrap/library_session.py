@@ -451,6 +451,12 @@ def create_headless_library_session(root: Path) -> LibrarySession:
         library_root,
         asset_runtime=LibraryAssetRuntime(library_root),
         bind_asset_runtime=False,
+        # A headless session has no map surface, so it must not load the native
+        # widget DLL. That load is fatal rather than catchable when the DLL's
+        # bundled Qt runtime conflicts with the one already loaded by a host
+        # process that happens to own a QApplication (a test session, for
+        # example), and it would take the whole process down.
+        maps=SessionMapRuntimeService(allow_native_widget_probe=False),
     )
 
 
