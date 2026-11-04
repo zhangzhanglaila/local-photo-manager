@@ -285,6 +285,34 @@ class GalleryCollectionStore:
         if self._window_range is not None:
             self.window_changed.emit(*self._window_range)
 
+    def peek_asset(self, index: int) -> Optional[AssetDTO]:
+        """Return the cached DTO for *index* without touching the database.
+
+        The grid asks for every visible row on every repaint. ``asset_at`` falls
+        back to a synchronous query for rows it has not loaded yet, so a large
+        scroll jump — crossing several months, for example — queried the database
+        once per newly visible row while the view was trying to repaint, which
+        showed up as stutter. Repaint paths should use this method and let
+        :meth:`request_row` fill the cache from the event loop.
+        """
+
+        return self._row_cache.get(index)
+
+    def request_row(self, row: int) -> None:
+        """Queue one uncached row so the event loop loads it without blocking."""
+
+        if row < 0 or row >= self._total_count or row in self._row_cache:
+            return
+        queue = getattr(self, "_preload_queue", None)
+        if queue:
+            if row not in queue:
+                queue.append(row)
+            return
+        self._preload_queue = [row]
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self._preload_next)
+
     def asset_at(self, index: int) -> Optional[AssetDTO]:
         dto = self._row_cache.get(index)
         if dto is not None or self._direct_mode:
@@ -952,6 +980,7 @@ class GalleryCollectionStore:
         if not queue:
             return
         row = queue.pop(0)
+        loaded = False
         if row not in self._row_cache:
             try:
                 dto = self._fetch_single_row(row)
@@ -959,6 +988,11 @@ class GalleryCollectionStore:
                 dto = None
             if dto is not None:
                 self._row_cache[row] = dto
+                loaded = True
+        if loaded:
+            # Repaint the row now that its data is available; paint paths only
+            # read the cache, so nothing else would refresh it.
+            self.row_changed.emit(row)
         if queue:
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, self._preload_next)

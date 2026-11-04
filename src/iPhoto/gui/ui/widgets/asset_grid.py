@@ -42,7 +42,10 @@ class AssetGrid(QListView):
         self._suppress_next_preview_leave = False
         self._update_timer = QTimer(self)
         self._update_timer.setSingleShot(True)
-        self._update_timer.setInterval(100)
+        # The gallery only starts prefetching once the visible range is reported.
+        # A longer debounce left stale rows on screen after a fast drag, so keep it
+        # short: reporting is cheap unless a window reload is actually needed.
+        self._update_timer.setInterval(50)
         self._update_timer.timeout.connect(self._emit_visible_rows)
         self._visible_range: Optional[tuple[int, int]] = None
         self._model = None

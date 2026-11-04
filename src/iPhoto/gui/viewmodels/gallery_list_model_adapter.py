@@ -93,7 +93,7 @@ class GalleryListModelAdapter(QAbstractListModel):
         if role_int == Roles.IS_SPACER:
             return False
 
-        asset: Optional[AssetDTO] = self._store.asset_at(row)
+        asset: Optional[AssetDTO] = self._peek_or_request(row)
         if not asset:
             return None
 
@@ -158,8 +158,22 @@ class GalleryListModelAdapter(QAbstractListModel):
             return asset.is_pano
         return None
 
+    def _peek_or_request(self, row: int) -> Optional[AssetDTO]:
+        """Return a cached DTO, queueing the row when it is not loaded yet.
+
+        ``data()`` runs for every visible row on every repaint, so it must not
+        touch the database. Falling back to a synchronous query there made a
+        large scroll jump query the database once per newly visible row while the
+        view was repainting.
+        """
+
+        asset = self._store.peek_asset(row)
+        if asset is None:
+            self._store.request_row(row)
+        return asset
+
     def info_for_row(self, row: int) -> Optional[dict[str, Any]]:
-        asset = self._store.asset_at(row)
+        asset = self._peek_or_request(row)
         if asset is None:
             return None
         info = asset.metadata.copy() if asset.metadata else {}
