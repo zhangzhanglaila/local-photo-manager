@@ -29,12 +29,40 @@ def load_saved_basic_library_path(settings_path: Path | None = None) -> Path | N
         return None
 
 
+def load_saved_workspace_base(settings_path: Path | None = None) -> Path | None:
+    """Return ``workspace_base`` from ``settings.json`` when configured."""
+
+    try:
+        resolved_settings_path = settings_path or default_settings_path()
+        if not resolved_settings_path.exists():
+            return None
+        payload = json.loads(resolved_settings_path.read_text(encoding="utf-8"))
+        raw_path = payload.get("workspace_base")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return None
+        return Path(raw_path).expanduser()
+    except Exception:
+        return None
+
+
 def resolve_managed_work_root(
     settings_path: Path | None = None,
     *,
     home_root: Path | None = None,
 ) -> Path:
     """Return the managed ``.iPhoto`` directory used for startup caches."""
+
+    # The shader cache environment is configured before RuntimeContext exists, so
+    # the workspace base has to be read from settings here instead of waiting for
+    # RuntimeContext to install it. Without this the very first resolution fell
+    # back to ``<library>/.iPhoto`` and a cache directory appeared in the photo
+    # folder even though a custom workspace was configured.
+    if get_custom_workspace_base() is None:
+        saved_base = load_saved_workspace_base(settings_path)
+        if saved_base is not None:
+            from ..utils.pathutils import set_custom_workspace_base
+
+            set_custom_workspace_base(saved_base)
 
     library_root = load_saved_basic_library_path(settings_path)
     if library_root is not None:
