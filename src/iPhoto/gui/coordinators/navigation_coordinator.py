@@ -302,7 +302,7 @@ class NavigationCoordinator(QObject):
         """Add *path* to the root manifest's exclude list and rescan."""
         from ...config import ALBUM_MANIFEST_NAMES, DEFAULT_EXCLUDE
         from ...utils.jsonio import read_json, write_json
-        from ...utils.pathutils import ensure_work_dir
+        from ...utils.pathutils import album_manifest_path, ensure_work_dir, find_album_manifest
 
         library_root = self._context.library.root()
         if library_root is None:
@@ -413,15 +413,10 @@ class NavigationCoordinator(QObject):
             except OSError:
                 continue
 
-        # Find or create the root manifest.
-        manifest_path = None
-        for name in ALBUM_MANIFEST_NAMES:
-            candidate = owning_root / name
-            if candidate.exists():
-                manifest_path = candidate
-                break
+        # Find or create the root manifest, honouring the configured workspace.
+        manifest_path = find_album_manifest(owning_root)
         if manifest_path is None:
-            manifest_path = owning_root / ALBUM_MANIFEST_NAMES[0]
+            manifest_path = album_manifest_path(owning_root)
             manifest: dict = {
                 "schema": "iPhoto/album@1",
                 "title": owning_root.name,

@@ -120,6 +120,62 @@ def should_include(path: Path, include_globs: Iterable[str], exclude_globs: Iter
     return False
 
 
+ALBUM_MANIFEST_NAME = ".iphoto.album.json"
+
+
+def album_manifest_path(root: Path) -> Path:
+    """Return where the album manifest for *root* must be written.
+
+    The documented contract for a custom workspace is that the photo folder
+    stays clean ("照片文件夹保持干净，只包含照片和视频"), but the manifest was always
+    written as ``<library>/.iphoto.album.json`` no matter where the workspace
+    lived, so a state file ended up next to the photos.
+
+    With a workspace configured the manifest belongs in it, beside the index it
+    describes. Without one it stays in the album folder, which keeps a
+    self-contained album portable.
+    """
+
+    workspace = get_custom_workspace_dir(root)
+    if workspace is not None:
+        return workspace / "manifest.json"
+    return root / ALBUM_MANIFEST_NAME
+
+
+def find_album_manifest(root: Path) -> Path | None:
+    """Return the manifest that belongs to *root*, migrating a legacy one.
+
+    Albums created before custom workspaces keep their manifest in the album
+    folder. When a workspace is configured that file is moved into it once, so
+    the album keeps its identity and the photo folder ends up clean without the
+    user having to do anything.
+    """
+
+    target = album_manifest_path(root)
+    if target.exists():
+        return target
+
+    legacy_candidates = [root / ALBUM_MANIFEST_NAME, root / WORK_DIR_NAME / "manifest.json"]
+    for candidate in legacy_candidates:
+        if not candidate.exists():
+            continue
+        if target.parent == candidate.parent:
+            return candidate
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            candidate.replace(target)
+        except OSError:
+            LOGGER.warning(
+                "Could not move album manifest %s into the workspace at %s",
+                candidate,
+                target,
+            )
+            return candidate
+        LOGGER.info("Moved album manifest %s -> %s", candidate, target)
+        return target
+    return None
+
+
 def _exact_work_dir_entries(root: Path) -> dict[str, Path]:
     try:
         return {

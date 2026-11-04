@@ -18,6 +18,7 @@ from ..errors import (
 )
 from ..application.services.album_manifest_service import Album
 from ..utils.jsonio import read_json
+from ..utils.pathutils import album_manifest_path, find_album_manifest
 from .tree import AlbumNode
 
 if TYPE_CHECKING:
@@ -82,13 +83,10 @@ class AlbumOperationsMixin:
 
     def ensure_manifest(self, node: AlbumNode) -> Path:
         Album.open(node.path)
-        marker = node.path / ".iphoto.album"
-        if not marker.exists():
-            marker.touch()
-        manifest = self._find_manifest(node.path)
-        if manifest is None:
-            manifest = node.path / ALBUM_MANIFEST_NAMES[0]
-        return manifest
+        # No marker file is written into the album folder any more: the documented
+        # contract for a custom workspace is that the photo folder holds only
+        # photos, and the manifest itself already identifies the album.
+        return find_album_manifest(node.path) or album_manifest_path(node.path)
 
     def find_album_by_uuid(self, album_id: str) -> Optional[AlbumNode]:
         """Return the library node whose manifest declares *album_id*.
@@ -172,11 +170,7 @@ class AlbumOperationsMixin:
         return str(name or "").strip().casefold() in _RESERVED_LIBRARY_DIR_NAMES
 
     def _find_manifest(self, path: Path) -> Path | None:
-        for name in ALBUM_MANIFEST_NAMES:
-            candidate = path / name
-            if candidate.exists():
-                return candidate
-        return None
+        return find_album_manifest(path)
 
     def _describe_album(self, path: Path) -> tuple[str, bool]:
         manifest = self._find_manifest(path)

@@ -21,7 +21,13 @@ from ..media_classifier import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from ..schemas import validate_album
 from ..utils.jsonio import read_json, write_json
 from ..utils.logging import get_logger
-from ..utils.pathutils import ensure_work_dir, resolve_trash_dir, resolve_work_dir
+from ..utils.pathutils import (
+    album_manifest_path,
+    ensure_work_dir,
+    find_album_manifest,
+    resolve_trash_dir,
+    resolve_work_dir,
+)
 from .library_scan_service import LibraryScanService
 
 LOGGER = get_logger()
@@ -657,12 +663,7 @@ class LibraryAssetLifecycleService:
         if not album_root.exists():
             return None
 
-        manifest_path: Path | None = None
-        for manifest_name in ALBUM_MANIFEST_NAMES:
-            candidate = album_root / manifest_name
-            if candidate.exists():
-                manifest_path = candidate
-                break
+        manifest_path: Path | None = find_album_manifest(album_root)
 
         changed = False
 
@@ -675,7 +676,7 @@ class LibraryAssetLifecycleService:
             }
 
         if manifest_path is None:
-            manifest_path = album_root / ALBUM_MANIFEST_NAMES[0]
+            manifest_path = album_manifest_path(album_root)
             manifest = _default_manifest()
             changed = True
         else:
@@ -732,7 +733,7 @@ class LibraryAssetLifecycleService:
 
     @staticmethod
     def _has_album_manifest(root: Path) -> bool:
-        return any((root / manifest_name).exists() for manifest_name in ALBUM_MANIFEST_NAMES)
+        return find_album_manifest(root) is not None
 
     @staticmethod
     def _relative_to(path: Path, root: Path) -> Path | None:

@@ -20,6 +20,7 @@ from ...config import ALBUM_MANIFEST_NAMES
 from ...errors import AlbumNotFoundError, IPhotoError
 from ...schemas import validate_album
 from ...utils.jsonio import read_json, write_json
+from ...utils.pathutils import album_manifest_path, find_album_manifest
 from ...utils.logging import logger
 from ...utils.pathutils import ensure_work_dir
 
@@ -52,7 +53,7 @@ class Album:
             }
 
         if manifest_path is None:
-            manifest_path = root / ALBUM_MANIFEST_NAMES[0]
+            manifest_path = album_manifest_path(root)
             manifest: dict[str, Any] = _default_manifest()
             changed = True
         else:
@@ -116,16 +117,12 @@ class Album:
 
     @staticmethod
     def _find_manifest(root: Path) -> Optional[Path]:
-        for name in ALBUM_MANIFEST_NAMES:
-            candidate = root / name
-            if candidate.exists():
-                return candidate
-        return None
+        return find_album_manifest(root)
 
     def save(self) -> Path:
         """Persist the manifest to disk."""
 
-        path = self._find_manifest(self.root) or (self.root / ALBUM_MANIFEST_NAMES[0])
+        path = find_album_manifest(self.root) or album_manifest_path(self.root)
         work_dir = ensure_work_dir(self.root) / "manifest.bak"
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         self.manifest.setdefault("created", now)

@@ -14,7 +14,7 @@ from ...errors import AlbumNotFoundError, IPhotoError
 from ...schemas import validate_album
 from ...utils.jsonio import read_json, write_json
 from ...utils.logging import logger
-from ...utils.pathutils import ensure_work_dir
+from ...utils.pathutils import album_manifest_path, ensure_work_dir, find_album_manifest
 
 
 class AlbumManifestRepository(AlbumRepositoryPort):
@@ -35,7 +35,7 @@ class AlbumManifestRepository(AlbumRepositoryPort):
         changed = False
 
         if manifest_path is None:
-            manifest_path = normalized / ALBUM_MANIFEST_NAMES[0]
+            manifest_path = album_manifest_path(normalized)
             manifest = self._default_manifest(normalized)
             changed = True
         else:
@@ -72,9 +72,7 @@ class AlbumManifestRepository(AlbumRepositoryPort):
         payload["modified"] = now
         validate_album(payload)
 
-        manifest_path = self._find_manifest(normalized) or (
-            normalized / ALBUM_MANIFEST_NAMES[0]
-        )
+        manifest_path = find_album_manifest(normalized) or album_manifest_path(normalized)
         backup_dir = ensure_work_dir(normalized) / "manifest.bak"
         with FileLock(normalized, "manifest"):
             write_json(manifest_path, payload, backup_dir=backup_dir)
@@ -87,11 +85,7 @@ class AlbumManifestRepository(AlbumRepositoryPort):
 
     @staticmethod
     def _find_manifest(root: Path) -> Path | None:
-        for name in ALBUM_MANIFEST_NAMES:
-            candidate = root / name
-            if candidate.exists():
-                return candidate
-        return None
+        return find_album_manifest(root)
 
     @staticmethod
     def _default_manifest(root: Path) -> dict[str, Any]:

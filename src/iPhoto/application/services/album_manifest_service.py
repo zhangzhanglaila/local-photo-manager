@@ -13,7 +13,7 @@ from ...errors import AlbumNotFoundError, IPhotoError
 from ...schemas import validate_album
 from ...utils.jsonio import read_json, write_json
 from ...utils.logging import logger
-from ...utils.pathutils import ensure_work_dir
+from ...utils.pathutils import album_manifest_path, ensure_work_dir, find_album_manifest
 
 
 @dataclass(slots=True)
@@ -58,10 +58,10 @@ def _load_manifest(root: Path) -> dict[str, Any]:
         raise AlbumNotFoundError(f"Album directory does not exist: {root}")
 
     ensure_work_dir(root)
-    manifest_path = _find_manifest(root)
+    manifest_path = find_album_manifest(root)
     changed = False
     if manifest_path is None:
-        manifest_path = root / ALBUM_MANIFEST_NAMES[0]
+        manifest_path = album_manifest_path(root)
         manifest = _default_manifest(root)
         changed = True
     else:
@@ -87,17 +87,13 @@ def _save_manifest(root: Path, manifest: dict[str, Any]) -> None:
     validate_album(payload)
     _write_manifest(
         root,
-        _find_manifest(root) or (root / ALBUM_MANIFEST_NAMES[0]),
+        find_album_manifest(root) or album_manifest_path(root),
         payload,
     )
 
 
 def _find_manifest(root: Path) -> Path | None:
-    for name in ALBUM_MANIFEST_NAMES:
-        candidate = root / name
-        if candidate.exists():
-            return candidate
-    return None
+    return find_album_manifest(root)
 
 
 def _default_manifest(root: Path) -> dict[str, Any]:
