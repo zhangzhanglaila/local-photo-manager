@@ -279,6 +279,7 @@ class FaceClusterPipeline:
                 root=str(insightface_root),
                 allowed_modules=list(_REQUIRED_FACE_MODULES),
                 providers=providers,
+                sess_options=_face_session_options(),
             )
             app.prepare(ctx_id=ctx_id, det_size=(640, 640))
         except Exception as exc:
@@ -802,6 +803,35 @@ def _build_face_analysis_init_error(
         f"{feature_name} unavailable: failed to initialize InsightFace model "
         f"'{model_pack}' from '{model_pack_dir}' ({reason})."
     )
+
+
+FACE_THREAD_LIMIT = 4
+
+
+def _face_session_options():
+    """Return bounded onnxruntime session options for face inference.
+
+    InsightFace builds its sessions through ``onnxruntime.InferenceSession``
+    without options, which defaults to one intra-op thread per core. A single
+    face scan therefore pinned every core of the machine, and the interface
+    became unresponsive for as long as the scan ran — the face scan starts on its
+    own once the file scan finishes, so this happened without the user asking for
+    it. The CLIP embedder already limits itself the same way.
+
+    ``IPHOTO_FACE_THREADS`` overrides the limit for users who would rather finish
+    a scan quickly.
+    """
+
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    threads = max(1, min(FACE_THREAD_LIMIT, (os.cpu_count() or FACE_THREAD_LIMIT) // 2))
+    override = os.environ.get("IPHOTO_FACE_THREADS", "").strip()
+    if override.isdigit() and int(override) > 0:
+        threads = int(override)
+    options.intra_op_num_threads = threads
+    options.inter_op_num_threads = 1
+    return options
 
 
 def _resolve_execution_providers() -> list[str]:
