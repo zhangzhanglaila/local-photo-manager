@@ -211,33 +211,50 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-/maps/.idea/
-/build_output_debug/
+# ---------------------------------------------------------------------------
+# Project-specific paths
+#
+# The rules below are grouped by what produces the path, so a new artefact has
+# one obvious place to go. `.idea/` is unanchored and already covers nested
+# editor folders such as `maps/.idea/`.
+# ---------------------------------------------------------------------------
 
-# Test artifacts
-/tmp/
-
+# IDE state
 .idea/
+
+# CMake / native build trees and their logs
+/CMakeFiles/
+/build_output_debug/
+/debug/
 /tools/osmand_render_helper_native/qt6-msvc-importlibs/
 /tools/osmand_render_helper_native/dist-msvc/
 /tools/osmand_render_helper_native/build_only_log.txt
 /tools/osmand_render_helper_native/build_verbose2.txt
 /tools/osmand_render_helper_native/qt_include_smoke.cpp
-/CMakeFiles/
-/debug/
+
+# Local scratch and agent staging
+/tmp/
 /.codex_staging/
 /.codex
+
+# Vendored OsmAnd SDK checkout used while developing the map runtime
 /PySide6-OsmAnd-SDK/
+
+# Downloaded map/face payloads. Fetch them with `scripts/` or the README steps;
+# never commit them. `src/extension/` covers the face model cache.
+/extension/
+/src/extension/
+/src/maps/tiles/extension/
 /src/maps/tiles/World_basemap_2.obf
 /src/maps/tiles/*.tar*
-/src/maps/tiles/extension/
-/src/extension/models/
-/extension/
+
+# Release archives that are routinely downloaded into the repository root
+/extension.zip
+/exiftool.zip
+
+# Demo runtime output
 /demo/face-cluster/runtime/
 /demo/face-cluster/state/
-/.codex
-/src/extension/
-/src/iPhoto/extension/
 
 # ExifTool (contains developer-specific paths; users should install ExifTool themselves)
 exiftool.bat
