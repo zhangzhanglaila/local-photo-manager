@@ -97,6 +97,8 @@ testpaths = ["tests"]
 # the plugin stayed active as soon as it was installed (the dev extras install
 # it), and its event-loop pump aborts the interpreter with
 # "Fatal Python error: Aborted" under this project's offscreen Qt platform.
+# The GUI suites that need the plugin are excluded below; run them explicitly
+# with ``pytest -p pytest-qt tests/gui`` to re-enable it for that session.
 addopts = "-ra -p no:pytest-qt --ignore=tests/ui --ignore=tests/gui"
 pythonpath = ["src"]
 # Numba JIT is disabled for the suite so filter tests stay fast and repeatable.
