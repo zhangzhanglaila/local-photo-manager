@@ -284,6 +284,9 @@ several unrelated features into one commit, and do not leave finished work
 uncommitted at the end of a turn.
 
 - Use Conventional Commits (`refactor:`, `fix:`, `chore:`, `docs:`, `test:`).
+- Write the commit message in Chinese (简体). The Conventional Commit prefix and
+  any code identifiers stay in English; the subject and body are Chinese. The
+  maintainer reads Chinese, and this keeps the history consistent.
 - The message body must state the concrete problem, not restate the diff. Name
   the file, path, or API that was wrong and what it is now.
 - Commit only after the change is verified. State in the body how it was
