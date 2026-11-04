@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol
 
@@ -62,6 +63,10 @@ class GalleryCollectionStore:
     LOOKBEHIND_SCREENS = 1
     LOOKAHEAD_SCREENS = 2
     HYSTERESIS_RATIO = 0.25
+    # Minimum spacing between scan-driven window reloads. Scan chunks arrive many
+    # times per second and every reload resets the model, which itself emits
+    # ``visibleRowsChanged``; without this cap the two feed each other.
+    SCAN_REFRESH_MIN_INTERVAL_S = 0.15
 
     def __init__(
         self,
@@ -92,6 +97,7 @@ class GalleryCollectionStore:
         self._pending_scan_refresh = False
         self._pending_scan_rels: set[str] = set()
         self._pending_scan_sort_keys: set[tuple[str, str]] = set()
+        self._last_scan_refresh_at = 0.0
         self._direct_mode = False
         # ⭐ 跟踪在 asset_query_service 绑定后需要重新触发的加载
         self._pending_load_after_service_bind: bool = False
@@ -509,11 +515,14 @@ class GalleryCollectionStore:
             last = min(last, self._total_count - 1)
         self._visible_range = (first, last)
 
-        should_refresh = self._pending_scan_refresh and (
-            first == 0 or self._window_rel_intersects_pending_scan(first, last)
-        )
-        if should_refresh or self._window_needs_reload(first, last):
+        # Scrolling into rows that are not cached must reload immediately, but a
+        # scan-driven refresh is coalesced: it is triggered by background work,
+        # not by the user, so making it wait for the interval keeps the grid from
+        # resetting underneath them.
+        if self._window_needs_reload(first, last):
             self._reload_window_for_visible_range(first, last, emit_signals=True)
+        elif self._pending_scan_refresh:
+            self._maybe_flush_pending_scan_refresh()
 
     def pin_row(self, row: int) -> None:
         if row < 0 or row >= self._total_count:
@@ -590,7 +599,7 @@ class GalleryCollectionStore:
 
         visible_first, visible_last = self._visible_range
         if visible_first == 0 or self._pending_scan_affects_visible_window(visible_first, visible_last):
-            self._flush_pending_scan_refresh()
+            self._maybe_flush_pending_scan_refresh()
 
     def handle_scan_finished(self, root: Path, success: bool) -> None:
         if not success:
@@ -607,33 +616,53 @@ class GalleryCollectionStore:
             return
         self._pending_scan_refresh = True
         if self._visible_range is not None:
-            first, last = self._visible_range
-            self._reload_window_for_visible_range(first, last, emit_signals=True)
+            # Final refresh of a scan: force it so no change stays pending.
+            self._maybe_flush_pending_scan_refresh(force=True)
         else:
             # Gallery was empty — try loading now that scan data exists.
             self._load_initial_window()
 
-    def _flush_pending_scan_refresh(self) -> None:
+    def _clear_pending_scan_refresh(self) -> None:
+        self._pending_scan_refresh = False
+        self._pending_scan_rels.clear()
+        self._pending_scan_sort_keys.clear()
+
+    def _maybe_flush_pending_scan_refresh(self, *, force: bool = False) -> None:
+        """Apply accumulated scan changes to the visible window, at most once per interval.
+
+        Two things used to make this run away. The pending flag was never cleared
+        after a reload, so it stayed true for the rest of the session and every
+        ``prioritize_rows`` call — which fires on each repaint — reloaded again;
+        a completed scan therefore kept the gallery resetting indefinitely. And
+        each scan chunk reloaded immediately, so a busy scan reset the model
+        dozens of times per second.
+
+        Consuming the flag bounds reloads to actual new data, and the interval
+        keeps a rapid chunk stream from resetting the grid on every chunk. The
+        final refresh after a scan uses ``force=True`` so nothing is left pending.
+        """
+
         if not self._pending_scan_refresh:
             return
+        if not force:
+            if time.monotonic() - self._last_scan_refresh_at < self.SCAN_REFRESH_MIN_INTERVAL_S:
+                return
         # ⭐ 如果查询为空但有活动根目录，创建默认查询
         if self._current_query is None and self._active_root is not None and self._asset_query_service is not None:
             from iPhoto.domain.models.query import AssetQuery
             self._current_query = AssetQuery()
 
         if self._current_query is None:
-            self._pending_scan_refresh = False
-            self._pending_scan_rels.clear()
-            self._pending_scan_sort_keys.clear()
+            self._clear_pending_scan_refresh()
             return
         if self._visible_range is None:
-            self._pending_scan_refresh = False
-            self._pending_scan_rels.clear()
-            self._pending_scan_sort_keys.clear()
+            self._clear_pending_scan_refresh()
             return
         first, last = self._visible_range
         if first != 0 and not self._pending_scan_affects_visible_window(first, last):
             return
+        self._last_scan_refresh_at = time.monotonic()
+        self._clear_pending_scan_refresh()
         self._reload_window_for_visible_range(first, last, emit_signals=True)
 
     def _load_initial_window(self) -> None:
@@ -811,6 +840,16 @@ class GalleryCollectionStore:
         margin = max(1, int(window_size * self.HYSTERESIS_RATIO))
         safe_first = window_first + margin
         safe_last = window_last - margin
+        # Look-behind/look-ahead margins only make sense while the window can
+        # actually grow in that direction. At the ends of the collection the
+        # margin used to stay inside the window, so a visible range touching the
+        # first row always reported "needs reload" — and each reload rebuilt the
+        # same window, reset the model, emitted visibleRowsChanged and asked
+        # again. Clamp the safe range to the real dataset bounds.
+        if window_first <= 0:
+            safe_first = 0
+        if self._total_count > 0 and window_last >= self._total_count - 1:
+            safe_last = self._total_count - 1
         if first < safe_first or last > safe_last:
             return True
 
