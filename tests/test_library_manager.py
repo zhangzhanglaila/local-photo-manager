@@ -48,16 +48,24 @@ def test_bind_and_scan_tree(tmp_path: Path, qapp: QApplication) -> None:
     child = album / "Day1"
     child.mkdir(parents=True)
     _write_manifest(album, "Summer Trip")
+    _write_manifest(child, "Day One")
     manager.bind_path(root)
     qapp.processEvents()
     assert spy.count() >= 1
+    # The sidebar shows each bound library as the top-level node, its albums one
+    # level below and one level of sub-albums below those.
     albums = manager.list_albums()
     assert len(albums) == 1
-    assert albums[0].title == "Summer Trip"
-    children = manager.list_children(albums[0])
-    assert len(children) == 1
-    assert children[0].level == 2
-    assert children[0].title == "Day1"
+    assert albums[0].path == root
+    assert albums[0].level == 1
+    trips = manager.list_children(albums[0])
+    assert [node.path for node in trips] == [album]
+    assert trips[0].title == "Summer Trip"
+    assert trips[0].level == 2
+    days = manager.list_children(trips[0])
+    assert [node.path for node in days] == [child]
+    assert days[0].title == "Day One"
+    assert days[0].level == 3
 
 
 def test_bind_path_relays_people_snapshot_events(tmp_path: Path, qapp: QApplication) -> None:
@@ -73,7 +81,9 @@ def test_bind_path_relays_people_snapshot_events(tmp_path: Path, qapp: QApplicat
 
     event = object()
     coordinator.snapshotCommitted.emit(event)
-    qapp.processEvents()
+    # The runtime debounces People updates (2 s while idle) before relaying them,
+    # so the signal arrives asynchronously instead of on the next event-loop turn.
+    assert snapshot_spy.wait(5000), "the snapshot should be relayed after the debounce"
 
     assert snapshot_spy.count() == 1
     assert snapshot_spy.at(0)[0] is event
@@ -100,7 +110,9 @@ def test_bind_path_rebinds_people_snapshot_events_for_prebound_session(
 
     event = object()
     coordinator.snapshotCommitted.emit(event)
-    qapp.processEvents()
+    # The runtime debounces People updates (2 s while idle) before relaying them,
+    # so the signal arrives asynchronously instead of on the next event-loop turn.
+    assert snapshot_spy.wait(5000), "the snapshot should be relayed after the debounce"
 
     assert snapshot_spy.count() == 1
     assert snapshot_spy.at(0)[0] is event
@@ -127,7 +139,9 @@ def test_bind_path_from_session_rebinds_people_snapshot_events(
 
     event = object()
     coordinator.snapshotCommitted.emit(event)
-    qapp.processEvents()
+    # The runtime debounces People updates (2 s while idle) before relaying them,
+    # so the signal arrives asynchronously instead of on the next event-loop turn.
+    assert snapshot_spy.wait(5000), "the snapshot should be relayed after the debounce"
 
     assert snapshot_spy.count() == 1
     assert snapshot_spy.at(0)[0] is event
@@ -159,10 +173,11 @@ def test_create_and_rename_album(tmp_path: Path, qapp: QApplication) -> None:
     manager = LibraryRuntimeController()
     manager.bind_path(root)
     created = manager.create_album("Paris")
-    assert created.level == 1
+    # Levels follow the sidebar tree: bound library (1) -> album (2) -> sub-album (3).
+    assert created.level == 2
     assert (created.path / ".iphoto.album.json").exists()
     sub = manager.create_subalbum(created, "Day0")
-    assert sub.level == 2
+    assert sub.level == 3
     with pytest.raises(AlbumDepthError):
         manager.create_subalbum(sub, "TooDeep")
     rename_spy = QSignalSpy(manager.albumRenamed)
@@ -173,8 +188,9 @@ def test_create_and_rename_album(tmp_path: Path, qapp: QApplication) -> None:
     stop_scanning.assert_called_once_with()
     assert rename_spy.count() == 1
     assert rename_spy.at(0) == [old_sub_path, created.path / "Arrival"]
+    library_node = next(node for node in manager.list_albums() if node.path == root)
     refreshed_parent = next(
-        node for node in manager.list_albums() if node.path == created.path
+        node for node in manager.list_children(library_node) if node.path == created.path
     )
     refreshed_children = manager.list_children(refreshed_parent)
     assert any(child.title == "Arrival" for child in refreshed_children)
@@ -210,7 +226,8 @@ def test_reserved_album_names_are_rejected_for_create_and_rename(
 
     qapp.processEvents()
 
-    albums = manager.list_albums()
+    library_node = next(node for node in manager.list_albums() if node.path == root)
+    albums = manager.list_children(library_node)
     assert any(node.path == created.path and node.title == "Trips" for node in albums)
     refreshed_parent = next(node for node in albums if node.path == created.path)
     refreshed_children = manager.list_children(refreshed_parent)
@@ -234,7 +251,8 @@ def test_work_dir_case_variants_are_hidden_from_album_tree(
     manager.bind_path(root)
     qapp.processEvents()
 
-    albums = manager.list_albums()
+    library_node = next(node for node in manager.list_albums() if node.path == root)
+    albums = manager.list_children(library_node)
     assert [node.title for node in albums] == ["Trips"]
 
 
@@ -244,7 +262,8 @@ def test_ensure_manifest_generates_defaults(tmp_path: Path) -> None:
     album_dir.mkdir(parents=True)
     manager = LibraryRuntimeController()
     manager.bind_path(root)
-    node = next(node for node in manager.list_albums() if node.path == album_dir)
+    library_node = next(node for node in manager.list_albums() if node.path == root)
+    node = next(node for node in manager.list_children(library_node) if node.path == album_dir)
     manifest_path = manager.ensure_manifest(node)
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert data["title"] == "NoManifest"

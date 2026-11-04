@@ -667,6 +667,16 @@ class LibraryRuntimeController(
             child_nodes = [self._build_node(child, level=2) for child in self._iter_album_dirs(lib_root)]
             for child in child_nodes:
                 new_nodes[child.path] = child
+                # Sub-albums are one level deeper; without building them the tree
+                # stopped at albums and sub-albums were invisible in the sidebar
+                # even though they exist on disk.
+                sub_nodes = [
+                    self._build_node(sub, level=3)
+                    for sub in self._iter_album_dirs(child.path)
+                ]
+                for sub in sub_nodes:
+                    new_nodes[sub.path] = sub
+                children[child.path] = sub_nodes
             children[lib_root] = child_nodes
 
         refreshed_albums = sorted(albums, key=lambda item: item.title.casefold())

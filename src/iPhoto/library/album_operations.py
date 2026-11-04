@@ -48,8 +48,12 @@ class AlbumOperationsMixin:
         return self._node_for_path(target)
 
     def create_subalbum(self, parent: AlbumNode, name: str) -> AlbumNode:
-        if parent.level != 1:
-            raise AlbumDepthError("Sub-albums can only be created under top-level albums.")
+        # Levels follow the tree the sidebar shows: a bound library is level 1,
+        # its albums are level 2 and one level of sub-albums is allowed below
+        # them. The guard used to compare against level 1, which every album now
+        # exceeds, so creating a sub-album always raised.
+        if parent.level != 2:
+            raise AlbumDepthError("Sub-albums can only be created under albums.")
         root = self._require_root()
         if not parent.path.is_relative_to(root):
             parent_path = parent.path.resolve()
@@ -57,7 +61,7 @@ class AlbumOperationsMixin:
                 raise AlbumOperationError("Parent album is outside the library root.")
         target = self._validate_new_name(parent.path, name)
         target.mkdir(parents=False, exist_ok=False)
-        node = AlbumNode(target, 2, target.name, False)
+        node = AlbumNode(target, parent.level + 1, target.name, False)
         self.ensure_manifest(node)
         self._refresh_tree()
         return self._node_for_path(target)
