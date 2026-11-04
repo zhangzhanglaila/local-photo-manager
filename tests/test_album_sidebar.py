@@ -375,3 +375,45 @@ def test_sidebar_pinned_item_context_menu_can_rename(tmp_path: Path, qapp: QAppl
     refreshed_index = sidebar.tree_model().index_for_pinned_item(renamed)
     assert refreshed_index.isValid()
     assert sidebar.tree_model().data(refreshed_index) == "VIP Alice"
+
+
+def test_tree_refresh_does_not_renavigate_to_restored_selection(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    """A model rebuild must restore the highlight without re-navigating.
+
+    Scans emit ``treeUpdated`` continuously, and each coalesced rebuild of the
+    sidebar model restores the current selection. When the restore re-emitted
+    the navigation signal, every scan tick pulled the user back to the restored
+    node — for example from the map's cluster gallery back to All Photos, about
+    a second after they clicked a place.
+    """
+
+    root = tmp_path / "Library"
+    root.mkdir()
+    manager = LibraryRuntimeController()
+    manager.bind_path(root)
+    qapp.processEvents()
+
+    sidebar = AlbumSidebar(manager)
+    qapp.processEvents()
+
+    emitted: list[str] = []
+    sidebar.allPhotosSelected.connect(lambda: emitted.append("All Photos"))
+    sidebar.staticNodeSelected.connect(lambda title: emitted.append(title))
+    sidebar.albumSelected.connect(lambda path: emitted.append(str(path)))
+
+    # Startup selects All Photos without navigating; the gallery view is opened
+    # explicitly afterwards.
+    sidebar.select_all_photos(emit_signal=False)
+    qapp.processEvents()
+    emitted.clear()
+
+    sidebar.refresh_tree_model()
+    for _ in range(5):
+        qapp.processEvents()
+
+    assert emitted == [], (
+        "refreshing the sidebar model must not emit a navigation signal for the "
+        f"selection it just restored (got {emitted!r})"
+    )

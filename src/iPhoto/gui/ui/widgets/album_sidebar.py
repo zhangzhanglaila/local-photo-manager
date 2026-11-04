@@ -419,7 +419,12 @@ class AlbumSidebar(QWidget):
         elif self._current_selection is not None:
             self.select_path(self._current_selection)
         elif self._current_static_selection:
-            self.select_static_node(self._current_static_selection, emit_signal=True)
+            # Restoring the highlight after a model rebuild must stay a purely
+            # visual operation. The rebuild is triggered by background work such
+            # as scan progress, so emitting a navigation signal here yanked the
+            # user back to the restored node roughly once per scan tick — e.g.
+            # out of the map's cluster gallery and back to All Photos.
+            self.select_static_node(self._current_static_selection)
 
     def _update_title(self) -> None:
         root = self._library.root()
