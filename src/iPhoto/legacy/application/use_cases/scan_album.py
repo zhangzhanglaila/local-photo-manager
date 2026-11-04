@@ -15,6 +15,7 @@ from iPhoto.events.bus import EventBus, Event
 from iPhoto.application.interfaces import IMetadataProvider, IThumbnailGenerator
 from iPhoto.config import ALL_WORK_DIR_NAMES, EXPORT_DIR_NAME, DEFAULT_INCLUDE, DEFAULT_EXCLUDE
 from iPhoto.utils.pathutils import should_include
+from iPhoto.utils.timeutils import to_epoch_microseconds
 
 @dataclass(kw_only=True)
 class AlbumScannedEvent(Event):
@@ -134,7 +135,7 @@ class ScanAlbumUseCase:
                 # If existing and modified time/size matches, skip full process
                 if existing:
                     # Tolerance 1 sec
-                    existing_ts = int(existing.created_at.timestamp() * 1_000_000) if existing.created_at else 0
+                    existing_ts = to_epoch_microseconds(existing.created_at)
                     current_ts = int(stat.st_mtime * 1_000_000)
 
                     if existing.size_bytes == stat.st_size and abs(existing_ts - current_ts) <= 1_000_000:

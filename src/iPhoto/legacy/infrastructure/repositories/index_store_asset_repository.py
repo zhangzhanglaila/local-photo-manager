@@ -14,6 +14,7 @@ from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.domain.models import Asset, MediaType
 from iPhoto.domain.models.query import AssetQuery, SortOrder
 from iPhoto.legacy.domain.repositories import IAssetRepository
+from iPhoto.utils.timeutils import to_epoch_microseconds
 
 
 class IndexStoreAssetRepositoryAdapter(IAssetRepository):
@@ -269,7 +270,7 @@ class IndexStoreAssetRepositoryAdapter(IAssetRepository):
             row["album_id"] = asset.album_id
         if created_at:
             row["dt"] = created_at.isoformat()
-            row["ts"] = int(created_at.timestamp() * 1_000_000)
+            row["ts"] = to_epoch_microseconds(created_at)
         if asset.width is not None:
             row["w"] = asset.width
         if asset.height is not None:

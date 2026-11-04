@@ -19,6 +19,7 @@ import json
 import sqlite3
 import threading
 import unicodedata
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
@@ -163,9 +164,13 @@ class AssetRepository:
     def _init_db(self) -> None:
         """Initialize the database schema."""
         try:
-            # Use a transient connection for initialization
-            with sqlite3.connect(self.path, timeout=10.0) as conn:
-                SchemaMigrator.initialize_schema(conn)
+            # ``with sqlite3.connect(...)`` commits but never closes the handle,
+            # so every initialisation leaked a connection and kept the database
+            # file locked (Windows then refused to replace or delete it with
+            # WinError 32).
+            with closing(sqlite3.connect(self.path, timeout=10.0)) as conn:
+                with conn:
+                    SchemaMigrator.initialize_schema(conn)
         except sqlite3.DatabaseError as exc:
             logger.warning("Detected index.db corruption at %s: %s", self.path, exc)
             recovery = RecoveryService(

@@ -11,6 +11,7 @@ from iPhoto.utils.exiftool import get_metadata_batch
 from iPhoto.io.metadata import read_image_meta_with_exiftool, read_video_meta
 from iPhoto.people import initial_face_status
 from iPhoto.utils.hashutils import compute_file_id
+from iPhoto.utils.timeutils import to_epoch_microseconds
 from iPhoto.domain.models import MediaType
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ class ExifToolMetadataProvider(IMetadataProvider):
             try:
                 dt_str = processed_meta["dt"].replace("Z", "+00:00")
                 dt_obj = datetime.fromisoformat(dt_str)
-                row["ts"] = int(dt_obj.timestamp() * 1_000_000)
+                row["ts"] = to_epoch_microseconds(dt_obj)
             except (ValueError, TypeError):
                 pass
 

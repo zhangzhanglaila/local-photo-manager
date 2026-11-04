@@ -225,6 +225,19 @@ def sync_live_roles_to_db(
         repository.update_still_image_times(still_time_updates)
 
 
+def _paths_match(first: Path, second: Path) -> bool:
+    """Return True when both paths point at the same directory.
+
+    ``Path`` comparisons are case-insensitive on Windows, which matters because
+    the saved library path and the scanned root can differ in casing.
+    """
+
+    try:
+        return first.resolve() == second.resolve()
+    except OSError:
+        return first == second
+
+
 def _rel_matches_root_prefix(row: dict, root_prefix: str, root_prefix_slash: str) -> bool:
     """Return True if *row*'s rel path falls under the given root prefix."""
     rel = normalise_rel_key(row.get("rel"))
@@ -251,6 +264,11 @@ def prune_index_scope(
     """
 
     album_path = compute_album_path(root, library_root)
+    # ``compute_album_path`` returns None both for "outside the library" and for
+    # "the library root itself". Pruning those two the same way was wrong: the
+    # library root stores relative ``rel`` paths, so the absolute-prefix filter
+    # below matched nothing and a rescan removed no stale rows at all.
+    is_library_root = library_root is not None and _paths_match(root, library_root)
 
     fresh_rels = {
         rel_key
@@ -268,6 +286,10 @@ def prune_index_scope(
             sort_by_date=False,
             filter_hidden=False,
         )
+    elif is_library_root:
+        # Everything in the index belongs to the library root, and the rows use
+        # library-relative ``rel`` paths.
+        scoped_rows = repository.read_all(sort_by_date=False, filter_hidden=False)
     else:
         # Non-primary root outside the library root.  Its rows are stored with
         # absolute ``rel`` paths (e.g. ``D:/Huawei/photo.jpg``).  We must scope

@@ -490,7 +490,18 @@ class ScanCoordinatorMixin:
         self.faceScanStatusChanged.emit(msg)
 
     def _on_face_scan_finished(self) -> None:
+        worker = self._current_face_scanner
         self._current_face_scanner = None
+        if worker is not None:
+            # ``finished`` is delivered on the GUI thread while the worker object
+            # may still be tearing down. Dropping the last reference then let Qt
+            # destroy a running QThread, which aborts the process with
+            # "QThread: Destroyed while thread is still running". Waiting here is
+            # immediate (``run`` has returned) and makes the hand-off safe.
+            try:
+                worker.wait()
+            except RuntimeError:
+                pass
         self.faceScanStatusChanged.emit("Face scan complete.")
 
     # ------------------------------------------------------------------
