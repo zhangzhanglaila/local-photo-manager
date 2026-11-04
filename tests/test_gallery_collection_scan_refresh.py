@@ -127,32 +127,45 @@ def test_scan_chunks_do_not_reload_faster_than_the_coalescing_interval(
     )
 
 
-def test_window_edges_respect_collection_bounds(tmp_path: Path) -> None:
-    """Boundary windows must not report a permanent reload need.
+def test_window_reload_is_not_requested_without_slack(tmp_path: Path) -> None:
+    """A fully-loaded visible range must not ask for another reload.
 
-    Regression: the look-behind/look-ahead margin stayed inside the cached
-    window, so ``first < safe_first`` was true for every visible range starting
-    at row 0 — the default scroll position. Each reload rebuilt the same window,
-    reset the model, and asked the question again.
+    Windows are loaded for exactly the requested range, so the cached window
+    normally equals the visible range and offers no look-ahead/look-behind slack.
+    The keep-zone margin used to be applied unconditionally, which made every
+    check report "needs reload": the reload rebuilt the same window, resetting
+    the model, whose visible-rows change asked again — a busy loop that pinned
+    the CPU and froze the UI.
     """
 
     store = _store(tmp_path)
-    store._total_count = 200
-    store._window_range = (0, 149)
-    store._row_cache = {row: object() for row in range(150)}  # type: ignore[assignment]
 
-    # Top of the collection: nothing can be loaded above row 0.
+    # Top of the collection, window == visible range: nothing to reload.
+    store._total_count = 200
+    store._window_range = (0, 49)
+    store._row_cache = {row: object() for row in range(50)}  # type: ignore[assignment]
     assert store._window_needs_reload(0, 49) is False
 
-    # Inside the collection the hysteresis still applies: a window whose left
-    # edge sits at the visible edge must be reloaded to keep look-behind.
+    # Middle of the collection, window == visible range: still nothing to reload.
     store._total_count = 600
-    store._window_range = (100, 249)
-    store._row_cache = {row: object() for row in range(100, 250)}  # type: ignore[assignment]
-    assert store._window_needs_reload(100, 149) is True
-    assert store._window_needs_reload(150, 199) is False
+    store._window_range = (200, 249)
+    store._row_cache = {row: object() for row in range(200, 250)}  # type: ignore[assignment]
+    assert store._window_needs_reload(200, 249) is False
 
-    # Bottom of the collection: nothing can be loaded below the last row.
-    store._window_range = (450, 599)
-    store._row_cache = {row: object() for row in range(450, 600)}  # type: ignore[assignment]
-    assert store._window_needs_reload(550, 599) is False
+    # Bottom of the collection, window == visible range: nothing to reload.
+    store._window_range = (450, 499)
+    store._row_cache = {row: object() for row in range(450, 500)}  # type: ignore[assignment]
+    assert store._window_needs_reload(450, 499) is False
+
+    # Moving outside the cached window still requires a reload.
+    assert store._window_needs_reload(480, 529) is True
+
+    # A row missing from the cache still requires a reload.
+    store._window_range = (200, 249)
+    store._row_cache = {row: object() for row in range(200, 250) if row != 210}  # type: ignore[assignment]
+    assert store._window_needs_reload(200, 249) is True
+
+    # The keep-zone still works where the window really does have slack.
+    store._window_range = (100, 349)
+    store._row_cache = {row: object() for row in range(100, 350)}  # type: ignore[assignment]
+    assert store._window_needs_reload(110, 160) is True

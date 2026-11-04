@@ -598,7 +598,7 @@ class GalleryCollectionStore:
             return
 
         visible_first, visible_last = self._visible_range
-        if visible_first == 0 or self._pending_scan_affects_visible_window(visible_first, visible_last):
+        if self._scan_chunk_affects_visible_window(visible_first, visible_last):
             self._maybe_flush_pending_scan_refresh()
 
     def handle_scan_finished(self, root: Path, success: bool) -> None:
@@ -659,7 +659,7 @@ class GalleryCollectionStore:
             self._clear_pending_scan_refresh()
             return
         first, last = self._visible_range
-        if first != 0 and not self._pending_scan_affects_visible_window(first, last):
+        if not self._scan_chunk_affects_visible_window(first, last):
             return
         self._last_scan_refresh_at = time.monotonic()
         self._clear_pending_scan_refresh()
@@ -838,19 +838,21 @@ class GalleryCollectionStore:
 
         window_size = max(1, window_last - window_first + 1)
         margin = max(1, int(window_size * self.HYSTERESIS_RATIO))
-        safe_first = window_first + margin
-        safe_last = window_last - margin
-        # Look-behind/look-ahead margins only make sense while the window can
-        # actually grow in that direction. At the ends of the collection the
-        # margin used to stay inside the window, so a visible range touching the
-        # first row always reported "needs reload" — and each reload rebuilt the
-        # same window, reset the model, emitted visibleRowsChanged and asked
-        # again. Clamp the safe range to the real dataset bounds.
-        if window_first <= 0:
-            safe_first = 0
-        if self._total_count > 0 and window_last >= self._total_count - 1:
-            safe_last = self._total_count - 1
-        if first < safe_first or last > safe_last:
+        # The keep-zone margin only makes sense when the cached window actually
+        # extends past the visible range, i.e. when there is slack to consume.
+        # Windows are loaded for exactly the requested range, so slack is
+        # normally zero: requiring it unconditionally made every call report
+        # "needs reload", each reload rebuilt the same window, reset the model,
+        # and the reset's visible-rows change asked again — a busy loop that
+        # pinned the CPU.
+        if window_first > 0 and first > window_first and first - window_first <= margin:
+            return True
+        if (
+            self._total_count > 0
+            and window_last < self._total_count - 1
+            and last < window_last
+            and window_last - last <= margin
+        ):
             return True
 
         for row in range(first, last + 1):
@@ -980,6 +982,25 @@ class GalleryCollectionStore:
 
     def _pending_scan_affects_visible_window(self, first: int, last: int) -> bool:
         return self._window_rel_intersects_pending_scan(first, last) or self._scan_sort_keys_affect_visible_window(first, last)
+
+    def _scan_chunk_affects_visible_window(self, first: int, last: int) -> bool:
+        """Return whether newly scanned rows can change what is on screen.
+
+        Reloading the window resets the gallery model, which is expensive and was
+        also observed to crash the view when it happened repeatedly while a
+        preview was open. So a scan chunk should only cost a reload when it can
+        actually change the visible rows: it re-scanned one of them, it sorts
+        into their range, or the window is still filling (first scan) and the
+        incoming rows may fill the gaps.
+        """
+
+        if self._pending_scan_affects_visible_window(first, last):
+            return True
+        for row in range(first, last + 1):
+            if row not in self._row_cache:
+                # The window is still incomplete, e.g. the very first scan.
+                return True
+        return False
 
     def _window_rel_intersects_pending_scan(self, first: int, last: int) -> bool:
         if not self._pending_scan_rels:
