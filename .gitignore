@@ -241,3 +241,9 @@ __marimo__/
 
 # ExifTool (contains developer-specific paths; users should install ExifTool themselves)
 exiftool.bat
+
+# Local editor/agent tool state (machine-specific, never shared)
+/.claude/settings.local.json
+
+# Photo-library workspace created when this checkout is itself opened as a library
+/.iPhoto/
