@@ -9,6 +9,9 @@ def test_corrupted_file_rebuilt(tmp_path: Path) -> None:
     # Create a valid database first
     store = IndexStore(tmp_path)
     store.write_rows([{"rel": "a.jpg", "is_favorite": 1}])
+    # Windows refuses to delete files that still have an open handle, and the
+    # store keeps its SQLite (WAL) connection alive until it is closed.
+    store.close()
 
     # Overwrite with corrupted bytes to simulate a malformed database file
     for suffix in ["", "-wal", "-shm"]:

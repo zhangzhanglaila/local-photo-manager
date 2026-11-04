@@ -329,6 +329,63 @@ def _close_leftover_widgets():
         except RuntimeError:  # already gone
             continue
     app.processEvents()
+    _stop_running_qt_threads()
+
+
+_TRACKED_THREADS: "list" = []
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _track_qt_threads():
+    """Record every ``QThread`` started during the session.
+
+    Closing widgets only covers threads owned by widgets. Controllers create bare
+    ``QThread`` workers (scanners, face scans) that outlive the object a test
+    drops, and Qt aborts the process with "QThread: Destroyed while thread is
+    still running" when that thread is collected — surfacing inside whichever
+    test happens to trigger the collection. Tracking what was started lets the
+    teardown stop exactly those threads instead of scanning the whole object
+    graph, which was far too slow.
+    """
+
+    from PySide6.QtCore import QThread
+
+    original_start = QThread.start
+
+    def tracked_start(self, *args, **kwargs):
+        _TRACKED_THREADS.append(self)
+        return original_start(self, *args, **kwargs)
+
+    QThread.start = tracked_start
+    try:
+        yield
+    finally:
+        QThread.start = original_start
+
+
+def _stop_running_qt_threads(timeout_ms: int = 2000) -> None:
+    """Ask threads started by the test that just finished to stop.
+
+    The reference is deliberately kept in ``_TRACKED_THREADS``: a ``QThread``
+    that is still running when Python collects it aborts the process, so the
+    goal here is "never destroy a live thread", not "leak nothing".
+    ``terminate()`` is never used — killing a thread that is executing Python
+    code aborts the interpreter just as hard.
+    """
+
+    for thread in _TRACKED_THREADS:
+        try:
+            if not thread.isRunning():
+                continue
+            cancel = getattr(thread, "cancel", None)
+            if callable(cancel):
+                cancel()
+            thread.quit()
+            thread.wait(timeout_ms)
+        except RuntimeError:  # C++ object already deleted
+            continue
+        except Exception:  # noqa: BLE001 - teardown must never fail a test
+            continue
 
 
 @pytest.fixture()

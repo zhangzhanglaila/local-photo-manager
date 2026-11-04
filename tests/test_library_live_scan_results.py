@@ -134,7 +134,9 @@ def test_get_live_scan_results_reads_database_snapshot_through_query_service(tmp
     child.mkdir(parents=True)
 
     manager = LibraryRuntimeController()
-    manager._root = root
+    # The controller tracks bound roots in ``_roots`` and ``root()`` returns the
+    # first of them; the old single ``_root`` attribute is gone.
+    manager._roots = [root]
     manager._live_scan_root = child
     manager._live_scan_buffer = []
     query_service = _QueryService(root, [{"rel": "Vacation/photo.jpg", "id": "1"}])
