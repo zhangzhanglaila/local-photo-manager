@@ -11,6 +11,7 @@ pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets not available", exc_
 from PySide6.QtWidgets import QApplication
 
 from iPhoto.gui.services.pinned_items_service import PinnedItemsService
+from iPhoto.i18n import tr
 from iPhoto.gui.ui.menus.album_sidebar_menu import AlbumSidebarContextMenu
 from iPhoto.gui.ui.models.album_tree_model import NodeType
 from iPhoto.gui.ui.widgets.album_sidebar import AlbumSidebar
@@ -150,7 +151,7 @@ def test_sidebar_album_context_menu_offers_pin_and_unpin(tmp_path: Path, qapp: Q
         sidebar._set_pending_selection,
         sidebar.bindLibraryRequested.emit,
     )
-    assert menu.actions()[0].text() == "Pin Album"
+    assert menu.actions()[0].text() == tr("menu.pin_album")
 
     menu.actions()[0].trigger()
     qapp.processEvents()
@@ -266,7 +267,7 @@ def test_sidebar_pinned_album_rename_updates_album_tree(
             sidebar.bindLibraryRequested.emit,
         )
         actions = [action for action in menu.actions() if not action.isSeparator()]
-        assert [action.text() for action in actions] == ["Rename Album…", "Unpin"]
+        assert [action.text() for action in actions] == [tr("menu.rename_album"), tr("menu.unpin")]
         actions[0].trigger()
 
     qapp.processEvents()
@@ -319,8 +320,8 @@ def test_sidebar_pinned_item_context_menu_offers_unpin(tmp_path: Path, qapp: QAp
         sidebar.bindLibraryRequested.emit,
     )
     assert [action.text() for action in menu.actions() if not action.isSeparator()] == [
-        "Rename…",
-        "Unpin",
+        tr("menu.rename"),
+        tr("menu.unpin"),
     ]
 
     menu.actions()[-1].trigger()

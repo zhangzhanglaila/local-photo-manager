@@ -47,12 +47,12 @@ def test_generate_cache_path_basic(tmp_path: Path) -> None:
     # Verify the path structure
     assert result.parent.parent.name == WORK_DIR_NAME
     assert result.parent.name == "thumbs"
-    assert result.suffix == ".png"
+    assert result.suffix == ".jpg"
     
     # Verify filename includes stamp and size
     filename = result.name
     assert f"{stamp}_" in filename
-    assert "512x512.png" in filename
+    assert "512x512.jpg" in filename
 
 
 def test_generate_cache_path_hash_consistency(tmp_path: Path) -> None:
@@ -87,8 +87,8 @@ def test_generate_cache_path_different_sizes(tmp_path: Path) -> None:
     
     # Different sizes should produce different filenames
     assert result_512 != result_256
-    assert "512x512.png" in result_512.name
-    assert "256x256.png" in result_256.name
+    assert "512x512.jpg" in result_512.name
+    assert "256x256.jpg" in result_256.name
 
 
 def test_thumbnail_loader_fixed_size(tmp_path: Path, qapp: QApplication) -> None:
@@ -113,7 +113,7 @@ def test_thumbnail_loader_fixed_size(tmp_path: Path, qapp: QApplication) -> None
     assert len(files) == 1
 
     # The file generated should imply 512x512 in its name
-    assert "512x512.png" in files[0].name
+    assert "512x512.jpg" in files[0].name
     assert "100x100" not in files[0].name
 
 
@@ -252,7 +252,7 @@ def test_thumbnail_loader_cache_naming(tmp_path: Path, qapp: QApplication) -> No
     filename = files[0].name
     digest = hashlib.blake2b(str(image_path.resolve()).encode("utf-8"), digest_size=20).hexdigest()
     assert filename.startswith(f"{digest}_")
-    assert filename.endswith("_512x512.png")
+    assert filename.endswith("_512x512.jpg")
 
     # Changing the modification time should produce a new cache entry and
     # remove the stale one.

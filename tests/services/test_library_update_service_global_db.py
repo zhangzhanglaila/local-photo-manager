@@ -30,6 +30,11 @@ class DummyLibrary:
     def root(self) -> Path | None:
         return self._root
 
+    def roots(self) -> list[Path]:
+        """The runtime controller exposes every bound root, not only the active one."""
+
+        return [self._root] if self._root is not None else []
+
     def is_scanning_path(self, _path: Path) -> bool:
         return self._is_scanning
 
