@@ -92,7 +92,12 @@ line-length = 100
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -p no:pytestqt --ignore=tests/ui --ignore=tests/gui"
+# ``-p no:pytest-qt`` must match the plugin's pytest11 entry-point name, which
+# is ``pytest-qt`` (hyphen). The previous ``-p no:pytestqt`` matched nothing, so
+# the plugin stayed active as soon as it was installed (the dev extras install
+# it), and its event-loop pump aborts the interpreter with
+# "Fatal Python error: Aborted" under this project's offscreen Qt platform.
+addopts = "-ra -p no:pytest-qt --ignore=tests/ui --ignore=tests/gui"
 pythonpath = ["src"]
 # Numba JIT is disabled for the suite so filter tests stay fast and repeatable.
 # This needs the `pytest-env` plugin, which is declared in the test/dev extras.
