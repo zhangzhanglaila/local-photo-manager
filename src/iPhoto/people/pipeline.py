@@ -816,22 +816,14 @@ def _face_session_options():
     face scan therefore pinned every core of the machine, and the interface
     became unresponsive for as long as the scan ran — the face scan starts on its
     own once the file scan finishes, so this happened without the user asking for
-    it. The CLIP embedder already limits itself the same way.
-
-    ``IPHOTO_FACE_THREADS`` overrides the limit for users who would rather finish
-    a scan quickly.
+    it. The shared policy in :mod:`iPhoto.ai.onnx_threads` keeps face and OCR
+    scans consistent, and ``IPHOTO_FACE_THREADS`` overrides the limit for users
+    who would rather finish a scan quickly.
     """
 
-    import onnxruntime as ort
+    from iPhoto.ai.onnx_threads import THREAD_LIMIT_ENV, bounded_session_options
 
-    options = ort.SessionOptions()
-    threads = max(1, min(FACE_THREAD_LIMIT, (os.cpu_count() or FACE_THREAD_LIMIT) // 2))
-    override = os.environ.get("IPHOTO_FACE_THREADS", "").strip()
-    if override.isdigit() and int(override) > 0:
-        threads = int(override)
-    options.intra_op_num_threads = threads
-    options.inter_op_num_threads = 1
-    return options
+    return bounded_session_options(THREAD_LIMIT_ENV)
 
 
 def _resolve_execution_providers() -> list[str]:

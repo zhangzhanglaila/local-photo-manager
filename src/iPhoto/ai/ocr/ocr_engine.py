@@ -38,6 +38,13 @@ class OCREngine:
             try:
                 from rapidocr_onnxruntime import RapidOCR
 
+                # RapidOCR builds its own onnxruntime sessions without a thread
+                # limit, which defaults to one thread per core and starved the
+                # interface while an OCR scan ran in the background.
+                from ..onnx_threads import bound_rapidocr_threads
+
+                bound_rapidocr_threads()
+
                 _LOGGER.info("Loading RapidOCR model (first use, ~10s)...")
                 self._engine = RapidOCR()
                 self._loaded = True
