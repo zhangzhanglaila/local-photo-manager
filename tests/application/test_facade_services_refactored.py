@@ -128,7 +128,7 @@ class TestServiceArchitectureIntegrity:
         import ast
         source_path = self.SRC_ROOT / "iPhoto/gui/services/album_metadata_service.py"
         
-        with open(source_path, "r") as f:
+        with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
         
         tree = ast.parse(source)
@@ -159,7 +159,7 @@ class TestServiceArchitectureIntegrity:
         import ast
         source_path = self.SRC_ROOT / "iPhoto/gui/services/asset_move_service.py"
         
-        with open(source_path, "r") as f:
+        with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
         
         tree = ast.parse(source)
@@ -190,7 +190,7 @@ class TestServiceArchitectureIntegrity:
         import ast
         source_path = self.SRC_ROOT / "iPhoto/gui/ui/controllers/header_controller.py"
         
-        with open(source_path, "r") as f:
+        with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
         
         tree = ast.parse(source)

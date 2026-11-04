@@ -174,6 +174,9 @@ def _runtime_context(root: Path) -> tuple[RuntimeContext, _FakeLibrary, _FakeAss
     context.asset_runtime = asset_runtime
     context._container = None
     context._pending_basic_library_path = root
+    # ``__new__`` bypasses the dataclass initialiser, so every field declared
+    # with ``field(init=False, default_factory=...)`` has to be set here too.
+    context._pending_extra_roots = []
     return context, library, asset_runtime
 
 
@@ -206,7 +209,16 @@ def test_resume_startup_tasks_scans_when_work_dir_exists_without_index(
     assert [request[0] for request in context.facade.scan_requests] == [library_root]
 
 
-def test_resume_startup_tasks_skips_scan_when_index_preexists(tmp_path: Path) -> None:
+def test_resume_startup_tasks_scans_for_new_files_when_index_preexists(
+    tmp_path: Path,
+) -> None:
+    """A start always scans, even with an existing index.
+
+    The scan is incremental, so running it is what catches files added while the
+    app was closed; skipping it whenever an index existed would silently miss
+    them. This test previously encoded the older "skip when index exists" policy.
+    """
+
     library_root = tmp_path / "library"
     work_dir = library_root / ".iPhoto"
     work_dir.mkdir(parents=True)
@@ -229,7 +241,9 @@ def test_resume_startup_tasks_skips_scan_when_index_preexists(tmp_path: Path) ->
     assert library.bound_map_runtimes[-1] is not None
     assert library.bound_map_interaction_services[-1] is not None
     assert library.bound_location_services[-1] is not None
-    assert context.facade.scan_requests == []
+    # Every start scans for new files: the scan is incremental, so skipping it
+    # whenever an index exists would miss files added while the app was closed.
+    assert [request[0] for request in context.facade.scan_requests] == [library_root]
 
 
 def test_close_library_unbinds_map_interaction_service(tmp_path: Path) -> None:
