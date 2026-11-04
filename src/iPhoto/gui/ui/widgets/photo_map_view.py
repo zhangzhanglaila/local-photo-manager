@@ -64,6 +64,38 @@ _ONLINE_MAP_SOURCE_MODES = {
     _MAP_SOURCE_OSM,
 }
 
+# Share of the most extreme longitudes/latitudes ignored when fitting the map.
+_FIT_TRIM_RATIO = 0.02
+_FIT_TRIM_MIN_POINTS = 20
+
+
+def _robust_fit_points(
+    points: list[tuple[float, float]],
+    *,
+    trim_ratio: float = _FIT_TRIM_RATIO,
+) -> list[tuple[float, float]]:
+    """Return corner points of a bounding box that ignores far outliers.
+
+    A handful of photos shot far from the rest (a trip, an imported asset, a
+    mis-set camera location) otherwise dominate the min/max bounds. The fit then
+    zooms out to the whole region and the library's real photo cluster ends up
+    squeezed into a corner, which reads as "no photos on the map".
+    """
+
+    if len(points) < _FIT_TRIM_MIN_POINTS:
+        return points
+    lons = sorted(point[0] for point in points)
+    lats = sorted(point[1] for point in points)
+    offset = int(len(points) * trim_ratio)
+    if offset <= 0:
+        return points
+    last = len(points) - 1 - offset
+    min_lon, max_lon = lons[offset], lons[last]
+    min_lat, max_lat = lats[offset], lats[last]
+    if min_lon >= max_lon or min_lat >= max_lat:
+        return points
+    return [(min_lon, min_lat), (max_lon, max_lat)]
+
 
 def _configure_opaque_map_container(
     widget: QWidget,
@@ -650,6 +682,9 @@ class PhotoMapView(QWidget):
             return
         self._sync_marker_overlay()
         self._marker_controller.handle_resize()
+        # A resize may be the first moment the map has a usable viewport, which
+        # is what the one-shot auto-fit is waiting for.
+        self._maybe_fit_online_map_to_assets(self._assets)
 
     def hideEvent(self, event) -> None:  # type: ignore[override]
         """Ensure the custom tooltip is dismissed when the view is hidden."""
@@ -677,6 +712,8 @@ class PhotoMapView(QWidget):
             QEvent.Type.LayoutRequest,
         }:
             self._sync_marker_overlay()
+            if event.type() in {QEvent.Type.Resize, QEvent.Type.Show}:
+                self._maybe_fit_online_map_to_assets(self._assets)
         if watched is self._map_event_target:
             if event.type() == QEvent.Type.MouseMove:
                 mouse_event = cast(QMouseEvent, event)
@@ -831,6 +868,12 @@ class PhotoMapView(QWidget):
         fit_bounds = getattr(self._map_widget, "fit_lonlat_bounds", None)
         if not callable(fit_bounds):
             return
+        # Fitting against a not-yet-laid-out widget measures a 1x1 viewport and
+        # computes a meaningless zoom, so leave the work for the resize that
+        # follows instead of burning the one-shot flag here.
+        widget = self._map_widget
+        if widget is None or widget.width() < 64 or widget.height() < 64:
+            return
 
         points = [
             (asset.longitude, asset.latitude)
@@ -839,7 +882,7 @@ class PhotoMapView(QWidget):
         ]
         if not points:
             return
-        fit_bounds(points)
+        fit_bounds(_robust_fit_points(points))
         self._online_map_has_auto_fitted = True
 
     def _build_map_widget(self) -> None:

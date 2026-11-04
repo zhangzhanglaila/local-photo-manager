@@ -1444,3 +1444,26 @@ def test_photo_map_view_uses_runtime_preferred_gaode_source(
         assert captured_sources[0].kind == "gaode_standard"
     finally:
         view.close()
+
+
+def test_robust_fit_points_ignores_far_outliers() -> None:
+    """A few distant photos must not stretch the auto-fit over the whole region."""
+
+    # 100 photos clustered near Wuhan plus one imported asset shot far away.
+    points = [(114.2 + index * 0.001, 30.4 + index * 0.001) for index in range(100)]
+    points.append((126.635, 45.785))
+
+    (min_lon, min_lat), (max_lon, max_lat) = photo_map_view_module._robust_fit_points(points)
+
+    assert min_lon <= 114.3
+    assert min_lat <= 30.5
+    assert max_lon < 120.0, "outlier longitude must not define the fit bounds"
+    assert max_lat < 35.0, "outlier latitude must not define the fit bounds"
+
+
+def test_robust_fit_points_returns_small_inputs_unchanged() -> None:
+    """Trimming needs enough samples to be meaningful."""
+
+    points = [(114.2, 30.4), (114.3, 30.5), (114.25, 30.45)]
+
+    assert photo_map_view_module._robust_fit_points(points) == points
