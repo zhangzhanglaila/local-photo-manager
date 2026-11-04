@@ -82,6 +82,10 @@ class GalleryGridView(AssetGrid):
         self._query_loading = False
         # Context-aware empty message set by coordinator / view-model
         self._empty_mode: str | None = None
+        # While the window-level StartupOverlay is on screen it already reports
+        # startup/scan progress, so this view must not draw a second placeholder
+        # on top of the same empty grid.
+        self._startup_overlay_active = False
 
         # Debounce empty-state updates so rapid model changes during scanning
         # don't cause constant show/hide repaints.
@@ -395,6 +399,24 @@ class GalleryGridView(AssetGrid):
         self._empty_state_timer.stop()
         self._do_update_empty_state()
 
+    def set_startup_overlay_active(self, active: bool) -> None:
+        """Tell the grid that the window-level startup overlay is in charge.
+
+        While it is, every grid placeholder stays hidden so the user never sees
+        a second "准备中..." / "正在扫描照片…" box next to the overlay's own
+        message and progress bar.
+        """
+
+        self._startup_overlay_active = bool(active)
+        if self._startup_overlay_active:
+            if self._loading_label is not None:
+                self._loading_label.hide()
+            if self._scanning_label is not None:
+                self._scanning_label.hide()
+            if self._empty_label is not None:
+                self._empty_label.hide()
+        self._do_update_empty_state()
+
     def dismiss_loading_state(self) -> None:
         """强制清除所有加载/扫描状态，确保照片可见。
 
@@ -439,6 +461,15 @@ class GalleryGridView(AssetGrid):
             is_empty, self._query_loading, self._scan_completed, self._is_scanning,
         )
 
+        # The window-level startup overlay owns this phase. Drawing the grid's
+        # own placeholder here produced two competing progress boxes ("正在打开
+        # 图库…" next to "准备中...").
+        if self._startup_overlay_active:
+            self._empty_label.hide()
+            self._loading_label.hide()
+            self._scanning_label.hide()
+            return
+
         # 优先级：正在扫描 > 正在加载查询 > 空状态
         if is_empty and self._is_scanning:
             # 正在扫描 - 显示扫描中提示
@@ -451,11 +482,11 @@ class GalleryGridView(AssetGrid):
             self._loading_label.show()
             self._scanning_label.hide()
         elif is_empty and not self._scan_completed:
-            # 扫描未完成，但不在扫描中 - 显示提示
+            # 启动扫描尚未完成：由启动遮罩负责反馈，这里保持空白，
+            # 否则会在遮罩旁边再叠一个"准备中..."。
             self._empty_label.hide()
             self._loading_label.hide()
-            self._scanning_label.setText("准备中...")
-            self._scanning_label.show()
+            self._scanning_label.hide()
         else:
             # 正常状态或扫描完成
             self._loading_label.hide()

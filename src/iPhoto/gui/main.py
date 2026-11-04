@@ -369,8 +369,21 @@ def main(argv: list[str] | None = None) -> int:
     from iPhoto.gui.ui.widgets.startup_overlay import StartupOverlay
     overlay = StartupOverlay(window.ui.window_shell)
 
+    def _set_startup_placeholder(active: bool) -> None:
+        """Let the overlay, or the gallery, own the startup feedback.
+
+        Both used to render at once, so the window showed "正在打开图库…" and a
+        separate "准备中..." box beside it.
+        """
+
+        view = getattr(getattr(window.ui, "gallery_page", None), "grid_view", None)
+        setter = getattr(view, "set_startup_overlay_active", None)
+        if callable(setter):
+            setter(active)
+
     # Coordinator needs Window, Context, and Container
     overlay.show_overlay()
+    _set_startup_placeholder(True)
     window.show()
 
     # Break the heavy startup into multiple event-loop steps so the overlay
@@ -624,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
                 # 没有绑定图库，显示友好提示
                 _logger.info("startup step 5: no library bound, showing empty state")
                 # 设置空状态提示
+                _set_startup_placeholder(False)
                 grid_view = getattr(window.ui.gallery_page, "grid_view", None)
                 if grid_view and hasattr(grid_view, "set_empty_mode"):
                     grid_view.set_empty_mode("no_library")
@@ -667,6 +681,7 @@ def main(argv: list[str] | None = None) -> int:
             # 显式调用 dismiss_loading_state 立即清除这些图层。
             gallery_page = getattr(window.ui, "gallery_page", None)
             if gallery_page:
+                _set_startup_placeholder(False)
                 grid_view = getattr(gallery_page, "grid_view", None)
                 if grid_view and hasattr(grid_view, "dismiss_loading_state"):
                     grid_view.dismiss_loading_state()
