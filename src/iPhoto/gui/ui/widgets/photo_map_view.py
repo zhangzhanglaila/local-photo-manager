@@ -577,10 +577,18 @@ class PhotoMapView(QWidget):
             self.clusterActivated.emit(list(activation.assets))
 
     def map_widget(self) -> MapWidgetBase:
-        """Expose the underlying map widget for integration tests."""
+        """Expose the underlying map widget for integration tests.
+
+        Builds the widget on first access, like :meth:`activate_map` does. The
+        lazy build exists so the map never blocks startup; requiring callers to
+        remember a separate activation step on top of that only made the accessor
+        order-dependent.
+        """
 
         if not self._map_widget_built:
-            raise RuntimeError("Map widget not yet initialized. Call activate_map() first.")
+            self._ensure_map_widget()
+        if not self._map_widget_built:
+            raise RuntimeError("Map widget could not be initialized.")
         return self._map_widget
 
     def set_map_runtime(self, map_runtime: MapRuntimePort | None) -> None:
