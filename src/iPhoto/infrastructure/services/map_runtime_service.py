@@ -77,13 +77,26 @@ class SessionMapRuntimeService(MapRuntimePort):
         # ``probe_native_widget_runtime`` cannot contain it. Non-GUI sessions have
         # no map surface to render and therefore must never trigger the load.
         self._allow_native_widget_probe = bool(allow_native_widget_probe)
-        self._capabilities = self._detect_capabilities()
+        # Capability detection is deferred to the first query. It loads native
+        # map runtimes, and that load cannot be caught: a DLL whose bundled Qt
+        # conflicts with the resident one raises STATUS_ENTRYPOINT_NOT_FOUND
+        # (0xc0000139) and kills the process. Constructing a session must not be
+        # able to trigger that as a side effect — only code that actually needs
+        # the map surface should pay for (and risk) the probe.
+        self._capabilities: MapRuntimeCapabilities | None = None
+
+    def _snapshot(self) -> MapRuntimeCapabilities:
+        """Return the capability snapshot, detecting it once on first use."""
+
+        if self._capabilities is None:
+            self._capabilities = self._detect_capabilities()
+        return self._capabilities
 
     def is_available(self) -> bool:
-        return self._capabilities.display_available
+        return self._snapshot().display_available
 
     def capabilities(self) -> MapRuntimeCapabilities:
-        return self._capabilities
+        return self._snapshot()
 
     def package_root(self) -> Path:
         return self._package_root
