@@ -273,11 +273,16 @@ class FaceScanWorker(QThread):
 
         retry_items = [item for item in detected if item.asset_id and item.error]
         if retry_items:
-            LOGGER.warning(
-                "Face scan: %d asset(s) could not be processed (first: %s)",
-                len(retry_items),
-                retry_items[0].asset_rel,
-            )
+            # Log every failure with its reason: the aggregate line only told the
+            # user that something failed, never what or why, which made face scan
+            # problems impossible to diagnose from the log.
+            for item in retry_items:
+                LOGGER.warning(
+                    "Face scan failed for asset %s (%s): %s",
+                    item.asset_id,
+                    item.asset_rel,
+                    item.error,
+                )
         retry_id_set = {str(item.asset_id) for item in retry_items}
         retry_source_ids = {
             str(row.get("id") or "")

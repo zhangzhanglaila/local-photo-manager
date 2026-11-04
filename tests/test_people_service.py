@@ -1459,7 +1459,7 @@ def test_face_scan_worker_does_not_mark_retry_after_committed_snapshot_error(
         distance_threshold = 0.6
         min_samples = 2
 
-        def __init__(self, *, model_root: Path) -> None:
+        def __init__(self, *, model_root: Path, **kwargs: object) -> None:
             self.model_root = model_root
 
         def detect_faces_for_rows(self, batch: list[dict], **_kwargs):
@@ -1478,7 +1478,9 @@ def test_face_scan_worker_does_not_mark_retry_after_committed_snapshot_error(
     worker.run()
 
     assert global_repo.get_rows_by_ids(["asset-a"])["asset-a"]["face_status"] == "pending"
-    assert messages == ["Face scan committed, but updating scan bookkeeping failed."]
+    # The first batch also announces the model download; the failure reason must
+    # be the last thing reported.
+    assert messages[-1] == "Face scan committed, but updating scan bookkeeping failed."
 
 
 def test_face_scan_worker_reports_unexpected_batch_error_reason(
@@ -1508,7 +1510,7 @@ def test_face_scan_worker_reports_unexpected_batch_error_reason(
         distance_threshold = 0.6
         min_samples = 2
 
-        def __init__(self, *, model_root: Path) -> None:
+        def __init__(self, *, model_root: Path, **kwargs: object) -> None:
             self.model_root = model_root
 
         def detect_faces_for_rows(self, *_args, **_kwargs):
@@ -1522,7 +1524,7 @@ def test_face_scan_worker_reports_unexpected_batch_error_reason(
     worker.run()
 
     assert global_repo.get_rows_by_ids(["asset-a"])["asset-a"]["face_status"] == "retry"
-    assert messages == ["Face scanning paused: compiled dependency missing"]
+    assert messages[-1] == "Face scanning paused: compiled dependency missing"
 
 
 def test_scanner_worker_does_not_emit_chunk_ready_for_failed_persist(tmp_path: Path) -> None:

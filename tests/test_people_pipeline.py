@@ -106,11 +106,15 @@ def test_face_pipeline_uses_shared_model_root(monkeypatch, tmp_path: Path) -> No
             root: str,
             allowed_modules: list[str],
             providers: list[str],
+            **kwargs: object,
         ) -> None:
             calls["name"] = name
             calls["root"] = root
             calls["allowed_modules"] = allowed_modules
             calls["providers"] = providers
+            # The pipeline now passes bounded onnxruntime session options; accept
+            # and ignore extra keywords so the recorded call stays focused.
+            del kwargs
 
         def prepare(self, *, ctx_id: int, det_size: tuple[int, int]) -> None:
             calls["ctx_id"] = ctx_id
@@ -142,7 +146,7 @@ def test_face_pipeline_uses_shared_model_root(monkeypatch, tmp_path: Path) -> No
     assert app is pipeline._ensure_face_analysis()
     assert model_root.is_dir()
     assert calls == {
-        "name": "buffalo_s",
+        "name": "buffalo_l",
         "root": str((tmp_path / "extension").resolve()),
         "allowed_modules": ["detection", "recognition"],
         "providers": ["CPUExecutionProvider"],
@@ -347,9 +351,9 @@ def test_build_manual_face_record_saves_requested_box_without_face_detection(
 
     assert (face.box_x, face.box_y, face.box_w, face.box_h) == (90, 50, 180, 180)
     assert face.person_id == "person-1"
-    assert face.thumbnail_path == "thumbs/manual-1.png"
+    assert face.thumbnail_path == "thumbs/manual-1.jpg"
     assert saved["bbox"] == (90, 50, 180, 180)
-    assert saved["output_path"] == thumbnail_dir / "manual-1.png"
+    assert saved["output_path"] == thumbnail_dir / "manual-1.jpg"
 
 
 def test_build_manual_face_record_accepts_non_face_region(

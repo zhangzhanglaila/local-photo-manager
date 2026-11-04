@@ -59,6 +59,23 @@ def _pump(qapp: QApplication, seconds: float = 0.4) -> None:
         time.sleep(0.005)
 
 
+def _wait_until(qapp: QApplication, predicate, timeout: float = 8.0) -> bool:
+    """Process events until *predicate* holds or the timeout expires.
+
+    A fixed sleep made this test flaky inside the full suite: the grid reports
+    its visible rows from a timer, and under load that timer can fire later than
+    a hard-coded wait allows.
+    """
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
 def test_asset_grid_reports_visible_rows_and_updates_on_scroll(qapp: QApplication) -> None:
     grid = AssetGrid()
     grid.setViewMode(QListView.ViewMode.IconMode)
@@ -71,7 +88,7 @@ def test_asset_grid_reports_visible_rows_and_updates_on_scroll(qapp: QApplicatio
 
     grid.resize(800, 500)
     grid.show()
-    _pump(qapp, 0.6)
+    _wait_until(qapp, lambda: bool(reported))
 
     assert reported, "the grid must report its visible rows after it is shown"
     first_initial = reported[-1]
@@ -81,7 +98,7 @@ def test_asset_grid_reports_visible_rows_and_updates_on_scroll(qapp: QApplicatio
     scrollbar = grid.verticalScrollBar()
     assert scrollbar.maximum() > 0, "the model must be tall enough to scroll"
     scrollbar.setValue(scrollbar.maximum())
-    _pump(qapp, 0.6)
+    _wait_until(qapp, lambda: bool(reported))
 
     assert reported, "scrolling must report a new visible range"
     first_scrolled = reported[-1]
