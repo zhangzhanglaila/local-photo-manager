@@ -244,9 +244,12 @@ Required guardrail expectations:
 - GUI runtime has no compatibility service factory fallback.
 - Architecture checks are part of CI.
 
-Known non-blocking warning currently documented by the refactor notes:
-
-- `PytestConfigWarning: Unknown config option: env`
+Pytest configuration lives in a single place: `[tool.pytest.ini_options]` in
+`pyproject.toml`. Do not reintroduce a `pytest.ini`, a `[pytest]` section in
+`tox.ini`, or a `[tool:pytest]` block in `setup.cfg`. A second config file
+silently takes precedence over `pyproject.toml` and drops `testpaths`, the
+`tests/ui`/`tests/gui` ignores, and `NUMBA_DISABLE_JIT`, which makes a bare
+`pytest` run collect GUI tests and the root-level manual scripts.
 
 ## 10. Release And Documentation Rules
 

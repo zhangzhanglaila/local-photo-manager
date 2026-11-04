@@ -34,12 +34,14 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest",
+    "pytest-env",
     "pytest-mock",
     "pytest-qt",
     "pytest-timeout",
 ]
 dev = [
     "pytest",
+    "pytest-env",
     "pytest-mock",
     "pytest-qt",
     "pytest-timeout",
@@ -92,6 +94,9 @@ line-length = 100
 testpaths = ["tests"]
 addopts = "-ra -p no:pytestqt --ignore=tests/ui --ignore=tests/gui"
 pythonpath = ["src"]
+# Numba JIT is disabled for the suite so filter tests stay fast and repeatable.
+# This needs the `pytest-env` plugin, which is declared in the test/dev extras.
+env = ["NUMBA_DISABLE_JIT=1"]
 
 [tool.typer]
 pretty_exceptions_enable = true
