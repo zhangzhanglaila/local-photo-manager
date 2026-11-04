@@ -263,6 +263,55 @@ silently takes precedence over `pyproject.toml` and drops `testpaths`, the
   existing library, but these are product acceptance checks rather than
   architecture guardrail replacements.
 
+## 11. Repository Layout And Commit Discipline
+
+### Commit after every completed feature
+
+Each completed, self-contained piece of work gets its own commit. Do not batch
+several unrelated features into one commit, and do not leave finished work
+uncommitted at the end of a turn.
+
+- Use Conventional Commits (`refactor:`, `fix:`, `chore:`, `docs:`, `test:`).
+- The message body must state the concrete problem, not restate the diff. Name
+  the file, path, or API that was wrong and what it is now.
+- Commit only after the change is verified. State in the body how it was
+  verified (which test file, which script, which manual check).
+- Keep formatting-only and behavior-changing work in separate commits.
+- Do not use `git add -A` blindly; stage the paths that belong to the feature.
+  A stray untracked file (a generated SVG, a library marker, a log) must not
+  ride along.
+
+### Top-level layout
+
+```text
+.github/          CI, issue templates
+docs/             architecture.md is the entry point; refactor/ is the vNext log
+src/iPhoto/       production package (application, domain, infrastructure, gui)
+src/maps/         optional OsmAnd offline map runtime
+tests/            pytest suite; this is the only directory pytest collects
+tools/            check_*.py architecture guards, manual/ for by-hand scripts
+scripts/          packaging, model download, sync helpers
+demo/             standalone design prototypes; not imported by src/
+extension/        downloaded CLIP model cache (ignored)
+downloads/        downloaded release archives (ignored)
+```
+
+### Paths that are contracts
+
+Do not move or rename these. They are resolved by code, by tests, or by
+packaging, and a tidy-up that moves them silently breaks a feature:
+
+| Path | Why it is fixed |
+| --- | --- |
+| `src/maps/tiles/extension/` | `MapSourceSpec.osmand_default()` and the Windows Nuitka build expect this exact root |
+| `src/extension/models/` | default `IPHOTO_FACE_MODEL_DIR` |
+| `extension/models/clip-vit-base-patch32/` | `main_coordinator` and `scripts/download_clip_model.py` |
+| `demo/video/` | `tests/test_video_demo_thumbnails.py` puts it on `sys.path` |
+| `src/iPhoto/` package tree | architecture guardrails and 1467 tests index modules by path |
+
+Everything else is free to reorganize, provided references in code, tests and
+docs are updated in the same commit.
+
 This guide is authoritative for new production work. When it conflicts with old
 examples, follow the vNext runtime/session boundary and update the stale
 example as part of the change.
