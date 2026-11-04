@@ -576,8 +576,13 @@ class TestExtractSingleFrame:
 class TestBuildPopenPriorityKwargs:
     """Tests for _build_popen_priority_kwargs()."""
 
-    def test_unix_returns_no_preexec_fn(self) -> None:
+    def test_unix_returns_no_preexec_fn(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """On Unix, returns empty kwargs (priority lowered post-Popen instead)."""
+        # Pin the platform branch explicitly, matching
+        # ``test_windows_returns_creationflags`` below. Without this the test
+        # asserted Unix behaviour while running the Windows branch, so it could
+        # only ever pass on a POSIX host.
+        monkeypatch.setattr(os, "name", "posix")
         startupinfo, kwargs = _build_popen_priority_kwargs()
         assert startupinfo is None
         assert "preexec_fn" not in kwargs
