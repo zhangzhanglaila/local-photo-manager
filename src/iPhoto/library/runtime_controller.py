@@ -97,8 +97,8 @@ class LibraryRuntimeController(
         self._people_update_debounce.setSingleShot(True)
         self._people_update_debounce.setInterval(2000)  # 默认2秒防抖
         self._people_update_debounce.timeout.connect(self._emit_people_update_deferred)
-        # ⭐ 视频播放状态跟踪：视频播放时增加防抖间隔减少I/O竞争
-        self._video_playing_count = 0  # 跟踪当前播放的视频数量
+        # ⭐ 前台浏览状态跟踪：看照片/播视频时让后台扫描让路
+        self._foreground_viewing_count = 0  # 当前处于前台浏览状态的计数
         # ``_watch_suspend_depth`` tracks how many in-flight operations asked us to
         # ignore file-system notifications. We use a counter instead of a boolean
         # to correctly handle nested operations that may overlap (e.g., multiple
@@ -572,7 +572,7 @@ class LibraryRuntimeController(
     def _on_people_snapshot_committed(self, event: object) -> None:
         # ⭐ 防抖：使用定时器延迟发射信号，合并频繁更新
         # 根据视频播放状态动态调整防抖间隔
-        if self._video_playing_count > 0:
+        if self._foreground_viewing_count > 0:
             self._people_update_debounce.setInterval(5000)  # 视频播放时5秒防抖
         else:
             self._people_update_debounce.setInterval(2000)  # 默认2秒防抖
@@ -589,26 +589,39 @@ class LibraryRuntimeController(
         if hasattr(self, '_pending_people_event'):
             self.peopleSnapshotCommitted.emit(self._pending_people_event)
 
-    def register_video_playing(self) -> None:
-        """注册视频播放开始，增加防抖间隔减少I/O竞争"""
-        self._video_playing_count += 1
-        if self._video_playing_count == 1:
-            # 第一个视频开始播放，增加防抖间隔
+    def register_foreground_viewing(self) -> None:
+        """标注用户正在前台浏览（看照片或播视频），让后台扫描让路。
+
+        人脸扫描与 OCR 都基于 onnxruntime 且要读整张原图，如果在用户看照片时
+        继续跑，就会抢占 CPU/磁盘并让界面发涩。视频播放与照片浏览共用同一个
+        计数，因此两者同时发生时计数依然正确。
+        """
+
+        self._foreground_viewing_count += 1
+        if self._foreground_viewing_count == 1:
             self._people_update_debounce.setInterval(5000)
-            # 通知扫描协调器调整人脸扫描频率
             self.set_video_playing(True)
 
-    def unregister_video_playing(self) -> None:
-        """注销视频播放结束，恢复正常防抖间隔"""
-        self._video_playing_count = max(0, self._video_playing_count - 1)
-        if self._video_playing_count == 0:
-            # 没有视频播放，恢复正常间隔
+    def unregister_foreground_viewing(self) -> None:
+        """取消一次前台浏览登记；全部结束后恢复扫描。"""
+
+        self._foreground_viewing_count = max(0, self._foreground_viewing_count - 1)
+        if self._foreground_viewing_count == 0:
             self._people_update_debounce.setInterval(2000)
-            # 通知扫描协调器恢复正常人脸扫描频率
             self.set_video_playing(False)
 
+    def register_video_playing(self) -> None:
+        """视频播放的兼容入口。"""
+
+        self.register_foreground_viewing()
+
+    def unregister_video_playing(self) -> None:
+        """视频播放的兼容入口。"""
+
+        self.unregister_foreground_viewing()
+
     def set_video_playing(self, is_playing: bool) -> None:
-        """⭐ 转发视频播放状态到扫描协调器"""
+        """⭐ 转发前台浏览状态到扫描协调器"""
         # 使用 ScanCoordinatorMixin 提供的方法
         try:
             super().set_video_playing(is_playing)

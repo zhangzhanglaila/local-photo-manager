@@ -44,8 +44,19 @@ class OCRWorker(QRunnable):
         self._queue: list[dict] = []
         self._finished = False
         self._cancelled = False
+        self._paused = False
 
         self.signals = OCRWorkerSignals()
+
+    def set_paused(self, paused: bool) -> None:
+        """Pause or resume OCR processing.
+
+        OCR runs through onnxruntime and reads full-size images, so it competes
+        with whatever the user is looking at. When a photo is on screen the scan
+        steps aside instead of slowing the interface down.
+        """
+
+        self._paused = bool(paused)
 
     @Slot(list)
     def enqueue_rows(self, rows: list[dict]) -> None:
@@ -87,6 +98,10 @@ class OCRWorker(QRunnable):
         failed = 0
 
         while not self._cancelled:
+            if self._paused:
+                QThread.msleep(200)
+                continue
+
             # Wait for items if not finished
             if not self._queue:
                 if self._finished:

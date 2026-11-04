@@ -494,13 +494,23 @@ class ScanCoordinatorMixin:
         self.faceScanStatusChanged.emit("Face scan complete.")
 
     # ------------------------------------------------------------------
-    # Video playback integration
+    # Foreground media integration
     # ------------------------------------------------------------------
     def set_video_playing(self, is_playing: bool) -> None:
-        """⭐ 动态调整人脸扫描优先级：视频播放时降低I/O频率"""
+        """Step aside while the user is watching or viewing media.
+
+        Both AI scans run on onnxruntime and read full-size images, so leaving
+        them running while a photo or video is on screen is what made viewing
+        feel sluggish. The name is historical: photo viewing uses the same path.
+        """
+
         face_scanner = self._current_face_scanner
         if face_scanner is not None and face_scanner.isRunning():
             face_scanner.set_video_playing(is_playing)
+
+        ocr_scanner = self._current_ocr_scanner
+        if ocr_scanner is not None and hasattr(ocr_scanner, "set_paused"):
+            ocr_scanner.set_paused(is_playing)
 
     # ------------------------------------------------------------------
     # OCR integration

@@ -517,6 +517,20 @@ class MainCoordinator(QObject):
         ui.grid_view.itemClicked.connect(self._on_asset_clicked)
         ui.grid_view.itemDoubleClicked.connect(self._on_asset_clicked)
         ui.grid_view.visibleRowsChanged.connect(self._asset_list_vm.prioritize_rows)
+        ui.grid_view.visibleRowsChanged.connect(self._on_gallery_scrolled)
+
+        # Background AI scans step aside while the user is actually looking at
+        # something: leaving them running made viewing and scrolling sluggish,
+        # because face and OCR inference read full-size images and hold CPU.
+        self._view_router.detailViewShown.connect(self._enter_foreground_viewing)
+        self._view_router.galleryViewShown.connect(self._leave_foreground_viewing)
+        self._view_router.mapViewShown.connect(self._leave_foreground_viewing)
+        self._view_router.peopleViewShown.connect(self._leave_foreground_viewing)
+        self._scroll_idle_timer = QTimer(self)
+        self._scroll_idle_timer.setSingleShot(True)
+        self._scroll_idle_timer.setInterval(400)
+        self._scroll_idle_timer.timeout.connect(self._on_scroll_idle)
+        self._scroll_viewing_registered = False
 
         # Filmstrip clicks are now handled by PlaybackCoordinator
 
@@ -1114,14 +1128,52 @@ class MainCoordinator(QObject):
             self._media_failure_cleanup_paths.discard(path_key)
 
     def _on_video_playback_state_changed(self, is_playing: bool) -> None:
-        """⭐ 视频播放状态改变时，通知runtime controller调整人脸扫描频率"""
+        """视频播放状态改变时，让后台扫描让路或恢复。"""
         library_manager = getattr(self._context, "library", None)
         if library_manager is None:
             return
         if is_playing:
-            library_manager.register_video_playing()
+            library_manager.register_foreground_viewing()
         else:
-            library_manager.unregister_video_playing()
+            library_manager.unregister_foreground_viewing()
+
+    def _foreground_library(self):
+        return getattr(self._context, "library", None)
+
+    def _enter_foreground_viewing(self) -> None:
+        """用户正在看内容：暂停人脸/OCR 扫描，把 CPU 与磁盘让给界面。"""
+        library_manager = self._foreground_library()
+        if library_manager is not None:
+            library_manager.register_foreground_viewing()
+
+    def _leave_foreground_viewing(self) -> None:
+        """离开浏览状态：恢复后台扫描。"""
+        library_manager = self._foreground_library()
+        if library_manager is not None:
+            library_manager.unregister_foreground_viewing()
+
+    def _on_gallery_scrolled(self, first: int, last: int) -> None:
+        """滚动期间短暂让路，滚动停下后自动恢复。
+
+        滚动本身很轻，但它会触发换窗加载；如果这时人脸/OCR 正在推理，新窗口的
+        读取就会被拖慢。登记一小段时间既能保住手感，也不会让扫描长期停摆。
+        """
+        del first, last
+        if not self._scroll_viewing_registered:
+            self._scroll_viewing_registered = True
+            library_manager = self._foreground_library()
+            if library_manager is not None:
+                library_manager.register_foreground_viewing()
+        self._scroll_idle_timer.start()
+
+    def _on_scroll_idle(self) -> None:
+        """滚动停止：释放滚动期间的登记。"""
+        if not self._scroll_viewing_registered:
+            return
+        self._scroll_viewing_registered = False
+        library_manager = self._foreground_library()
+        if library_manager is not None:
+            library_manager.unregister_foreground_viewing()
 
     def _on_asset_clicked(self, index: QModelIndex):
         if self._selection_controller and self._selection_controller.is_active():
