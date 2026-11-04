@@ -577,13 +577,22 @@ def test_photo_map_view_delegates_pointer_hit_testing_to_marker_controller(
     )
 
     class _PointerAwareMarkerController(_DummyMarkerController):
+        """Records press positions and activation, mirroring the real controller."""
+
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
             self.pointer_positions: list[QPointF] = []
+            self.activations: list[object] = []
 
-        def handle_pointer_press(self, position: QPointF) -> bool:
+        def cluster_at(self, position: QPointF):
             self.pointer_positions.append(QPointF(position))
-            return True
+            return SimpleNamespace(
+                representative=SimpleNamespace(asset_id="asset-1"),
+                assets=[],
+            )
+
+        def handle_marker_click(self, cluster) -> None:
+            self.activations.append(cluster)
 
     controller_instances: list[_PointerAwareMarkerController] = []
 
@@ -607,6 +616,8 @@ def test_photo_map_view_delegates_pointer_hit_testing_to_marker_controller(
 
     view = photo_map_view_module.PhotoMapView(map_source=source)
     try:
+        # The map widget is built lazily; its event target exists only afterwards.
+        view.activate_map()
         event = QMouseEvent(
             QEvent.Type.MouseButtonPress,
             QPointF(14.0, 18.0),
@@ -615,9 +626,21 @@ def test_photo_map_view_delegates_pointer_hit_testing_to_marker_controller(
             Qt.KeyboardModifier.NoModifier,
         )
 
-        assert view.eventFilter(cast(QObject, view._map_event_target), event)
+        # A press is observed but not consumed: activation waits for the release so
+        # that dragging across the map does not count as a click.
+        assert not view.eventFilter(cast(QObject, view._map_event_target), event)
         assert len(controller_instances) == 1
         assert controller_instances[0].pointer_positions == [QPointF(14.0, 18.0)]
+
+        release = QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            QPointF(14.0, 18.0),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        assert view.eventFilter(cast(QObject, view._map_event_target), release)
+        assert len(controller_instances[0].activations) == 1
     finally:
         view.close()
 
@@ -1012,6 +1035,9 @@ def test_native_osmand_widget_bridges_drag_release_and_wheel_events(qapp: QAppli
     pan_finished_spy = QSignalSpy(widget.panFinished)
     view_changed_spy = QSignalSpy(widget.viewChanged)
     initial_view_change_count = view_changed_spy.count()
+    # The widget applies its own default zoom on construction, so the expected
+    # value after one wheel notch is relative to whatever that default is.
+    initial_zoom = widget.zoom
     diagnostics = photo_map_view_module.format_map_runtime_diagnostics(
         widget,
         backend_kind="osmand_native",
@@ -1080,7 +1106,7 @@ def test_native_osmand_widget_bridges_drag_release_and_wheel_events(qapp: QAppli
         assert panned_spy.count() >= 1
         assert pan_finished_spy.count() == 1
         assert view_changed_spy.count() > initial_view_change_count
-        assert math.isclose(fake_library.zoom, 2.2, rel_tol=1e-6)
+        assert math.isclose(fake_library.zoom, initial_zoom * 1.1, rel_tol=1e-6)
         assert projected is not None
         assert math.isclose(projected.x(), 20.0, rel_tol=1e-6)
         assert math.isclose(projected.y(), 32.0, rel_tol=1e-6)

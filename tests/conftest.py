@@ -361,6 +361,21 @@ def _track_qt_threads():
         yield
     finally:
         QThread.start = original_start
+        # Give the last test's threads a chance to finish, then drop the
+        # references of the ones that stopped: keeping every thread object alive
+        # until interpreter shutdown made Qt tear them down in an arbitrary order
+        # and abort the process after the run had already succeeded.
+        _stop_running_qt_threads()
+        _TRACKED_THREADS[:] = [
+            thread for thread in _TRACKED_THREADS if _is_running(thread)
+        ]
+
+
+def _is_running(thread) -> bool:
+    try:
+        return thread.isRunning()
+    except RuntimeError:  # C++ object already deleted
+        return False
 
 
 def _stop_running_qt_threads(timeout_ms: int = 2000) -> None:

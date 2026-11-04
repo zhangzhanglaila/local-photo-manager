@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from PySide6.QtCore import Qt
 
 # Ensure src is in path (handled by conftest usually, but adding for safety if run standalone)
@@ -61,7 +63,9 @@ class TestInputEventHandler:
         
         result = self.handler.handle_mouse_press(event)
         
-        assert result is False
+        # The handler consumes the press once it has delegated it, so the same
+        # event does not also propagate to a parent widget.
+        assert result is True
         self.on_cancel_crop_lock.assert_called_once()
         self.transform_controller.handle_mouse_press.assert_called_once_with(event)
 
@@ -96,7 +100,7 @@ class TestInputEventHandler:
         event = Mock()
         result = self.handler.handle_mouse_move(event)
         
-        assert result is False
+        assert result is True
         self.transform_controller.handle_mouse_move.assert_called_once_with(event)
 
     def test_wheel_routes_to_crop_when_active(self):
@@ -119,28 +123,22 @@ class TestInputEventHandler:
         self.on_cancel_crop_lock.assert_called_once()
         self.transform_controller.handle_wheel.assert_called_once_with(event)
 
-    def test_double_click_with_fullscreen_window(self):
-        """Double-click should exit fullscreen when window is fullscreen."""
-        event = Mock()
-        event.button.return_value = Qt.LeftButton
-        
-        window = Mock()
-        window.isFullScreen.return_value = True
-        
-        result = self.handler.handle_double_click_with_window(event, window)
-        
-        assert result is True
-        self.on_fullscreen_exit.assert_called_once()
+    @pytest.mark.parametrize("is_fullscreen", [True, False])
+    def test_double_click_propagates_instead_of_toggling_fullscreen(self, is_fullscreen):
+        """Double-click now opens the detail view, so the handler must let it through.
 
-    def test_double_click_with_normal_window(self):
-        """Double-click should toggle fullscreen when window is normal."""
+        Fullscreen is toggled from the header button; the viewer no longer
+        consumes the gesture itself.
+        """
+
         event = Mock()
         event.button.return_value = Qt.LeftButton
-        
+
         window = Mock()
-        window.isFullScreen.return_value = False
-        
+        window.isFullScreen.return_value = is_fullscreen
+
         result = self.handler.handle_double_click_with_window(event, window)
-        
-        assert result is True
-        self.on_fullscreen_toggle.assert_called_once()
+
+        assert result is False
+        self.on_fullscreen_exit.assert_not_called()
+        self.on_fullscreen_toggle.assert_not_called()
