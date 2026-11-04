@@ -1,6 +1,6 @@
 """Custom slider widgets for the White Balance section.
 
-Ported from the standalone demo (``demo/white balance/white balance.py``).
+Ported from the standalone demo (``demo/white-balance/white_balance.py``).
 Contains gradient-background sliders with tick marks, a mode-selection
 combo-box, and an eyedropper (pipette) button.
 """

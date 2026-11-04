@@ -1,6 +1,6 @@
 """White Balance adjustment section for the edit sidebar.
 
-Ports the custom slider widgets from the demo (``demo/white balance/white balance.py``)
+Ports the custom slider widgets from the demo (``demo/white-balance/white_balance.py``)
 into the edit panel, including gradient-background sliders with tick marks,
 a mode-selection combo-box, and an eyedropper (pipette) button.
 """

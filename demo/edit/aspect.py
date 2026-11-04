@@ -1,11 +1,16 @@
 import sys
 import os
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QRadioButton, QButtonGroup, QSpacerItem, QSizePolicy
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SCRIPT_DIR.parents[1]
 
 
 class AspectRatioMenu(QWidget):
@@ -15,12 +20,15 @@ class AspectRatioMenu(QWidget):
         self.init_ui()
 
     def ensure_check_svg_exists(self):
-        """在当前目录下动态生成一个对号 SVG 文件，确保 QSS 能稳定读取"""
-        self.check_icon_path = "check_indicator.svg"
+        """在脚本同级目录生成对号 SVG 文件，确保 QSS 能稳定读取
+
+        路径锚定到 ``__file__`` 而不是当前工作目录：QSS 中的相对图标路径会
+        相对进程 CWD 解析，从仓库根目录运行脚本时原先会生成到根目录。
+        """
+        self.check_icon_path = _SCRIPT_DIR / "check_indicator.svg"
         svg_content = """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D0D0D0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>"""
-        if not os.path.exists(self.check_icon_path):
-            with open(self.check_icon_path, "w", encoding="utf-8") as f:
-                f.write(svg_content)
+        if not self.check_icon_path.exists():
+            self.check_icon_path.write_text(svg_content, encoding="utf-8")
 
     def init_ui(self):
         self.setWindowTitle("Aspect Ratio Menu")
@@ -36,7 +44,7 @@ class AspectRatioMenu(QWidget):
         title_layout.setSpacing(8)
 
         icon_label = QLabel()
-        icon_path = r"D:\python_code\iPhoto\iPhotos\src/iPhoto/gui/ui/icon/aspect.svg"
+        icon_path = str(_REPO_ROOT / "src" / "iPhoto" / "gui" / "ui" / "icon" / "aspect.svg")
         icon_label.setPixmap(QIcon(icon_path).pixmap(16, 16))
 
         title_label = QLabel("Aspect")
@@ -115,7 +123,7 @@ class AspectRatioMenu(QWidget):
 
         /* 使用正斜杠替换反斜杠，确保 QSS 路径在 Windows 上也能正确解析 */
         QRadioButton::indicator:checked {{
-            image: url({self.check_icon_path.replace(os.sep, '/')});
+            image: url({str(self.check_icon_path).replace(os.sep, '/')});
         }}
         """
 
