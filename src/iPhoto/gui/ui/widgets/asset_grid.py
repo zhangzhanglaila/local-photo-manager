@@ -379,6 +379,29 @@ class AssetGrid(QListView):
         # of the event's integer components is the safest option.
         return QPoint(event.x(), event.y())
 
+    def _row_near_viewport_edge(self, viewport_rect, *, top: bool) -> int:
+        """Return the row nearest a viewport edge, or -1 when nothing is hit.
+
+        Probing the exact corners is unreliable: in icon mode a corner usually
+        falls in the spacing between items, ``indexAt`` returns an invalid index
+        and the visible range was never reported at all. Without it the gallery
+        store cannot keep a cache window around the viewport, so scrolling fell
+        back to fetching rows one at a time.
+        """
+
+        y = viewport_rect.top() + 2 if top else viewport_rect.bottom() - 2
+        candidates = (
+            viewport_rect.center().x(),
+            viewport_rect.left() + viewport_rect.width() // 4,
+            viewport_rect.left() + 2,
+            viewport_rect.right() - 2,
+        )
+        for x in candidates:
+            index = self.indexAt(QPoint(x, y))
+            if index.isValid():
+                return index.row()
+        return -1
+
     def _emit_visible_rows(self) -> None:
         try:
             self._emit_visible_rows_impl()
@@ -414,10 +437,8 @@ class AssetGrid(QListView):
         if self._model_resetting:
             return
         try:
-            top_index = self.indexAt(viewport_rect.topLeft())
-            bottom_index = self.indexAt(viewport_rect.bottomRight())
-            first = top_index.row()
-            last = bottom_index.row()
+            first = self._row_near_viewport_edge(viewport_rect, top=True)
+            last = self._row_near_viewport_edge(viewport_rect, top=False)
         except Exception:
             return
 

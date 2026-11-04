@@ -670,6 +670,23 @@ class GalleryCollectionStore:
         self._visible_range = (0, visible_last)
         self._reload_window_for_visible_range(0, visible_last, emit_signals=True)
 
+    def _window_bounds_to_load(self, first: int, last: int) -> tuple[int, int]:
+        """Expand the requested visible range to the configured cache window.
+
+        Loading exactly the visible rows leaves no slack: every scroll step past
+        them forces a reload, and each reload resets the gallery model, so
+        scrolling felt like it was fighting the view. ``_compute_target_window``
+        already describes the intended window (look-behind + viewport +
+        look-ahead, clamped to ``MIN/MAX_WINDOW_SIZE``) but was never called.
+        """
+
+        total = self._total_count
+        if total <= 0:
+            # The collection size is not known before the first load. Ask for a
+            # full window anyway so the first result already covers scrolling.
+            total = max(0, last) + 1 + self.MIN_WINDOW_SIZE
+        return self._compute_target_window(max(0, first), max(first, last), total)
+
     def _reload_window_for_visible_range(self, first: int, last: int, *, emit_signals: bool) -> None:
         # ⭐ 如果查询为空但有活动根目录，尝试加载"All Photos"
         if self._current_query is None:
@@ -704,10 +721,12 @@ class GalleryCollectionStore:
 
         self._load_generation += 1
         gen = self._load_generation
+        load_first, load_last = self._window_bounds_to_load(first, last)
+        self._pending_load_range = (load_first, load_last)
         import logging
         logging.getLogger(__name__).info(
-            "[DIAG] _reload_window_for_visible_range: starting worker gen=%s first=%s last=%s total=%s active_root=%s service=%s",
-            gen, first, last, self._total_count, self._active_root,
+            "[DIAG] _reload_window_for_visible_range: starting worker gen=%s visible=(%s,%s) load=(%s,%s) total=%s active_root=%s service=%s",
+            gen, first, last, load_first, load_last, self._total_count, self._active_root,
             self._asset_query_service is not None,
         )
 
@@ -723,8 +742,8 @@ class GalleryCollectionStore:
             asset_query_service=self._asset_query_service,
             active_root=self._active_root or self._library_root,
             query=self._current_query,
-            first=first,
-            last=last,
+            first=load_first,
+            last=load_last,
             signals=self._load_signals,
             validate_paths=validate,
         )

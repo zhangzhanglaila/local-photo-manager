@@ -127,6 +127,76 @@ def test_scan_chunks_do_not_reload_faster_than_the_coalescing_interval(
     )
 
 
+def test_scrolling_within_the_cached_window_does_not_reload(tmp_path: Path, monkeypatch) -> None:
+    """Scrolling inside the cached window must not reload or reset the grid.
+
+    Regression: the cache window equalled the visible rows, so almost every
+    scroll step fell outside it and cost a reload plus a model reset.
+    """
+
+    store = _store(tmp_path)
+    store._total_count = 11410
+    store._current_query = AssetQuery()
+
+    reloads: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        store,
+        "_reload_window_for_visible_range",
+        lambda first, last, *, emit_signals: reloads.append((first, last)),
+    )
+
+    # The window an expanded load for the first screen produces.
+    store._window_range = (0, 199)
+    store._row_cache = {row: object() for row in range(200)}  # type: ignore[assignment]
+
+    # Comfortably inside the window: no reload, no model reset.
+    for first, last in [(0, 49), (40, 89), (80, 129)]:
+        store._visible_range = (first, last)
+        store.prioritize_rows(first, last)
+    assert reloads == [], "scrolling well inside the cached window must not reload"
+
+    # Approaching the window's trailing edge (inside the keep-zone) triggers
+    # exactly one prefetch, so the next screenful is cached before it is needed.
+    store._visible_range = (140, 189)
+    store.prioritize_rows(140, 189)
+    assert reloads == [(140, 189)]
+
+    # Leaving the window still triggers a reload.
+    reloads.clear()
+    store._visible_range = (190, 239)
+    store.prioritize_rows(190, 239)
+    assert reloads == [(190, 239)]
+
+
+def test_window_bounds_expand_beyond_the_visible_range(tmp_path: Path) -> None:
+    """A load must cover a cache window, not just the visible rows.
+
+    Regression: the window was the visible range itself, so every scroll step
+    past it forced a reload and a model reset, which is what made scrolling feel
+    sluggish. ``_compute_target_window`` described the intended window but was
+    never called.
+    """
+
+    store = _store(tmp_path)
+    store._total_count = 11410
+
+    first, last = store._window_bounds_to_load(0, 49)
+    assert first == 0
+    assert last >= store.MIN_WINDOW_SIZE - 1, "the initial window must cover scrolling"
+
+    first, last = store._window_bounds_to_load(5000, 5049)
+    assert first <= 5000 and last >= 5049
+    assert last - first + 1 >= store.MIN_WINDOW_SIZE
+    assert last - first + 1 <= store.MAX_WINDOW_SIZE
+    assert first > 0, "a middle window should also provide look-behind"
+
+    # Unknown collection size (before the first load) still asks for a window.
+    store._total_count = 0
+    first, last = store._window_bounds_to_load(0, 49)
+    assert first == 0
+    assert last >= store.MIN_WINDOW_SIZE - 1
+
+
 def test_window_reload_is_not_requested_without_slack(tmp_path: Path) -> None:
     """A fully-loaded visible range must not ask for another reload.
 
