@@ -317,6 +317,12 @@ class AlbumTreeModel(QAbstractItemModel):
             for child in self._library.list_children(album):
                 child_item = self._create_album_item(child, NodeType.SUBALBUM)
                 album_item.add_child(child_item)
+                # Sub-albums are creatable, so they have to be rendered; stopping
+                # at this level made a freshly created sub-album invisible.
+                for grandchild in self._library.list_children(child):
+                    child_item.add_child(
+                        self._create_album_item(grandchild, NodeType.SUBALBUM)
+                    )
         # Append the housekeeping entries to the root so "Recently Deleted"
         # continues to anchor the very bottom of the sidebar even after Albums was
         # promoted to a top-level header. The helper also restores the divider that

@@ -1,4 +1,5 @@
 import base64
+import time
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,18 @@ from iPhoto.gui.ui.models.album_tree_model import NodeType
 from iPhoto.gui.ui.widgets.album_sidebar import AlbumSidebar
 from iPhoto.library.runtime_controller import LibraryRuntimeController
 from iPhoto.settings.manager import SettingsManager
+
+
+def _wait_for(qapp: QApplication, predicate, timeout: float = 5.0) -> bool:
+    """Process events until *predicate* holds; the tree refresh is asynchronous."""
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
 
 
 @pytest.fixture(scope="module")
@@ -140,7 +153,9 @@ def test_sidebar_album_context_menu_offers_pin_and_unpin(tmp_path: Path, qapp: Q
     album_index = sidebar.tree_model().index_for_path(album_dir)
     item = sidebar.tree_model().item_from_index(album_index)
     assert item is not None
-    assert item.node_type == NodeType.ALBUM
+    # The bound library is the album-level node; a plain album sits one level
+    # below it, so its type is SUBALBUM.
+    assert item.node_type == NodeType.SUBALBUM
 
     menu = AlbumSidebarContextMenu(
         sidebar,
@@ -166,7 +181,7 @@ def test_sidebar_album_context_menu_offers_pin_and_unpin(tmp_path: Path, qapp: Q
         sidebar._set_pending_selection,
         sidebar.bindLibraryRequested.emit,
     )
-    assert menu.actions()[0].text() == "Unpin Album"
+    assert menu.actions()[0].text() == tr("menu.unpin_album")
 
 
 def test_sidebar_pinned_album_survives_album_rename(tmp_path: Path, qapp: QApplication) -> None:
@@ -196,7 +211,11 @@ def test_sidebar_pinned_album_survives_album_rename(tmp_path: Path, qapp: QAppli
     )
     qapp.processEvents()
 
-    album = next(node for node in manager.list_albums() if node.path == album_dir)
+    # ``list_albums()`` returns the bound library nodes; albums are their children.
+    library_node = next(node for node in manager.list_albums() if node.path == root)
+    album = next(
+        node for node in manager.list_children(library_node) if node.path == album_dir
+    )
     manager.rename_album(album, "Renamed Trip")
     qapp.processEvents()
 
@@ -205,6 +224,10 @@ def test_sidebar_pinned_album_survives_album_rename(tmp_path: Path, qapp: QAppli
     assert len(pinned) == 1
     assert pinned[0].item_id == str(new_album.resolve())
 
+    assert _wait_for(
+        qapp,
+        lambda: sidebar.tree_model().index_for_pinned_item(pinned[0]).isValid(),
+    )
     refreshed_index = sidebar.tree_model().index_for_pinned_item(pinned[0])
     refreshed_item = sidebar.tree_model().item_from_index(refreshed_index)
     assert refreshed_item is not None
@@ -280,6 +303,11 @@ def test_sidebar_pinned_album_rename_updates_album_tree(
     renamed_pinned = pinned_service.items_for_library(root)[0]
     assert renamed_pinned.item_id == str(new_album.resolve())
 
+    assert _wait_for(
+        qapp,
+        lambda: sidebar.tree_model().index_for_pinned_item(renamed_pinned).isValid()
+        and sidebar.tree_model().index_for_path(new_album).isValid(),
+    )
     refreshed_pinned_index = sidebar.tree_model().index_for_pinned_item(renamed_pinned)
     assert sidebar.tree_model().data(refreshed_pinned_index) == "Renamed Trip"
 
@@ -373,6 +401,15 @@ def test_sidebar_pinned_item_context_menu_can_rename(tmp_path: Path, qapp: QAppl
     assert renamed.label == "VIP Alice"
     assert renamed.custom_label is True
 
+    # The pinned id does not change when only the label is edited, so wait for the
+    # rendered text: the index is valid even before the model refreshes.
+    assert _wait_for(
+        qapp,
+        lambda: sidebar.tree_model().data(
+            sidebar.tree_model().index_for_pinned_item(renamed)
+        )
+        == "VIP Alice",
+    )
     refreshed_index = sidebar.tree_model().index_for_pinned_item(renamed)
     assert refreshed_index.isValid()
     assert sidebar.tree_model().data(refreshed_index) == "VIP Alice"

@@ -11,6 +11,7 @@ from PySide6.QtCore import QModelIndex
 from PySide6.QtWidgets import QApplication
 
 from iPhoto.gui.services.pinned_items_service import PinnedItemsService
+from iPhoto.i18n import tr
 from iPhoto.gui.ui.models.album_tree_model import AlbumTreeModel, AlbumTreeRole, NodeType
 from iPhoto.library.runtime_controller import LibraryRuntimeController
 from iPhoto.settings.manager import SettingsManager
@@ -79,7 +80,7 @@ def test_model_populates_albums(tmp_path: Path, qapp: QApplication) -> None:
     # "Basic Library" header. Keeping the test explicit ensures the hierarchy
     # change remains intentional and prevents regressions back to the nested
     # layout when the model refresh logic evolves.
-    albums_index = _find_child(model, QModelIndex(), "Albums")
+    albums_index = _find_child(model, QModelIndex(), tr("sidebar.albums"))
     assert albums_index is not None
     # Validating the node type ensures the delegate will render the correct font
     # weight and icon treatment associated with header entries, which was the
@@ -91,9 +92,14 @@ def test_model_populates_albums(tmp_path: Path, qapp: QApplication) -> None:
     # renders the platform-consistent icon instead of the generic bookshelf used
     # by the "Basic Library" header.
     assert albums_item.icon_name == "folder.svg"
-    trip_index = _find_child(model, albums_index, "Trip")
+    # Each bound library is itself a node under "Albums", so its albums hang one
+    # level lower and sub-albums one lower again.
+    library_index = _find_child(model, albums_index, root.name)
+    assert library_index is not None
+    assert model.data(library_index, AlbumTreeRole.NODE_TYPE) == NodeType.ALBUM
+    trip_index = _find_child(model, library_index, "Trip")
     assert trip_index is not None
-    assert model.data(trip_index, AlbumTreeRole.NODE_TYPE) == NodeType.ALBUM
+    assert model.data(trip_index, AlbumTreeRole.NODE_TYPE) == NodeType.SUBALBUM
     child_index = _find_child(model, trip_index, "Day1")
     assert child_index is not None
     assert model.data(child_index, AlbumTreeRole.NODE_TYPE) == NodeType.SUBALBUM
@@ -121,8 +127,8 @@ def test_model_inserts_pinned_section_between_library_and_albums(tmp_path: Path,
     model.set_pinned_service(pinned_service)
     qapp.processEvents()
 
-    pinned_index = _find_child(model, QModelIndex(), "Pinned")
-    albums_index = _find_child(model, QModelIndex(), "Albums")
+    pinned_index = _find_child(model, QModelIndex(), tr("sidebar.pinned"))
+    albums_index = _find_child(model, QModelIndex(), tr("sidebar.albums"))
     assert pinned_index is not None
     assert albums_index is not None
     assert pinned_index.row() < albums_index.row()
@@ -184,7 +190,7 @@ def test_model_omits_pinned_section_when_empty(tmp_path: Path, qapp: QApplicatio
     model = AlbumTreeModel(manager)
     qapp.processEvents()
 
-    pinned_index = _find_child(model, QModelIndex(), "Pinned")
+    pinned_index = _find_child(model, QModelIndex(), tr("sidebar.pinned"))
     assert pinned_index is None
 
 
@@ -209,7 +215,7 @@ def test_model_keeps_missing_pinned_entities_visible_until_clicked(
     model.set_pinned_service(pinned_service)
     qapp.processEvents()
 
-    pinned_index = _find_child(model, QModelIndex(), "Pinned")
+    pinned_index = _find_child(model, QModelIndex(), tr("sidebar.pinned"))
     assert pinned_index is not None
     assert _find_child(model, pinned_index, "Missing Album") is not None
     assert _find_child(model, pinned_index, "Ghost") is not None
