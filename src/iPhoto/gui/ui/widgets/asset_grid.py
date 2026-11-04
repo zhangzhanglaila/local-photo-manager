@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Callable, List, Optional
 
 from PySide6.QtCore import QModelIndex, QPoint, QTimer, Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QMouseEvent
+from PySide6.QtGui import (
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QMouseEvent,
+    QWheelEvent,
+)
 from PySide6.QtWidgets import QApplication, QListView
 
 from ....config import LONG_PRESS_THRESHOLD_MS
@@ -381,6 +387,42 @@ class AssetGrid(QListView):
         # we have no reliable coordinate system information, so best-effort return
         # of the event's integer components is the safest option.
         return QPoint(event.x(), event.y())
+
+    # Kept as a fraction of the platform wheel step. The grid scrolls per pixel,
+    # so one notch used to move three lines, which in a dense grid jumped several
+    # rows at a time. Halving the step keeps a notch close to one row while
+    # leaving the rest of the platform semantics (horizontal wheel, ctrl-zoom)
+    # untouched.
+    WHEEL_STEP_RATIO = 0.5
+
+    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+        delta = event.angleDelta()
+        if delta.y() == 0 or event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            super().wheelEvent(event)
+            return
+
+        scaled = QPoint(
+            int(round(delta.x() * self.WHEEL_STEP_RATIO)),
+            int(round(delta.y() * self.WHEEL_STEP_RATIO)),
+        )
+        if scaled.x() == 0 and delta.x() != 0:
+            scaled.setX(1 if delta.x() > 0 else -1)
+        if scaled.y() == 0:
+            scaled.setY(1 if delta.y() > 0 else -1)
+
+        reduced = QWheelEvent(
+            event.position(),
+            event.globalPosition(),
+            event.pixelDelta(),
+            scaled,
+            event.buttons(),
+            event.modifiers(),
+            event.phase(),
+            event.inverted(),
+            event.source(),
+        )
+        super().wheelEvent(reduced)
+        event.accept()
 
     def _row_near_viewport_edge(self, viewport_rect, *, top: bool) -> int:
         """Return the row nearest a viewport edge, or -1 when nothing is hit.
