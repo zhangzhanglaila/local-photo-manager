@@ -273,6 +273,64 @@ class _SimpleMocker:
 import pytest
 
 
+# --- one Qt application per test process ------------------------------------
+# Test modules disagree about what they need: worker tests build a plain
+# ``QCoreApplication`` while widget tests need a full ``QApplication``. Only one
+# application can exist per process, and ``.instance()`` hands back whichever was
+# created first, so the outcome depended on test file order. When the worker
+# tests won, the following widget module built widgets under a
+# ``QCoreApplication`` and Qt died with an access violation (0xC0000005).
+#
+# Create the strongest variant once, at collection time, and keep a
+# process-lifetime reference so it is never garbage collected. The per-module
+# ``QApplication.instance() or QApplication([])`` fixtures then reuse it instead
+# of racing to create one.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+_SESSION_QT_APP = None
+
+
+def _session_qt_application():
+    """Return the single Qt application shared by the whole test session."""
+
+    global _SESSION_QT_APP
+    if _SESSION_QT_APP is not None:
+        return _SESSION_QT_APP
+    if HAS_QTWIDGETS and QApplication is not None:
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        _SESSION_QT_APP = app
+    return _SESSION_QT_APP
+
+
+_session_qt_application()
+
+
+@pytest.fixture(autouse=True)
+def _close_leftover_widgets():
+    """Close widgets a test leaves behind so their worker threads stop.
+
+    Map views and other Qt widgets own ``QThread``s (marker clustering, tile
+    loading). A widget that is still alive when the next test runs keeps its
+    thread running, and once Python collects it Qt aborts the process with
+    ``QThread: Destroyed while thread is still running``. That surfaced as a
+    native crash in whichever test happened to trigger the collection, which is
+    why the failure looked unrelated to the test that leaked the widget.
+    """
+
+    yield
+    app = _session_qt_application()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        try:
+            widget.close()
+        except RuntimeError:  # already gone
+            continue
+    app.processEvents()
+
+
 @pytest.fixture()
 def mocker():
     helper = _SimpleMocker()
@@ -335,27 +393,21 @@ class _SimpleQtBot:
 
 @pytest.fixture()
 def qapp():
-    from PySide6.QtWidgets import QApplication
-
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
+    app = _session_qt_application()
+    if app is None:  # PySide6 without QtWidgets: nothing to process events for
+        yield None
+        return
     yield app
     app.processEvents()
 
 
 @pytest.fixture()
 def qtbot():
-    from PySide6.QtWidgets import QApplication
-
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
+    app = _session_qt_application()
     helper = _SimpleQtBot()
     try:
         yield helper
     finally:
         helper.close_widgets()
-        app.processEvents()
+        if app is not None:
+            app.processEvents()
