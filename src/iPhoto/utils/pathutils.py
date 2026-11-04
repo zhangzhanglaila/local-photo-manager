@@ -8,10 +8,10 @@ import hashlib
 import logging
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable, Iterator, Optional, Tuple
 
-from ..config import ALL_WORK_DIR_NAMES, WORK_DIR_NAME
+from ..config import ALL_WORK_DIR_NAMES, RECENTLY_DELETED_DIR_NAME, WORK_DIR_NAME
 
 LOGGER = logging.getLogger(__name__)
 _WARNED_WORK_DIR_CONFLICTS: set[Path] = set()
@@ -243,3 +243,54 @@ def normalise_rel_value(value: object) -> Optional[str]:
         return Path(str(value)).as_posix()
 
     raise TypeError(f"Expected str or Path, got {type(value).__name__}")
+
+
+def is_trash_rel(rel: object) -> bool:
+    """Return whether a library-relative *rel* belongs to the trash album."""
+
+    if not isinstance(rel, (str, Path)) or not rel:
+        return False
+    parts = PurePosixPath(str(rel).replace("\\", "/")).parts
+    return bool(parts) and parts[0] == RECENTLY_DELETED_DIR_NAME
+
+
+def resolve_trash_dir(root: Path) -> Optional[Path]:
+    """Return the trash directory for *root* without creating anything.
+
+    The trash normally lives inside the library's work directory, which can be
+    relocated to a custom workspace base and therefore sit outside the library
+    itself. Older libraries may still have a root-level ``.Trash``.
+    """
+
+    root = Path(root)
+    work_dir = resolve_work_dir(root)
+    if work_dir is not None:
+        candidate = work_dir / RECENTLY_DELETED_DIR_NAME
+        if candidate.is_dir():
+            return candidate
+    legacy = root / RECENTLY_DELETED_DIR_NAME
+    if legacy.is_dir():
+        return legacy
+    if work_dir is not None:
+        return work_dir / RECENTLY_DELETED_DIR_NAME
+    return None
+
+
+def resolve_asset_path(root: Path, rel: object) -> Path:
+    """Resolve an index ``rel`` value to the path the file actually occupies.
+
+    Trashed assets are indexed under the canonical ``.Trash/`` prefix, but the
+    trash directory is not necessarily inside the library root, so resolving
+    them against the library root would point at a file that does not exist.
+    Absolute ``rel`` values (used for roots outside the library) pass through.
+    """
+
+    path = Path(str(rel))
+    if path.is_absolute():
+        return path
+    if is_trash_rel(path):
+        trash_dir = resolve_trash_dir(root)
+        if trash_dir is not None:
+            parts = PurePosixPath(path.as_posix()).parts
+            return trash_dir.joinpath(*parts[1:])
+    return Path(root) / path

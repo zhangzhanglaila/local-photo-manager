@@ -11,6 +11,7 @@ from iPhoto.domain.models import Asset
 from iPhoto.domain.models.core import MediaType
 from iPhoto.domain.models.query import AssetQuery
 from iPhoto.utils import image_loader
+from iPhoto.utils.pathutils import resolve_asset_path
 
 # ── thumbnail-detection constants ────────────────────────────────────────────
 THUMBNAIL_SUFFIX_RE = re.compile(r"_(\d{2,4})x(\d{2,4})(?=\.[^.]+$)", re.IGNORECASE)
@@ -26,9 +27,9 @@ def resolve_abs_path(rel_path: Path, library_root: Optional[Path]) -> Path:
         return rel_path
     if library_root:
         try:
-            return (library_root / rel_path).resolve()
+            return resolve_asset_path(library_root, rel_path).resolve()
         except OSError:
-            return library_root / rel_path
+            return resolve_asset_path(library_root, rel_path)
     return rel_path.resolve()
 
 

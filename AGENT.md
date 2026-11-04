@@ -116,6 +116,18 @@ State rules:
 - Scan merge must be idempotent and must not implicitly clear durable user
   state.
 
+Trash identity rules:
+
+- Trashed assets are indexed under the canonical `rel` prefix `.Trash/`
+  (`parent_album_path == ".Trash"`). Queries, the All Photos exclusion, and
+  restore all key off that identity, so it must not change.
+- The physical trash directory is `ensure_work_dir(library_root) / ".Trash"`,
+  which is inside `.iPhoto/` and can therefore sit **outside** the library root
+  when a custom workspace base is configured. Never derive a trashed asset's
+  path as `library_root / rel`.
+- Resolve asset paths with `utils.pathutils.resolve_asset_path()`; it handles
+  absolute `rel` values and the relocated trash directory.
+
 ## 5. Module Responsibilities
 
 - `bootstrap/`: `RuntimeContext`, `LibrarySession`, and session-bound services

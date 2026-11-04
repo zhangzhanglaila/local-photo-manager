@@ -7,7 +7,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..application.ports import AssetRepositoryPort
@@ -21,7 +21,7 @@ from ..media_classifier import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from ..schemas import validate_album
 from ..utils.jsonio import read_json, write_json
 from ..utils.logging import get_logger
-from ..utils.pathutils import ensure_work_dir, resolve_work_dir
+from ..utils.pathutils import ensure_work_dir, resolve_trash_dir, resolve_work_dir
 from .library_scan_service import LibraryScanService
 
 LOGGER = get_logger()
@@ -114,17 +114,16 @@ class LibraryAssetLifecycleService:
 
         root = self._repository_root_for_read(Path(trash_root))
         repository = self._repository(root)
-        album_path = self._album_path(Path(trash_root))
-        if album_path:
+        if self.library_root is not None:
+            # Trash rows carry the canonical ``.Trash/`` identity, not their
+            # physical position inside the (possibly relocated) work directory.
             rows = repository.read_album_assets(
-                album_path,
+                RECENTLY_DELETED_DIR_NAME,
                 include_subalbums=True,
                 filter_hidden=False,
             )
-        elif self.library_root is None:
-            rows = repository.read_all(filter_hidden=False)
         else:
-            rows = ()
+            rows = repository.read_all(filter_hidden=False)
         return [dict(row) for row in rows if isinstance(row, dict)]
 
     def read_index_rows_by_rels(
@@ -184,33 +183,40 @@ class LibraryAssetLifecycleService:
         """Drop stale Recently Deleted rows for this library session."""
 
         try:
-            root = self._repository_root_for_read(Path(trash_root))
+            trash_dir = Path(trash_root)
+            root = self._repository_root_for_read(trash_dir)
             repository = self._repository(root)
-            album_path = self._album_path(Path(trash_root))
-            if album_path:
+            library_scoped = self.library_root is not None
+
+            if library_scoped:
+                # Trash rows carry the canonical ``.Trash/`` identity, and their
+                # real location lives in ``abs`` because the work directory may
+                # sit outside the library root.
                 rows = repository.read_album_assets(
-                    album_path,
+                    RECENTLY_DELETED_DIR_NAME,
                     include_subalbums=True,
                     filter_hidden=False,
                 )
-                process_root = root
-            elif self.library_root is None:
-                rows = repository.read_all(filter_hidden=False)
-                process_root = Path(trash_root)
             else:
-                return 0
+                rows = repository.read_all(filter_hidden=False)
 
             try:
-                has_files = next(Path(trash_root).iterdir(), None) is not None
+                has_files = next(trash_dir.iterdir(), None) is not None
             except OSError:
                 has_files = False
 
-            missing_rels = [
-                row_rel
-                for row_rel in (row.get("rel") for row in rows)
-                if isinstance(row_rel, str)
-                and (not has_files or not (process_root / row_rel).exists())
-            ]
+            missing_rels: list[str] = []
+            for row in rows:
+                row_rel = row.get("rel")
+                if not isinstance(row_rel, str):
+                    continue
+                if library_scoped:
+                    still_present = self._trash_row_path(row, trash_dir).exists()
+                else:
+                    still_present = (trash_dir / row_rel).exists()
+                if not has_files or not still_present:
+                    missing_rels.append(row_rel)
+
             if missing_rels:
                 repository.remove_rows(missing_rels)
             return len(missing_rels)
@@ -298,7 +304,7 @@ class LibraryAssetLifecycleService:
         rel_to_original: dict[str, str] = {}
 
         for original, _ in moved:
-            rel = self._relative_for_index(original, base=source_root)
+            rel = self._source_relative_rel(original, source_root)
             if rel is None:
                 continue
             rels.append(rel)
@@ -324,11 +330,22 @@ class LibraryAssetLifecycleService:
     ) -> None:
         index_root = self._repository_root_for_destination(destination_root)
         repository = self._repository(index_root)
-        process_root = self._process_root(destination_root)
         is_trash_destination = self._paths_equal(destination_root, trash_root)
+        # Index a trashed asset relative to the trash directory itself and then
+        # store it under the canonical ``.Trash/`` identity. The physical trash
+        # directory is not always inside the library root: with a custom
+        # workspace base it lives in ``<workspace>/<library>/.iPhoto/.Trash``, so
+        # a library-relative ``rel`` cannot describe it and collapses to a bare
+        # file name (which then collided with a real library-root asset).
+        trash_dir = (
+            Path(trash_root)
+            if is_trash_destination and trash_root is not None and not is_restore
+            else None
+        )
+        process_root = trash_dir if trash_dir is not None else self._process_root(destination_root)
 
-        if is_trash_destination:
-            self._cleanup_stale_trash_rows(repository, process_root)
+        if trash_dir is not None:
+            self._cleanup_stale_trash_rows(repository, trash_dir)
 
         reused_rows: list[dict[str, Any]] = []
         uncached_images: list[Path] = []
@@ -340,6 +357,10 @@ class LibraryAssetLifecycleService:
                 row = dict(cached)
                 row["rel"] = self._target_rel(target, process_root)
                 row["parent_album_path"] = self._parent_album_path(row["rel"])
+                # ``abs`` is what the GUI resolves the asset from, so it has to
+                # follow the file. Leaving the cached value pointed a moved or
+                # restored asset at its previous location.
+                row["abs"] = str(target)
                 if is_restore:
                     row.pop("original_rel_path", None)
                     row.pop("original_album_id", None)
@@ -367,8 +388,9 @@ class LibraryAssetLifecycleService:
             ]
 
         new_rows = reused_rows + freshly_scanned
-        if is_trash_destination and not is_restore:
-            new_rows = self._annotate_trash_rows(new_rows, moved, process_root)
+        if trash_dir is not None:
+            new_rows = self._annotate_trash_rows(new_rows, moved, trash_dir)
+            new_rows = [self._canonical_trash_row(row, trash_dir) for row in new_rows]
 
         if new_rows:
             repository.append_rows(new_rows)
@@ -376,7 +398,7 @@ class LibraryAssetLifecycleService:
     def _cleanup_stale_trash_rows(
         self,
         repository: AssetRepositoryPort,
-        process_root: Path,
+        trash_root: Path,
     ) -> None:
         try:
             existing_trash_rows = list(
@@ -388,14 +410,51 @@ class LibraryAssetLifecycleService:
             )
             missing_rels = [
                 row_rel
-                for row_rel in (row.get("rel") for row in existing_trash_rows)
+                for row, row_rel in (
+                    (row, row.get("rel")) for row in existing_trash_rows
+                )
                 if isinstance(row_rel, str)
-                and not (process_root / row_rel).exists()
+                and not self._trash_row_path(row, trash_root).exists()
             ]
             if missing_rels:
                 repository.remove_rows(missing_rels)
         except (IPhotoError, sqlite3.Error, OSError) as exc:
             LOGGER.debug("Trash cleanup during move skipped: %s", exc)
+
+    @staticmethod
+    def _canonical_trash_row(row: dict[str, Any], trash_root: Path) -> dict[str, Any]:
+        """Rewrite a trash-bound row to the canonical ``.Trash/`` identity.
+
+        Every consumer identifies deleted assets by the ``.Trash`` album path:
+        the Recently Deleted query, the ``exclude_path_prefix`` that hides them
+        from All Photos, and the restore flow. That identity therefore has to be
+        stable, and independent of where the work directory physically lives.
+        The real location is preserved in ``abs``.
+        """
+
+        rel_value = row.get("rel")
+        if not isinstance(rel_value, str) or not rel_value:
+            return row
+
+        trash_relative = PurePosixPath(rel_value.replace("\\", "/"))
+        canonical = f"{RECENTLY_DELETED_DIR_NAME}/{trash_relative.as_posix()}"
+        canonicalised = dict(row)
+        canonicalised["rel"] = canonical
+        canonicalised["parent_album_path"] = RECENTLY_DELETED_DIR_NAME
+        canonicalised["abs"] = str(trash_root / trash_relative.as_posix())
+        return canonicalised
+
+    @staticmethod
+    def _trash_row_path(row: dict[str, Any], trash_root: Path) -> Path:
+        """Return the on-disk path a trashed index row refers to."""
+
+        abs_value = row.get("abs")
+        if isinstance(abs_value, str) and abs_value:
+            return Path(abs_value)
+        rel_value = row.get("rel")
+        if isinstance(rel_value, str) and rel_value:
+            return trash_root / PurePosixPath(rel_value.replace("\\", "/")).name
+        return trash_root / "__missing_trash_row__"
 
     def _annotate_trash_rows(
         self,
@@ -492,6 +551,24 @@ class LibraryAssetLifecycleService:
         root = self.library_root or base
         relative = self._relative_to(path, root)
         return relative.as_posix() if relative is not None else None
+
+    def _source_relative_rel(self, path: Path, source_root: Path) -> str | None:
+        """Return the ``rel`` a source row is stored under.
+
+        Trash rows are indexed under the canonical ``.Trash/`` identity rather
+        than at their physical position, so removing them by rel has to use the
+        same form; a plain library-relative path would miss and leave the
+        restored asset duplicated in Recently Deleted.
+        """
+
+        trash_dir = (
+            resolve_trash_dir(self.library_root) if self.library_root is not None else None
+        )
+        if trash_dir is not None and self._paths_equal(source_root, trash_dir):
+            relative = self._relative_to(path, trash_dir)
+            if relative is not None:
+                return f"{RECENTLY_DELETED_DIR_NAME}/{relative.as_posix()}"
+        return self._relative_for_index(path, base=source_root)
 
     def _target_rel(self, target: Path, process_root: Path) -> str:
         relative = self._relative_to(target, process_root)

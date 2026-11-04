@@ -21,6 +21,7 @@ pytest.importorskip(
 from PySide6.QtWidgets import QApplication
 
 import iPhoto.bootstrap.library_asset_lifecycle_service as lifecycle_module
+from iPhoto.utils.pathutils import resolve_asset_path
 from iPhoto.bootstrap.library_asset_operation_service import LibraryAssetOperationService
 from iPhoto.cache.index_store import IndexStore
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
@@ -790,9 +791,12 @@ def test_delete_collision_assigns_unique_trash_paths(
     assert len(trash_rows) == 2
     rel_values = {row.get("rel") for row in trash_rows}
     assert len(rel_values) == 2
-    # Ensure filesystem paths exist for both rels
+    # Both rows must resolve to a file that exists. Trash rows carry the
+    # canonical ``.Trash/`` identity, but the trash directory itself lives under
+    # the library's work directory, so the path has to come from the same
+    # resolver the gallery uses rather than a plain ``library_root / rel``.
     for rel in rel_values:
-        assert (library_root / rel).exists()
+        assert resolve_asset_path(library_root, rel).exists()
 
 
 def test_move_worker_cleans_up_partially_copied_target_on_move_failure(

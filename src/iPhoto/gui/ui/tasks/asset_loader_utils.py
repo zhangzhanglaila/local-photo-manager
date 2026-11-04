@@ -16,7 +16,7 @@ from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
 from ....config import RECENTLY_DELETED_DIR_NAME
 from ....media_classifier import classify_media
 from ....utils.geocoding import resolve_location_name
-from ....utils.pathutils import ensure_work_dir
+from ....utils.pathutils import ensure_work_dir, resolve_asset_path
 from ....utils.image_loader import qimage_from_bytes
 
 LOGGER = logging.getLogger(__name__)
@@ -298,12 +298,10 @@ def build_asset_entry(
     rel = str(row.get("rel"))
     if not rel:
         return None
-    # Non-primary root assets store absolute paths in `rel`.
-    rel_path = Path(rel)
-    if rel_path.is_absolute():
-        abs_path_obj = rel_path
-    else:
-        abs_path_obj = root / rel
+    # Non-primary root assets store absolute paths in `rel`. Trashed assets are
+    # indexed under ``.Trash/`` but physically live in the (possibly relocated)
+    # trash directory, so they must not be resolved against the library root.
+    abs_path_obj = resolve_asset_path(root, rel)
     exists_fn = path_exists or _path_exists_direct
     if not exists_fn(abs_path_obj):
         return None
