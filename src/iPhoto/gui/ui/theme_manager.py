@@ -38,36 +38,37 @@ class ThemeColors:
 
 
 LIGHT_THEME = ThemeColors(
-    window_background=QColor("#F5F5F5"),
-    text_primary=QColor("#2b2b2b"),
-    text_secondary=QColor(0, 0, 0, 160),
-    text_disabled=QColor(0, 0, 0, 90),
-    accent_color=QColor(SIDEBAR_ICON_COLOR_HEX),
-    border_color=QColor(0, 0, 0, 40),
-    sidebar_background=QColor("#eef3f6"),
-    sidebar_text=QColor("#2b2b2b"),
-    sidebar_section_text=QColor(0, 0, 0, 160),
-    sidebar_hover=QColor(0, 0, 0, 24),
-    sidebar_selected=QColor(0, 0, 0, 56),
-    scrollbar_handle=QColor(0, 0, 0, 100),
-    scrollbar_track=QColor(0, 0, 0, 30),
+    # Apple's neutral surfaces: systemGray6 for the window, hairlines for borders.
+    window_background=QColor("#F5F5F7"),
+    text_primary=QColor("#1D1D1F"),
+    text_secondary=QColor(60, 60, 67, 153),
+    text_disabled=QColor(60, 60, 67, 90),
+    accent_color=QColor("#007AFF"),
+    border_color=QColor(0, 0, 0, 20),
+    sidebar_background=QColor("#F0F0F3"),
+    sidebar_text=QColor("#1D1D1F"),
+    sidebar_section_text=QColor(60, 60, 67, 153),
+    sidebar_hover=QColor(0, 0, 0, 12),
+    sidebar_selected=QColor(0, 0, 0, 26),
+    scrollbar_handle=QColor(0, 0, 0, 66),
+    scrollbar_track=QColor(0, 0, 0, 0),
 )
 
-# Dark theme colors derived from EditThemeManager and standard dark mode patterns
+# Dark theme colours follow Apple's dark system greys.
 DARK_THEME = ThemeColors(
     window_background=QColor("#1C1C1E"),
     text_primary=QColor("#F5F5F7"),
-    text_secondary=QColor(245, 245, 247, 160),
-    text_disabled=QColor("#7F7F7F"),
+    text_secondary=QColor(235, 235, 245, 153),
+    text_disabled=QColor(235, 235, 245, 76),
     accent_color=QColor("#0A84FF"),
-    border_color=QColor("#323236"),
-    sidebar_background=QColor("#2C2C2E"),
+    border_color=QColor(255, 255, 255, 26),
+    sidebar_background=QColor("#1F1F22"),
     sidebar_text=QColor("#F5F5F7"),
-    sidebar_section_text=QColor(245, 245, 247, 160),
-    sidebar_hover=QColor(255, 255, 255, 24),
-    sidebar_selected=QColor(255, 255, 255, 40),
-    scrollbar_handle=QColor(255, 255, 255, 100),
-    scrollbar_track=QColor(255, 255, 255, 30),
+    sidebar_section_text=QColor(235, 235, 245, 153),
+    sidebar_hover=QColor(255, 255, 255, 15),
+    sidebar_selected=QColor(255, 255, 255, 30),
+    scrollbar_handle=QColor(255, 255, 255, 76),
+    scrollbar_track=QColor(255, 255, 255, 0),
 )
 
 

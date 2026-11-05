@@ -8,14 +8,20 @@ from PySide6.QtGui import QColor, QPalette
 def modern_scrollbar_style(
     base_color: QColor,
     *,
-    track_alpha: int = 30,
-    handle_alpha: int = 40,
-    handle_hover_alpha: int = 100,
-    radius: int = 3,
-    handle_radius: int = 2,
+    track_alpha: int = 0,
+    handle_alpha: int = 90,
+    handle_hover_alpha: int = 140,
+    radius: int = 4,
+    handle_radius: int = 4,
+    thickness: int = 8,
+    min_handle: int = 40,
     extra_selectors: str = "",
 ) -> str:
     """Generate a CSS string for a modern, transparent scrollbar.
+
+    Defaults are macOS-like: an overlay scrollbar with a fully transparent track,
+    a rounded translucent handle and no arrow buttons. Callers that want a
+    visible track pass ``track_alpha`` explicitly.
 
     Parameters
     ----------
@@ -117,19 +123,19 @@ def modern_scrollbar_style(
         f"{base_css}"
         "}\n"
         f"QScrollBar:vertical {extra_selectors} {{\n"
-        "    width: 7px;\n"
+        f"    width: {thickness}px;\n"
         "}\n"
         f"QScrollBar:horizontal {extra_selectors} {{\n"
-        "    height: 7px;\n"
+        f"    height: {thickness}px;\n"
         "}\n"
         f"QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{\n"
         f"{handle_css}"
         "}\n"
         "QScrollBar::handle:vertical {\n"
-        "    min-height: 30px;\n"
+        f"    min-height: {min_handle}px;\n"
         "}\n"
         "QScrollBar::handle:horizontal {\n"
-        "    min-width: 30px;\n"
+        f"    min-width: {min_handle}px;\n"
         "}\n"
         f"QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{\n"
         f"{handle_hover_css}"

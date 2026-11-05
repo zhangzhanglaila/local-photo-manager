@@ -71,7 +71,9 @@ class AssetGridDelegate(QStyledItemDelegate):
         is_current = self._filmstrip_mode and bool(index.data(Roles.IS_CURRENT))
         thumb_rect = cell_rect
         base_color = option.palette.color(QPalette.Base)
-        corner_radius = 8.0 if self._filmstrip_mode else 0.0
+        # Rounded tiles in both modes: macOS Photos rounds its thumbnails, and
+        # square cells made the grid read as a generic file list.
+        corner_radius = 8.0 if self._filmstrip_mode else 6.0
 
         pixmap = index.data(Qt.DecorationRole)
         micro_thumb = None
@@ -80,7 +82,7 @@ class AssetGridDelegate(QStyledItemDelegate):
             micro_thumb = index.data(Roles.MICRO_THUMBNAIL)
 
         clip_path: QPainterPath | None = None
-        if self._filmstrip_mode and corner_radius > 0.0:
+        if corner_radius > 0.0:
             clip_path = QPainterPath()
             clip_path.addRoundedRect(QRectF(thumb_rect), corner_radius, corner_radius)
             # Fill the rounded bounds first so uncovered corners inherit the
