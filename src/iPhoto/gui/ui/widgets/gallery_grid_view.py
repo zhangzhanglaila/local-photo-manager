@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from ..styles import modern_scrollbar_style
 from .asset_grid import AssetGrid
+from .date_pill import DatePill
 from .timeline_scrubber import TimelineScrubber
 from ....i18n import tr
 from ..models.roles import Roles
@@ -295,28 +296,7 @@ class GalleryGridView(AssetGrid):
         # reserved by ``setViewportMargins`` so it cannot cover a thumbnail.
         self._timeline_scrubber = TimelineScrubber(self)
 
-        self._date_badge = QLabel(self)
-        self._date_badge.setObjectName("galleryDateBadge")
-        self._date_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Frosted pill: translucent white so the year labels behind it stay
-        # faintly visible, plus a soft drop shadow for elevation.
-        self._date_badge.setStyleSheet(
-            "QLabel#galleryDateBadge {"
-            "  background-color: rgba(255, 255, 255, 0.88);"
-            "  border: 1px solid rgba(0, 0, 0, 0.06);"
-            "  border-radius: 15px;"
-            "  color: #1D1D1F;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  padding: 2px 12px;"
-            "}"
-        )
-        badge_shadow = QGraphicsDropShadowEffect(self._date_badge)
-        badge_shadow.setBlurRadius(22.0)
-        badge_shadow.setOffset(0.0, 3.0)
-        badge_shadow.setColor(QColor(0, 0, 0, 60))
-        self._date_badge.setGraphicsEffect(badge_shadow)
-        self._date_badge.hide()
+        self._date_badge = DatePill(self)
 
         # Auto-hide the pill shortly after scrolling stops; hovering keeps it up.
         self._date_badge_timer = QTimer(self)
@@ -463,34 +443,50 @@ class GalleryGridView(AssetGrid):
         self._hover_anchor_y = anchor_y
         self._position_date_badge(anchor_y)
 
+    def _dot_anchor_y(self) -> int | None:
+        """Return the rail dot's y in this view's coordinates."""
+
+        scrubber = getattr(self, "_timeline_scrubber", None)
+        if scrubber is None:
+            return None
+        dot_getter = getattr(scrubber, "dot_y", None)
+        dot_y = dot_getter() if callable(dot_getter) else None
+        if dot_y is None:
+            return None
+        return int(scrubber.geometry().top() + dot_y)
+
     def _position_date_badge(self, anchor_y: int | None = None) -> None:
-        """Place the pill centered, or beside the track when following the pointer."""
+        """Place the pill beside the track, level with the dot.
+
+        Scrolling and dragging use the same anchor: the position dot's height. The
+        pill is therefore always next to the ball instead of jumping to the top of
+        the grid.
+        """
 
         badge = self._date_badge
         hint = badge.sizeHint()
         width = max(24, hint.width())
         height = max(24, hint.height())
 
-        if anchor_y is None:
+        anchor = anchor_y if anchor_y is not None else self._dot_anchor_y()
+        scrubber = getattr(self, "_timeline_scrubber", None)
+        if anchor is None or scrubber is None:
             badge.setGeometry(
                 max(0, (self.width() - width) // 2),
                 10,
                 width,
                 height,
             )
-        else:
-            scrubber = getattr(self, "_timeline_scrubber", None)
-            if scrubber is not None:
-                # The pill's right edge stops just short of the track, so it
-                # overlaps the year labels (which stay faintly visible through the
-                # translucent background) exactly like the reference.
-                rail_left = scrubber.geometry().left()
-                track_x = rail_left + scrubber.width() - 7
-                x = max(0, track_x - 14 - width)
-            else:
-                x = max(0, self.width() - width - 12)
-            y = max(6, min(self.height() - height - 6, anchor_y - height // 2))
-            badge.setGeometry(x, y, width, height)
+            badge.raise_()
+            return
+
+        # The pill's right edge stops just short of the track, so it overlaps the
+        # year labels (which stay faintly visible through the translucent fill).
+        rail_left = scrubber.geometry().left()
+        track_x = rail_left + scrubber.width() - 7
+        x = max(0, track_x - 14 - width)
+        y = max(6, min(self.height() - height - 6, anchor - height // 2))
+        badge.setGeometry(x, y, width, height)
         badge.raise_()
 
     def _refresh_timeline(self) -> None:

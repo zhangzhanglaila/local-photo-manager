@@ -372,3 +372,25 @@ def test_dragging_moves_the_position_dot(qapp: QApplication) -> None:
     assert after != before, "the dot must track the photos while scrubbing"
     assert view._date_badge.isVisible() is True, "dragging also shows the date"
     view.close()
+
+def test_scrolling_anchors_the_pill_to_the_dot(qapp: QApplication) -> None:
+    """While scrolling the pill sits next to the ball, not at the top of the grid."""
+
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    view.setModel(_GridModel())
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    view._on_visible_rows_for_timeline(260, 280)
+    qapp.processEvents()
+
+    anchor = view._dot_anchor_y()
+    assert anchor is not None
+    badge = view._date_badge
+    assert badge.isVisible() is True
+    assert abs(badge.geometry().center().y() - anchor) <= 2

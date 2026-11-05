@@ -212,6 +212,16 @@ class TimelineScrubber(QWidget):
         self._current_y = y
         self.update()
 
+    def dot_y(self) -> float | None:
+        """Return the clamped y of the position dot (widget-local), if known."""
+
+        y = self._dot_y()
+        if y is None:
+            return None
+        track_top = float(KNOB_CENTER_Y) + 4.0
+        bottom = float(self.height() - BOTTOM_INSET) + 4.0
+        return max(track_top, min(bottom, y))
+
     def _dot_y(self) -> float | None:
         """Return where the position dot goes.
 
