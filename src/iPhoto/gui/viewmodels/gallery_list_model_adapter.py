@@ -65,6 +65,11 @@ class GalleryListModelAdapter(QAbstractListModel):
     def store(self) -> GalleryCollectionStore:
         return self._store
 
+    def year_start_rows(self) -> list[tuple[int, int]]:
+        """Expose ``(year, first_row)`` for the gallery timeline rail."""
+
+        return self._store.year_start_rows()
+
     def roleNames(self) -> Dict[int, bytes]:  # type: ignore[override]
         return role_names(super().roleNames())
 

@@ -482,6 +482,49 @@ class AssetRepository:
             if should_close:
                 conn.close()
 
+    def count_by_year_month(
+        self,
+        *,
+        album_path: Optional[str] = None,
+        include_subalbums: bool = True,
+        filter_hidden: bool = True,
+        filter_params: Optional[Dict[str, Any]] = None,
+    ) -> List[Tuple[int, int, int]]:
+        """Return ``(year, month, count)`` buckets for the current scope.
+
+        The timeline scrubber needs to know where each year starts without
+        loading every asset. This is a single aggregate query — one row per
+        month, a few hundred at most — so it stays cheap even on large
+        libraries, unlike walking the rows to count them.
+        """
+
+        query, params = QueryBuilder.build_pagination_query(
+            select_clause="SELECT year, month, COUNT(*) AS bucket_count",
+            album_path=album_path,
+            include_subalbums=include_subalbums,
+            filter_hidden=filter_hidden,
+            filter_params=filter_params,
+            sort_by_date=False,
+            limit=None,
+        )
+        query += " GROUP BY year, month ORDER BY year DESC, month DESC"
+
+        conn = self._db_manager.get_connection()
+        should_close = (conn != self._db_manager._conn)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            buckets: List[Tuple[int, int, int]] = []
+            for year, month, count in cursor:
+                try:
+                    buckets.append((int(year or 0), int(month or 0), int(count or 0)))
+                except (TypeError, ValueError):
+                    continue
+            return buckets
+        finally:
+            if should_close:
+                conn.close()
+
     def read_geotagged(self) -> Iterator[Dict[str, Any]]:
         """Yield only rows that contain GPS metadata."""
         conn = self._db_manager.get_connection()

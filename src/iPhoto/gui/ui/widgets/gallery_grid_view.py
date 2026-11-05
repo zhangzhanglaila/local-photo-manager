@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QAbstractItemView, QListView, QLabel, QStyleOption
 
 from ..styles import modern_scrollbar_style
 from .asset_grid import AssetGrid
+from .timeline_scrubber import TimelineScrubber
 from ....i18n import tr
 from ..models.roles import Roles
 
@@ -102,6 +103,8 @@ class GalleryGridView(AssetGrid):
 
         self._updating_style = False
         self._apply_scrollbar_style()
+
+        self._build_timeline_overlays()
         self._do_update_empty_state()
 
     # ------------------------------------------------------------------
@@ -229,7 +232,15 @@ class GalleryGridView(AssetGrid):
         if self._scanning_label is not None:
             self._scanning_label.setGeometry(self.viewport().rect())
 
+        self._layout_timeline_overlays()
+        self._update_grid_size()
 
+    def _update_grid_size(self) -> None:
+        """Recompute the item size for the current viewport width."""
+
+        viewport_width = self.viewport().width()
+        if viewport_width <= 0:
+            return
         # Determine how many columns can fit with the minimum size constraint.
         # We model the grid cell as (item_width + gap), which provides 1px padding
         # on each side of the item, resulting in a visual 2px gutter between items.
@@ -258,10 +269,176 @@ class GalleryGridView(AssetGrid):
             if hasattr(delegate, "set_base_size"):
                 delegate.set_base_size(new_item_width)
 
+    # ------------------------------------------------------------------
+    # Timeline rail and date badge
+    # ------------------------------------------------------------------
+    def _build_timeline_overlays(self) -> None:
+        viewport = self.viewport()
+
+        self._timeline_scrubber = TimelineScrubber(viewport)
+        self._timeline_scrubber.yearActivated.connect(self._on_timeline_year_activated)
+
+        self._date_badge = QLabel(viewport)
+        self._date_badge.setObjectName("galleryDateBadge")
+        self._date_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._date_badge.setStyleSheet(
+            "QLabel#galleryDateBadge {"
+            "  background-color: rgba(255, 255, 255, 0.92);"
+            "  border: 1px solid rgba(0, 0, 0, 0.08);"
+            "  border-radius: 11px;"
+            "  color: #1D1D1F;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  padding: 1px 10px;"
+            "}"
+        )
+        self._date_badge.hide()
+
+        self._date_badge_timer = QTimer(self)
+        self._date_badge_timer.setSingleShot(True)
+        self._date_badge_timer.setInterval(1400)
+        self._date_badge_timer.timeout.connect(self._date_badge.hide)
+
+        # ``visibleRowsChanged`` is already debounced (50 ms) and only fires when
+        # the range actually moves, so the badge costs one cached role read per
+        # scroll step and never touches the database.
+        self.visibleRowsChanged.connect(self._on_visible_rows_for_timeline)
+        QTimer.singleShot(0, self._refresh_timeline)
+
+    def _layout_timeline_overlays(self) -> None:
+        viewport = self.viewport()
+        width = viewport.width()
+        height = viewport.height()
+        if width <= 0 or height <= 0:
+            return
+
+        scrubber = getattr(self, "_timeline_scrubber", None)
+        if scrubber is not None:
+            rail_width = scrubber.width()
+            scrubber.setGeometry(
+                max(0, width - rail_width - 4),
+                8,
+                rail_width,
+                max(0, height - 16),
+            )
+            scrubber.raise_()
+
+        badge = getattr(self, "_date_badge", None)
+        if badge is not None and badge.isVisible():
+            self._position_date_badge()
+
+    def _position_date_badge(self) -> None:
+        badge = self._date_badge
+        hint = badge.sizeHint()
+        viewport = self.viewport()
+        badge.setGeometry(
+            max(0, (viewport.width() - hint.width()) // 2),
+            10,
+            hint.width(),
+            max(24, hint.height()),
+        )
+        badge.raise_()
+
+    def _refresh_timeline(self) -> None:
+        """Rebuild the year rail from the model's cached year/row mapping."""
+
+        scrubber = getattr(self, "_timeline_scrubber", None)
+        if scrubber is None:
+            return
+        model = self.model()
+        provider = getattr(model, "year_start_rows", None)
+        years: list[tuple[int, int]] = []
+        if callable(provider):
+            try:
+                years = list(provider())
+            except Exception:
+                years = []
+        scrubber.set_years(years)
+        self._apply_timeline_margins()
+        self._layout_timeline_overlays()
+
+    def _apply_timeline_margins(self) -> None:
+        """Reserve room for the rail so it never covers the rightmost column."""
+
+        scrubber = getattr(self, "_timeline_scrubber", None)
+        reserve = scrubber.width() if scrubber is not None and scrubber.isVisible() else 0
+        if reserve == getattr(self, "_timeline_reserved_width", 0):
+            return
+        self._timeline_reserved_width = reserve
+        self.setViewportMargins(0, 0, reserve, 0)
+        self._update_grid_size()
+
+    def _schedule_timeline_refresh(self) -> None:
+        QTimer.singleShot(0, self._refresh_timeline)
+
+    def _on_timeline_year_activated(self, row: int) -> None:
+        model = self.model()
+        if model is None or row < 0 or row >= model.rowCount():
+            return
+        index = model.index(row, 0)
+        if not index.isValid():
+            return
+        self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtTop)
+
+    def _on_visible_rows_for_timeline(self, first: int, last: int) -> None:
+        index = self.indexAt(QPoint(self.viewport().width() // 2, 2))
+        if not index.isValid():
+            index = self.model().index(max(0, first), 0) if self.model() else None
+        if index is None or not index.isValid():
+            return
+
+        created_at = index.data(Roles.DT)
+        year = None
+        if hasattr(created_at, "year"):
+            year = int(created_at.year)
+        elif isinstance(created_at, str) and len(created_at) >= 4:
+            try:
+                year = int(created_at[0:4])
+            except ValueError:
+                year = None
+
+        scrubber = getattr(self, "_timeline_scrubber", None)
+        if scrubber is not None:
+            scrubber.set_active_year(year)
+
+        text = self._format_timeline_date(created_at)
+        badge = getattr(self, "_date_badge", None)
+        if badge is None or not text:
+            return
+        badge.setText(text)
+        self._position_date_badge()
+        badge.show()
+        badge.raise_()
+        self._date_badge_timer.start()
+
+    @staticmethod
+    def _format_timeline_date(created_at: object) -> str:
+        if hasattr(created_at, "year"):
+            pattern = tr("timeline.day_format", default="{year}年{month:02d}月{day:02d}日")
+            try:
+                return pattern.format(
+                    year=created_at.year,
+                    month=created_at.month,
+                    day=created_at.day,
+                )
+            except (AttributeError, ValueError, KeyError):
+                return ""
+        if isinstance(created_at, str) and len(created_at) >= 10:
+            try:
+                return tr(
+                    "timeline.day_format", default="{year}年{month:02d}月{day:02d}日"
+                ).format(
+                    year=int(created_at[0:4]),
+                    month=int(created_at[5:7]),
+                    day=int(created_at[8:10]),
+                )
+            except ValueError:
+                return ""
+        return ""
+
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.PaletteChange:
-            if not self._updating_style:
-                self._apply_scrollbar_style()
+            if not self._updating_style:                self._apply_scrollbar_style()
         super().changeEvent(event)
 
     def _apply_scrollbar_style(self) -> None:
@@ -327,6 +504,9 @@ class GalleryGridView(AssetGrid):
             rows, self._empty_mode, self._query_loading, self._scan_completed,
         )
         self._query_loading = True
+        # The year rail depends on the model's row layout, so refresh it whenever
+        # the source changes.
+        self._schedule_timeline_refresh()
         # ⭐ 关键修复：如果 model 已经有数据，立即清除所有 overlay 状态
         # 避免用户看到"加载中"或"无媒体"提示覆盖在照片上
         if model is not None and model.rowCount() > 0:
@@ -358,6 +538,7 @@ class GalleryGridView(AssetGrid):
             self._empty_label.hide()
             self._empty_mode = None
         self._update_empty_state()
+        self._schedule_timeline_refresh()
 
     def _on_loading_timeout(self) -> None:
         self._query_loading = False

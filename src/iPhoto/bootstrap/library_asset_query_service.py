@@ -14,6 +14,9 @@ from ..cache.index_store import get_global_repository
 from ..config import RECENTLY_DELETED_DIR_NAME
 from ..domain.models.core import MediaType
 from ..domain.models.query import AssetQuery, SortOrder
+from ..utils.logging import get_logger
+
+_LOGGER = get_logger()
 from ..path_normalizer import compute_album_path
 
 
@@ -142,6 +145,57 @@ class LibraryAssetQueryService:
         for row in rows:
             if isinstance(row, dict):
                 yield dict(row)
+
+    def count_query_buckets(self, query: AssetQuery) -> list[tuple[int, int, int]]:
+        """Return ``(year, month, count)`` buckets for an application query.
+
+        The gallery timeline uses this to map a year to a row offset. It is a
+        single ``GROUP BY`` over the index, never a full row walk, so opening the
+        scrubber costs one small query instead of loading the library.
+        """
+
+        bucket_query = self._count_query(query)
+        if self._requires_in_memory_query(bucket_query):
+            return self._buckets_from_rows(bucket_query)
+
+        filter_params = self._filter_params_for_query(bucket_query)
+        repository = self._repository()
+        counter = getattr(repository, "count_by_year_month", None)
+        if not callable(counter):
+            return self._buckets_from_rows(bucket_query)
+        try:
+            return list(
+                counter(
+                    filter_hidden=True,
+                    filter_params=filter_params,
+                    album_path=bucket_query.album_path,
+                    include_subalbums=bucket_query.include_subalbums,
+                )
+            )
+        except Exception:
+            _LOGGER.warning("Timeline bucket query failed; falling back to rows", exc_info=True)
+            return self._buckets_from_rows(bucket_query)
+
+    def _buckets_from_rows(self, query: AssetQuery) -> list[tuple[int, int, int]]:
+        """Derive buckets by scanning rows (used for in-memory filter modes)."""
+
+        counts: dict[tuple[int, int], int] = {}
+        for row in self._filtered_query_rows(query):
+            if not isinstance(row, dict):
+                continue
+            raw = row.get("dt") or ""
+            if not isinstance(raw, str) or len(raw) < 7:
+                continue
+            try:
+                year = int(raw[0:4])
+                month = int(raw[5:7])
+            except ValueError:
+                continue
+            counts[(year, month)] = counts.get((year, month), 0) + 1
+        return [
+            (year, month, count)
+            for (year, month), count in sorted(counts.items(), reverse=True)
+        ]
 
     def count_query_assets(self, query: AssetQuery) -> int:
         """Return the number of indexed assets matching an application query."""

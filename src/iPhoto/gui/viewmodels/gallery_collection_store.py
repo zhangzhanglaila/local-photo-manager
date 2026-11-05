@@ -109,6 +109,10 @@ class GalleryCollectionStore:
         self._load_signals: Optional[GalleryLoadSignals] = None
         self._logger = logging.getLogger(__name__)
 
+        # Timeline (year rail): buckets are cached per query + total count.
+        self._timeline_buckets: list[tuple[int, int, int]] = []
+        self._timeline_cache_key: Optional[tuple[int, int]] = None
+
     def cancel_pending_load(self) -> None:
         """Cancel any in-flight async load."""
         if self._load_worker is not None:
@@ -386,6 +390,90 @@ class GalleryCollectionStore:
 
     def count(self) -> int:
         return self._total_count
+
+    def timeline_buckets(self) -> list[tuple[int, int, int]]:
+        """Return ``(year, month, count)`` for the current query, newest first.
+
+        Cached per query so opening the timeline rail costs one small aggregate
+        query per view change, not one per repaint.
+        """
+
+        query = self._current_query
+        if query is None and not self._direct_mode:
+            return []
+        if self._total_count <= 0:
+            return []
+
+        # Direct mode already holds every DTO in memory, so grouping it costs a
+        # single pass and no SQL at all. Query mode asks the index for one
+        # aggregate instead of loading rows.
+        cache_key: tuple = (
+            ("direct", self._generation, self._total_count)
+            if query is None
+            else (id(query), self._total_count)
+        )
+        if self._timeline_cache_key == cache_key:
+            return list(self._timeline_buckets)
+
+        if query is None:
+            buckets = self._buckets_from_row_cache()
+        else:
+            getter = getattr(self._asset_query_service, "count_query_buckets", None)
+            buckets = []
+            if callable(getter):
+                try:
+                    buckets = [
+                        (int(year), int(month), int(count))
+                        for year, month, count in getter(query)
+                    ]
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "Timeline buckets unavailable", exc_info=True
+                    )
+                    buckets = []
+
+        self._timeline_cache_key = cache_key
+        self._timeline_buckets = buckets
+        return list(buckets)
+
+    def _buckets_from_row_cache(self) -> list[tuple[int, int, int]]:
+        """Group the in-memory DTOs by ``(year, month)``, newest first."""
+
+        counts: dict[tuple[int, int], int] = {}
+        for dto in self._row_cache.values():
+            created_at = getattr(dto, "created_at", None)
+            if created_at is None:
+                continue
+            try:
+                key = (int(created_at.year), int(created_at.month))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            counts[key] = counts.get(key, 0) + 1
+        return [
+            (year, month, count)
+            for (year, month), count in sorted(counts.items(), reverse=True)
+        ]
+
+    def year_start_rows(self) -> list[tuple[int, int]]:
+        """Return ``(year, first_row)`` pairs in display order (newest first).
+
+        Rows are sorted by date descending, so cumulative bucket counts give the
+        exact row each year starts at — no scanning of asset rows required.
+        """
+
+        buckets = self.timeline_buckets()
+        if not buckets:
+            return []
+
+        result: list[tuple[int, int]] = []
+        row = 0
+        current_year: int | None = None
+        for year, _month, count in buckets:
+            if year != current_year:
+                result.append((year, min(row, max(0, self._total_count - 1))))
+                current_year = year
+            row += max(0, count)
+        return result
 
     @property
     def generation(self) -> int:
