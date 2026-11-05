@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QPalette
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMenuBar,
     QSizePolicy,
     QSpacerItem,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ....i18n import tr
+from ..icon import load_icon
 
 
 class SearchInput(QLineEdit):
@@ -24,12 +26,42 @@ class SearchInput(QLineEdit):
     # Signal emitted when user presses Enter
     search_submitted = Signal(str)
 
+    # macOS-style search field: a rounded, slightly recessed capsule that turns
+    # white with a hairline accent border while focused.
+    SEARCH_FIELD_STYLESHEET = (
+        "QLineEdit#searchInput {"
+        "  background-color: rgba(0, 0, 0, 0.055);"
+        "  border: 1px solid rgba(0, 0, 0, 0.08);"
+        "  border-radius: 7px;"
+        "  padding: 2px 8px 2px 4px;"
+        "  selection-background-color: #007AFF;"
+        "  selection-color: white;"
+        "}"
+        "QLineEdit#searchInput:hover {"
+        "  background-color: rgba(0, 0, 0, 0.075);"
+        "}"
+        "QLineEdit#searchInput:focus {"
+        "  background-color: #FFFFFF;"
+        "  border: 1px solid rgba(0, 122, 255, 0.55);"
+        "}"
+    )
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setPlaceholderText(tr("search.placeholder", default="搜索照片（如：海边、黄色、狗）..."))
+        self.setObjectName("searchInput")
         self.setClearButtonEnabled(True)
-        self.setMinimumWidth(200)
-        self.setMaximumWidth(400)
+        self.setMinimumWidth(180)
+        self.setMaximumWidth(280)
+        self.setFixedHeight(26)
+        self.setStyleSheet(self.SEARCH_FIELD_STYLESHEET)
+        # The magnifier lives inside the field, like the macOS search field,
+        # instead of sitting next to it as a separate emoji label.
+        self._leading_action = self.addAction(
+            load_icon("magnifyingglass.svg", size=(13, 13)),
+            QLineEdit.ActionPosition.LeadingPosition,
+        )
+        self._leading_action.setEnabled(False)
 
         # Connect Enter key to signal
         self.returnPressed.connect(self._on_return_pressed)
@@ -58,8 +90,10 @@ class MainHeaderWidget(QWidget):
         )
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        # Left margin leaves room for the traffic lights, the right margin keeps
+        # the search field off the window edge.
+        layout.setContentsMargins(14, 6, 14, 6)
+        layout.setSpacing(8)
 
         self.menu_bar = QMenuBar(self)
         self.menu_bar.setObjectName("chromeMenuBar")
@@ -83,13 +117,14 @@ class MainHeaderWidget(QWidget):
         self.search_icon = QLabel("🔍", self)
         self.search_icon.setStyleSheet("font-size: 14px;")
         search_layout.addWidget(self.search_icon)
+        # The magnifier now lives inside the search field itself, so the emoji
+        # label is only kept for compatibility and never shown.
+        self.search_icon.hide()
 
         # Search input
         self.search_input = SearchInput(self)
         self.search_input.search_submitted.connect(self.search_requested.emit)
         search_layout.addWidget(self.search_input)
-
-        layout.addWidget(search_container)
 
         layout.addSpacerItem(
             QSpacerItem(
@@ -99,6 +134,9 @@ class MainHeaderWidget(QWidget):
                 QSizePolicy.Policy.Minimum,
             )
         )
+
+        # Search sits at the trailing edge like a macOS toolbar.
+        layout.addWidget(search_container)
 
         self.rescan_button = QToolButton(self)
         self.rescan_button.setObjectName("rescanButton")
@@ -114,6 +152,84 @@ class MainHeaderWidget(QWidget):
         self._synchronise_palettes()
         self._create_actions(main_window)
         self._populate_menus()
+        self._install_compact_menu_button()
+
+    def attach_window_controls(self, controls: QWidget) -> None:
+        """Host the traffic lights in the header row.
+
+        macOS keeps window controls and toolbar items on one row; a separate title
+        bar above the toolbar is what makes the window look like a Windows app.
+        """
+
+        controls.setParent(self)
+        layout = self.layout()
+        if layout is not None:
+            layout.insertWidget(
+                0,
+                controls,
+                0,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            )
+        self._window_controls = controls
+
+    def _install_compact_menu_button(self) -> None:
+        """Replace the in-window menu bar with a single "⋯" toolbar button.
+
+        macOS puts application menus in the system menu bar, so showing
+        File/View/Settings as an in-window menu bar is what makes the window read
+        as a Windows/Linux app. The actions themselves stay on the window, which
+        keeps their shortcuts working; only the presentation changes.
+        """
+
+        self.more_button = QToolButton(self)
+        self.more_button.setObjectName("moreMenuButton")
+        self.more_button.setAutoRaise(True)
+        self.more_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.more_button.setIcon(load_icon("ellipsis.svg", size=(16, 16)))
+        self.more_button.setIconSize(QSize(16, 16))
+        self.more_button.setFixedSize(QSize(28, 26))
+        self.more_button.setToolTip(tr("menu.more", default="More"))
+        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_button.setStyleSheet(
+            "QToolButton#moreMenuButton {"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  background: transparent;"
+            "}"
+            "QToolButton#moreMenuButton:hover {"
+            "  background-color: rgba(0, 0, 0, 0.07);"
+            "}"
+            "QToolButton#moreMenuButton:pressed,"
+            "QToolButton#moreMenuButton:open {"
+            "  background-color: rgba(0, 0, 0, 0.12);"
+            "}"
+        )
+
+        self._more_menu = QMenu(self.more_button)
+        # Rebuild on show so translations and tristates stay in sync without
+        # duplicating the menu tree by hand.
+        self._more_menu.aboutToShow.connect(self._rebuild_more_menu)
+        self.more_button.setMenu(self._more_menu)
+
+        self.menu_bar.setVisible(False)
+        layout = self.layout()
+        if layout is not None:
+            layout.insertWidget(0, self.more_button)
+
+    def _rebuild_more_menu(self) -> None:
+        """Mirror the menu bar structure into the compact menu."""
+
+        self._more_menu.clear()
+        for menu_action in self.menu_bar.actions():
+            source = menu_action.menu()
+            if source is None:
+                continue
+            submenu = self._more_menu.addMenu(menu_action.text())
+            for action in source.actions():
+                if action.isSeparator():
+                    submenu.addSeparator()
+                else:
+                    submenu.addAction(action)
 
     def _synchronise_palettes(self) -> None:
         """Ensure the container and menu bar share the same opaque background."""

@@ -47,6 +47,7 @@ from ..styles import modern_scrollbar_style
 from ..palette import (
     SIDEBAR_BACKGROUND_COLOR,
     SIDEBAR_BRANCH_CONTENT_GAP,
+    SIDEBAR_SECTION_TEXT_COLOR,
     SIDEBAR_SELECTED_BACKGROUND,
     SIDEBAR_ICON_COLOR,
     SIDEBAR_ICON_SIZE,
@@ -201,9 +202,18 @@ class AlbumSidebar(QWidget):
         # rendered string, which keeps the animation visually smooth.
         self._title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         title_font = QFont(self._title.font())
-        title_font.setPointSizeF(title_font.pointSizeF() + 0.5)
-        title_font.setBold(True)
+        # macOS sidebar section headers are small, semibold and muted, not a bold
+        # 16 px label. Setting pixel size avoids the point-size rounding drift.
+        title_font.setPixelSize(11)
+        title_font.setWeight(QFont.Weight.DemiBold)
+        title_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.2)
         self._title.setFont(title_font)
+        title_palette = self._title.palette()
+        title_palette.setColor(
+            QPalette.ColorRole.WindowText,
+            SIDEBAR_SECTION_TEXT_COLOR,
+        )
+        self._title.setPalette(title_palette)
 
         self._tree = _DropAwareTree(self)
         self._tree.setObjectName("albumSidebarTree")

@@ -429,7 +429,13 @@ class FramelessWindowManager(QObject):
         self._ui.video_area.fullscreenExitRequested.connect(self.exit_fullscreen)
 
     def _configure_drag_sources(self) -> None:
-        self._drag_sources = {self._ui.title_bar, self._ui.window_title_label}
+        # The traffic lights moved into the header row, so the header is now the
+        # drag surface for the frameless window.
+        self._drag_sources = {
+            self._ui.title_bar,
+            self._ui.window_title_label,
+            self._ui.menu_bar_container,
+        }
         for source in self._drag_sources:
             source.installEventFilter(self)
 

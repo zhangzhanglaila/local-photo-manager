@@ -28,19 +28,8 @@ class CustomTitleBar(QWidget):
         self.setFixedHeight(TITLE_BAR_HEIGHT)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 6)
-        layout.setSpacing(8)
-
-        self.window_title_label = QLabel(window_title, self)
-        self.window_title_label.setObjectName("windowTitleLabel")
-        self.window_title_label.setAlignment(
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-        )
-        self.window_title_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Preferred,
-        )
-        layout.addWidget(self.window_title_label, 1)
+        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setSpacing(10)
 
         self.window_controls = QWidget(self)
         self.window_controls.setObjectName("windowControls")
@@ -52,21 +41,39 @@ class CustomTitleBar(QWidget):
 
         controls_layout = QHBoxLayout(self.window_controls)
         controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(6)
+        controls_layout.setSpacing(8)
 
         self.minimize_button = QToolButton(self.window_controls)
         self.fullscreen_button = QToolButton(self.window_controls)
         self.close_button = QToolButton(self.window_controls)
 
+        # macOS order, left to right: close, minimise, zoom.
         for button, icon_name, tooltip in (
+            (self.close_button, "red.close.circle.svg", "Close"),
             (self.minimize_button, "yellow.minimum.circle.svg", "Minimize"),
             (self.fullscreen_button, "green.maximum.circle.svg", "Enter Full Screen"),
-            (self.close_button, "red.close.circle.svg", "Close"),
         ):
             self._configure_window_control_button(button, icon_name, tooltip)
             controls_layout.addWidget(button)
 
-        layout.addWidget(self.window_controls, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.window_controls, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.window_title_label = QLabel(window_title, self)
+        self.window_title_label.setObjectName("windowTitleLabel")
+        self.window_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.window_title_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        layout.addWidget(self.window_title_label, 1)
+
+        # Keeps the centred title visually centred despite the traffic lights.
+        spacer = QWidget(self)
+        spacer.setFixedWidth(
+            self.window_controls.sizeHint().width()
+        )
+        spacer.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(spacer, 0)
 
     def _configure_window_control_button(
         self,

@@ -171,6 +171,12 @@ class Ui_MainWindow(object):
         self.language_zh = self.main_header.language_zh
         self.language_en = self.main_header.language_en
 
+        # Unified macOS-style chrome: the traffic lights live in the header row
+        # instead of a separate title bar above it.
+        self.main_header.attach_window_controls(self.window_controls)
+        self.title_bar.setVisible(False)
+        self.title_separator.setVisible(False)
+
         self.window_shell_layout.addWidget(self.window_chrome)
         self.window_shell_layout.addWidget(self.menu_bar_container)
 
