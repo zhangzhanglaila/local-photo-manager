@@ -37,7 +37,7 @@ from ....library.runtime_controller import LibraryRuntimeController
 from ....config import ALL_PHOTOS_TITLE as _ALL_PHOTOS_TITLE
 from ....i18n import tr
 from ...services.pinned_items_service import PinnedItemsService, PinnedSidebarItem
-from ..models.album_tree_model import AlbumTreeModel, NodeType
+from ..models.album_tree_model import AlbumTreeModel, AlbumTreeRole, NodeType
 from ..delegates.album_sidebar_delegate import (
     AlbumSidebarDelegate,
     BranchIndicatorController,
@@ -524,6 +524,17 @@ class AlbumSidebar(QWidget):
             return
         if not item_rect.isValid():
             return
+
+        # Inline action on a section header (currently "bind library"): it lives in
+        # the header row so it can never be mistaken for an album entry.
+        if index.data(AlbumTreeRole.HEADER_ACTION):
+            from ..delegates.album_sidebar_delegate import AlbumSidebarDelegate as _Delegate
+
+            action_rect = _Delegate.header_action_rect(item_rect)
+            viewport_pos = self._tree.viewport().mapFromGlobal(QCursor.pos())
+            if action_rect.contains(viewport_pos):
+                self.bindLibraryRequested.emit()
+                return
 
         cursor_pos = QCursor.pos()
         viewport_pos = self._tree.viewport().mapFromGlobal(cursor_pos)

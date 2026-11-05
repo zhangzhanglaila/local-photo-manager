@@ -153,6 +153,11 @@ SIDEBAR_ICON_STROKE_WIDTH = 2.0
 SIDEBAR_CHECKBOX_SIZE = 16
 SIDEBAR_CHECKBOX_ICON_GAP = 6
 
+# Section headers may carry one inline action (currently "bind library"). It is
+# drawn inside the header row so the action never looks like an album row.
+HEADER_ACTION_SIZE = 20
+HEADER_ACTION_MARGIN = 6
+
 
 class AlbumSidebarDelegate(QStyledItemDelegate):
     """Custom delegate painting the sidebar with a macOS inspired style."""
@@ -193,6 +198,39 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         x = self._draw_icon(painter, option, icon, x)
         self._draw_text(painter, rect, font, index, state, x)
 
+        if index.data(AlbumTreeRole.HEADER_ACTION):
+            self._draw_header_action(painter, rect, state)
+
+        painter.restore()
+
+    @staticmethod
+    def header_action_rect(rect: QRect) -> QRect:
+        """Return the clickable rect of a header's inline action."""
+
+        size = HEADER_ACTION_SIZE
+        return QRect(
+            rect.right() - HEADER_ACTION_MARGIN - size,
+            rect.center().y() - size // 2,
+            size,
+            size,
+        )
+
+    def _draw_header_action(
+        self, painter: QPainter, rect: QRect, state: _PaintState
+    ) -> None:
+        box = self.header_action_rect(rect)
+        colour = QColor(self._palette_for_state(state).color(QPalette.ColorRole.Link))
+        colour.setAlpha(190)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(colour, 1.2))
+        painter.drawEllipse(box.adjusted(2, 2, -2, -2))
+        centre = box.center()
+        arm = box.width() // 4
+        painter.setPen(QPen(colour, 1.4))
+        painter.drawLine(centre.x() - arm, centre.y(), centre.x() + arm, centre.y())
+        painter.drawLine(centre.x(), centre.y() - arm, centre.x(), centre.y() + arm)
         painter.restore()
 
     def _get_icon_for_paint_state(self, index: QModelIndex, state: _PaintState) -> QIcon:

@@ -26,6 +26,7 @@ class AlbumTreeRole(int, Enum):
     FILE_PATH = Qt.ItemDataRole.UserRole + 2
     ALBUM_NODE = Qt.ItemDataRole.UserRole + 3
     PINNED_ITEM = Qt.ItemDataRole.UserRole + 4
+    HEADER_ACTION = Qt.ItemDataRole.UserRole + 5
 
 
 class NodeType(Enum):
@@ -63,6 +64,7 @@ class AlbumTreeItem:
     parent: Optional["AlbumTreeItem"] = None
     children: List["AlbumTreeItem"] = field(default_factory=list)
     checked: bool = True
+    header_action: Optional[str] = None
 
     def add_child(self, item: "AlbumTreeItem") -> None:
         item.parent = self
@@ -164,6 +166,8 @@ class AlbumTreeModel(QAbstractItemModel):
             return None
         if role == AlbumTreeRole.NODE_TYPE:
             return item.node_type
+        if role == AlbumTreeRole.HEADER_ACTION:
+            return item.header_action
         if role == AlbumTreeRole.ALBUM_NODE:
             return item.album
         if role == AlbumTreeRole.FILE_PATH and item.album is not None:
@@ -308,9 +312,12 @@ class AlbumTreeModel(QAbstractItemModel):
             tr("sidebar.albums"),
             NodeType.HEADER,
             icon_name="folder.svg",
+            # The section header carries a "+" action instead of an extra tree row:
+            # an action rendered as an album row read like an album called
+            # "Set Basic Library" and could be selected like one.
+            header_action="bind_library",
         )
         self._root_item.add_child(albums_section)
-        albums_section.add_child(AlbumTreeItem(tr("action.set_basic_library"), NodeType.ACTION))
         for album in self._library.list_albums():
             album_item = self._create_album_item(album, NodeType.ALBUM)
             albums_section.add_child(album_item)

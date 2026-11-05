@@ -220,3 +220,31 @@ def test_model_keeps_missing_pinned_entities_visible_until_clicked(
     assert _find_child(model, pinned_index, "Missing Album") is not None
     assert _find_child(model, pinned_index, "Ghost") is not None
     assert _find_child(model, pinned_index, "Group 1") is not None
+
+
+def test_albums_header_carries_inline_action(tmp_path: Path, qapp: QApplication) -> None:
+    """The bind action lives on the section header, not as an album-like row.
+
+    Rendered as a normal child row it looked like an album called
+    "Set Basic Library…" and could be selected like one.
+    """
+
+    library_root = tmp_path / "Library"
+    library_root.mkdir()
+    _create_album(library_root, "Trips")
+
+    manager = LibraryRuntimeController()
+    manager.bind_path(library_root)
+    model = AlbumTreeModel(manager)
+    qapp.processEvents()
+    try:
+        header = _find_child(model, QModelIndex(), tr("sidebar.albums"))
+        assert header is not None
+        assert model.data(header, AlbumTreeRole.NODE_TYPE) == NodeType.HEADER
+        assert model.data(header, AlbumTreeRole.HEADER_ACTION) == "bind_library"
+
+        titles = [model.data(model.index(row, 0, header)) for row in range(model.rowCount(header))]
+        assert tr("action.set_basic_library") not in titles, "no action row inside the album list"
+        assert titles, "albums must still be listed"
+    finally:
+        manager.shutdown()
