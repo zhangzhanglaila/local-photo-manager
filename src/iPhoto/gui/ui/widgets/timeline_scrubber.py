@@ -212,6 +212,11 @@ class TimelineScrubber(QWidget):
         self._current_y = y
         self.update()
 
+    def is_scrubbing(self) -> bool:
+        """True while the rail is being dragged."""
+
+        return self._scrubbing
+
     def dot_y(self) -> float | None:
         """Return the clamped y of the position dot (widget-local), if known."""
 

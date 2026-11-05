@@ -73,6 +73,7 @@ _ZH: dict[str, str] = {
     "sidebar.pinned": "置顶",
     # -- Timeline rail --
     "timeline.day_format": "{year}年{month:02d}月{day:02d}日",
+    "timeline.month_format": "{year}年{month:02d}月",
 
     # -- Startup --
     "startup.starting": "正在启动…",
@@ -348,6 +349,7 @@ _EN: dict[str, str] = {
     "sidebar.pinned": "Pinned",
     # -- Timeline rail --
     "timeline.day_format": "{month:02d}/{day:02d}/{year}",
+    "timeline.month_format": "{month:02d}/{year}",
 
     # -- Startup --
     "startup.starting": "Starting…",

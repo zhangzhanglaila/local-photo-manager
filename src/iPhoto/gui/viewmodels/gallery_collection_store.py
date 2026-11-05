@@ -112,6 +112,8 @@ class GalleryCollectionStore:
         # Timeline (year rail): buckets are cached per query + total count.
         self._timeline_buckets: list[tuple[int, int, int]] = []
         self._timeline_cache_key: Optional[tuple[int, int]] = None
+        self._bucket_offsets: list[int] = []
+        self._bucket_offsets_key: tuple[int, int] | None = None
 
     def cancel_pending_load(self) -> None:
         """Cancel any in-flight async load."""
@@ -453,6 +455,41 @@ class GalleryCollectionStore:
             (year, month, count)
             for (year, month), count in sorted(counts.items(), reverse=True)
         ]
+
+    def month_for_row(self, row: int) -> tuple[int, int] | None:
+        """Return ``(year, month)`` containing *row*, using only cached buckets.
+
+        Dragging the timeline must not query the database, so the date pill asks
+        this instead of loading the row. Precision is the month — enough to show a
+        live preview while the pointer moves.
+        """
+
+        buckets = self.timeline_buckets()
+        if not buckets or row < 0:
+            return None
+
+        # Cumulative offsets are rebuilt only when the bucket list changes.
+        if self._bucket_offsets_key != (len(buckets), self._total_count):
+            offsets: list[int] = []
+            consumed = 0
+            for _year, _month, count in buckets:
+                offsets.append(consumed)
+                consumed += max(0, count)
+            self._bucket_offsets = offsets
+            self._bucket_offsets_key = (len(buckets), self._total_count)
+
+        offsets = self._bucket_offsets
+        lo, hi = 0, len(offsets) - 1
+        found = 0
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if offsets[mid] <= row:
+                found = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        year, month, _count = buckets[found]
+        return int(year), int(month)
 
     def year_spans(self) -> list[tuple[int, int, int]]:
         """Return ``(year, first_row, count)`` in display order (newest first).

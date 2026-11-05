@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QEvent, QModelIndex, QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
@@ -43,6 +45,12 @@ class GalleryGridView(AssetGrid):
 
     # Visible channel between the last thumbnail column and the timeline rail.
     TIMELINE_GAP = 14
+
+    # Grid follow-up cadence while dragging (the ball itself moves every event).
+    SCRUB_SCROLL_INTERVAL_MS = 90
+    # After the last drag event the loaded rows are still catching up; keep the
+    # dot pinned for this long so it does not snap back.
+    SCRUB_SETTLE_S = 0.35
 
     def __init__(self, parent=None) -> None:  # type: ignore[override]
         super().__init__(parent)
@@ -319,10 +327,11 @@ class GalleryGridView(AssetGrid):
         self._scrub_pending_row: int | None = None
         self._scrub_timer = QTimer(self)
         self._scrub_timer.setSingleShot(True)
-        self._scrub_timer.setInterval(40)
+        self._scrub_timer.setInterval(self.SCRUB_SCROLL_INTERVAL_MS)
         self._scrub_timer.timeout.connect(self._flush_scrub_scroll)
 
         self._last_hover_row: int | None = None
+        self._last_scrub_at: float = 0.0
         self._hover_anchor_y: int | None = None
         QTimer.singleShot(0, self._refresh_timeline)
 
@@ -343,19 +352,36 @@ class GalleryGridView(AssetGrid):
             self._show_date_badge(text, y)
 
     def _on_timeline_scrub(self, row: int, y: int) -> None:
-        """Continuous scrubbing: move the grid, and the dot with it."""
+        """Continuous scrubbing: the ball follows the pointer immediately.
+
+        The grid itself loads a new window per jump, which is far slower than a
+        mouse move. Moving the dot from the drag position (instead of waiting for
+        the loaded rows) keeps the ball glued to the cursor; the grid follows at a
+        lower cadence and is corrected exactly when the drag ends.
+        """
 
         self._scrub_pending_row = row
         self._last_hover_row = row
-        # While dragging, the photos are moving, so the position dot travels too.
+        self._last_scrub_at = time.monotonic()
         setter = getattr(self._timeline_scrubber, "set_current_row", None)
         if callable(setter):
             setter(row)
-        text = self._date_text_for_row(row)
+        text = self._date_text_for_row(row, allow_blocking=False)
         if text:
             self._show_date_badge(text, y)
         if not self._scrub_timer.isActive():
             self._scrub_timer.start()
+
+    def _is_scrubbing(self) -> bool:
+        """True while a drag is active, including a short settle window.
+
+        Without the settle window the first ``visibleRowsChanged`` after the drag
+        would snap the dot back to the still-loading position.
+        """
+
+        if self._timeline_scrubber.is_scrubbing():
+            return True
+        return (time.monotonic() - self._last_scrub_at) < self.SCRUB_SETTLE_S
 
     def _flush_scrub_scroll(self) -> None:
         row = self._scrub_pending_row
@@ -370,12 +396,35 @@ class GalleryGridView(AssetGrid):
             self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtTop)
 
     def _on_timeline_scrub_finished(self) -> None:
-        # The pointer is still over the rail, so the date pill stays until the
-        # pointer leaves; the dot follows the grid from now on.
+        # Release: land exactly on the dragged position instead of the last
+        # throttled step.
         self._last_hover_row = None
+        self._scrub_timer.stop()
+        self._flush_scrub_scroll()
+        # The month preview becomes a full date once the row is loaded.
+        QTimer.singleShot(150, self._refresh_scrub_date)
 
-    def _date_text_for_row(self, row: int) -> str:
-        """Resolve a row's date from the cached DTO, falling back to one read."""
+    def _refresh_scrub_date(self) -> None:
+        if not self._date_badge.isVisible():
+            return
+        anchor = self._dot_anchor_y()
+        if anchor is None:
+            return
+        index = self.indexAt(QPoint(self.viewport().width() // 2, 2))
+        if not index.isValid():
+            return
+        text = self._date_text_for_row(index.row())
+        if text:
+            self._show_date_badge(text, anchor)
+        self._date_badge_timer.start()
+
+    def _date_text_for_row(self, row: int, *, allow_blocking: bool = True) -> str:
+        """Resolve a row's date for the pill.
+
+        `allow_blocking=False` is used while dragging: it never queries the
+        database, falling back to the month bucket so the ball keeps following the
+        pointer. The exact date is filled in once the drag ends.
+        """
 
         model = self.model()
         if model is None:
@@ -384,13 +433,27 @@ class GalleryGridView(AssetGrid):
         dto = None
         if store is not None:
             dto = store.peek_asset(row)
-            if dto is None:
+            if dto is None and allow_blocking:
                 try:
                     dto = store.asset_at(row)
                 except Exception:
                     dto = None
         if dto is not None:
             return self._format_timeline_date(getattr(dto, "created_at", None))
+
+        if not allow_blocking:
+            month_lookup = getattr(store, "month_for_row", None) if store is not None else None
+            if callable(month_lookup):
+                try:
+                    year_month = month_lookup(row)
+                except Exception:
+                    year_month = None
+                if year_month is not None:
+                    year, month = year_month
+                    return tr("timeline.month_format", year=year, month=month)
+            # No bucket information: the model's own role is still cheap (it reads
+            # the cache and queues a fetch) so it is safe on the drag path.
+
         index = model.index(row, 0)
         if index.isValid():
             return self._format_timeline_date(index.data(Roles.DT))
@@ -557,10 +620,13 @@ class GalleryGridView(AssetGrid):
         if scrubber is None:
             return
         scrubber.set_active_year(year)
-        # Park the position dot at the row shown at the top of the grid.
-        setter = getattr(scrubber, "set_current_row", None)
-        if callable(setter):
-            setter(index.row())
+        # Park the position dot at the row shown at the top of the grid, unless a
+        # drag is in progress: then the dot belongs to the pointer position and the
+        # grid is still loading its windows.
+        if not self._is_scrubbing():
+            setter = getattr(scrubber, "set_current_row", None)
+            if callable(setter):
+                setter(index.row())
 
         # Scrolling shows the date of the top row and hides it shortly after the
         # scroll stops. While the pointer is on the rail, the pointer position wins

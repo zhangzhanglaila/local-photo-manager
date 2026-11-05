@@ -394,3 +394,40 @@ def test_scrolling_anchors_the_pill_to_the_dot(qapp: QApplication) -> None:
     badge = view._date_badge
     assert badge.isVisible() is True
     assert abs(badge.geometry().center().y() - anchor) <= 2
+
+def test_drag_does_not_query_the_database(qapp: QApplication) -> None:
+    """The drag path must never block on a row fetch.
+
+    Loading a row synchronously per mouse move was what made the ball feel stuck
+    while the grid reloaded its window.
+    """
+
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    calls: list[int] = []
+
+    class _Store:
+        def peek_asset(self, row):
+            return None
+
+        def asset_at(self, row):  # pragma: no cover - must not be called
+            calls.append(row)
+            return None
+
+        def month_for_row(self, row):
+            return (2025, 8)
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    model = _GridModel()
+    model.store = _Store()  # type: ignore[attr-defined]
+    view.setModel(model)
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    view._on_timeline_scrub(300, 400)
+
+    assert calls == [], "dragging must not fetch rows synchronously"
+    assert view._date_badge.text()
