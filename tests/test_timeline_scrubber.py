@@ -7,11 +7,13 @@ these tests pin the data contract rather than pixel output.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 
-from PySide6.QtCore import QAbstractListModel, QPoint, Qt
+from PySide6.QtCore import QAbstractListModel, QEvent, QPoint, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
 
@@ -102,19 +104,15 @@ def test_scrubber_hides_for_a_single_year(qapp: QApplication) -> None:
     assert scrubber.isVisible() is True
 
 
-def test_scrubber_click_emits_the_year_row(qapp: QApplication) -> None:
+def test_scrubber_press_emits_a_scrub_position(qapp: QApplication) -> None:
     scrubber = TimelineScrubber()
     scrubber.resize(58, 400)
     scrubber.set_years([(2025, 0), (2024, 120), (2019, 900)])
     scrubber.show()
     qapp.processEvents()
 
-    emitted: list[int] = []
-    scrubber.yearActivated.connect(emitted.append)
-
-    target = scrubber.year_at(200)
-    assert target is not None
-    year, row = target
+    emitted: list[tuple[int, int]] = []
+    scrubber.scrubMoved.connect(lambda row, y: emitted.append((row, y)))
 
     press = QMouseEvent(
         QMouseEvent.Type.MouseButtonPress,
@@ -125,8 +123,10 @@ def test_scrubber_click_emits_the_year_row(qapp: QApplication) -> None:
     )
     scrubber.mousePressEvent(press)
 
-    assert emitted == [row]
-    assert year in (2025, 2024, 2019)
+    assert len(emitted) == 1
+    row, y = emitted[0]
+    assert y == 200
+    assert 0 <= row < scrubber.total_rows()
 
 
 def test_scrubber_paints_without_a_model(qapp: QApplication) -> None:
@@ -235,4 +235,88 @@ def test_rail_keeps_a_gap_from_the_photos(qapp: QApplication) -> None:
     # Reserved channel means the rail starts at (or after) the viewport edge.
     assert scrubber.geometry().left() >= view.viewport().width()
     assert view.viewport().width() <= view.width() - scrubber.width() - view.TIMELINE_GAP + 2
+    view.close()
+
+def test_row_at_is_monotonic_and_clamped(qapp: QApplication) -> None:
+    scrubber = TimelineScrubber()
+    scrubber.resize(52, 600)
+    scrubber.set_spans([(2025, 0, 5000), (2024, 5000, 400), (2019, 5400, 20)])
+    scrubber.show()
+    qapp.processEvents()
+
+    rows = [scrubber.row_at(y) for y in range(0, 600, 10)]
+
+    assert all(row is not None for row in rows)
+    assert rows == sorted(rows)
+    assert rows[0] >= 0
+    assert rows[-1] <= scrubber.total_rows() - 1
+
+
+def test_hover_emits_row_and_leave_clears_it(qapp: QApplication) -> None:
+    scrubber = TimelineScrubber()
+    scrubber.resize(52, 600)
+    scrubber.set_spans([(2025, 0, 5000), (2024, 5000, 400), (2019, 5400, 20)])
+    scrubber.show()
+    qapp.processEvents()
+
+    seen: list[tuple[int, int]] = []
+    scrubber.hoverRowChanged.connect(lambda row, y: seen.append((row, y)))
+
+    move = QMouseEvent(
+        QMouseEvent.Type.MouseMove,
+        QPoint(20, 300),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    scrubber.mouseMoveEvent(move)
+
+    assert seen and seen[-1][1] == 300
+    assert seen[-1][0] >= 0
+
+    scrubber.leaveEvent(QEvent(QEvent.Type.Leave))
+    assert seen[-1][0] == -1
+
+def test_hover_shows_the_date_bubble_beside_the_rail(qapp: QApplication) -> None:
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    view.setModel(_GridModel())
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    view._on_timeline_hover(120, 300)
+    qapp.processEvents()
+
+    badge = view._date_badge
+    assert badge.isVisible() is True
+    assert "2024" in badge.text()
+
+    rail_left = view._timeline_scrubber.geometry().left()
+    assert badge.geometry().right() < rail_left, "the bubble must sit left of the rail"
+
+    view._on_timeline_hover(-1, -1)
+    qapp.processEvents()
+    assert badge.isVisible() is False
+    view.close()
+
+
+def test_scrub_moves_the_grid_and_throttles_scroll(qapp: QApplication) -> None:
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    view.setModel(_GridModel())
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    view._on_timeline_scrub(200, 400)
+    assert view._scrub_pending_row == 200
+    # The timer coalesces bursts into one scroll instead of fighting the layout.
+    assert view._scrub_timer.isActive()
     view.close()

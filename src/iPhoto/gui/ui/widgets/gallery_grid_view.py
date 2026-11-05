@@ -281,7 +281,7 @@ class GalleryGridView(AssetGrid):
         # Parented to the view (not the viewport): the rail lives in the margin
         # reserved by ``setViewportMargins`` so it cannot cover a thumbnail.
         self._timeline_scrubber = TimelineScrubber(self)
-        self._timeline_scrubber.yearActivated.connect(self._on_timeline_year_activated)
+        self._timeline_coarse_anchor: int | None = None
 
         self._date_badge = QLabel(viewport)
         self._date_badge.setObjectName("galleryDateBadge")
@@ -308,7 +308,87 @@ class GalleryGridView(AssetGrid):
         # the range actually moves, so the badge costs one cached role read per
         # scroll step and never touches the database.
         self.visibleRowsChanged.connect(self._on_visible_rows_for_timeline)
+        self._timeline_scrubber.hoverRowChanged.connect(self._on_timeline_hover)
+        self._timeline_scrubber.scrubMoved.connect(self._on_timeline_scrub)
+        self._timeline_scrubber.scrubFinished.connect(self._on_timeline_scrub_finished)
+
+
+        # Scrubbing a long rail can emit dozens of positions per second; coalesce
+        # the scroll requests instead of fighting the view's layout pass.
+        self._scrub_pending_row: int | None = None
+        self._scrub_timer = QTimer(self)
+        self._scrub_timer.setSingleShot(True)
+        self._scrub_timer.setInterval(40)
+        self._scrub_timer.timeout.connect(self._flush_scrub_scroll)
+
+        self._last_hover_row: int | None = None
         QTimer.singleShot(0, self._refresh_timeline)
+
+    def _on_timeline_hover(self, row: int, y: int) -> None:
+        """Preview the date under the pointer without moving the grid."""
+
+        if row < 0:
+            self._last_hover_row = None
+            if not self._scrub_timer.isActive():
+                self._date_badge.hide()
+            return
+        if row == self._last_hover_row:
+            self._reposition_date_badge(y)
+            return
+        self._last_hover_row = row
+        text = self._date_text_for_row(row)
+        if text:
+            self._show_date_badge(text, y)
+
+    def _on_timeline_scrub(self, row: int, y: int) -> None:
+        """Continuous scrubbing: jump the grid toward the dragged position."""
+
+        self._scrub_pending_row = row
+        self._last_hover_row = row
+        text = self._date_text_for_row(row)
+        if text:
+            self._show_date_badge(text, y)
+        if not self._scrub_timer.isActive():
+            self._scrub_timer.start()
+
+    def _flush_scrub_scroll(self) -> None:
+        row = self._scrub_pending_row
+        self._scrub_pending_row = None
+        if row is None:
+            return
+        model = self.model()
+        if model is None or row < 0 or row >= model.rowCount():
+            return
+        index = model.index(row, 0)
+        if index.isValid():
+            self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtTop)
+
+    def _on_timeline_scrub_finished(self) -> None:
+        self._last_hover_row = None
+        self._date_badge_timer.start()
+
+    def _date_text_for_row(self, row: int) -> str:
+        """Resolve a row's date from the cached DTO, falling back to one read."""
+
+        model = self.model()
+        if model is None:
+            return ""
+        store = getattr(model, "store", None)
+        dto = None
+        if store is not None:
+            dto = store.peek_asset(row)
+            if dto is None:
+                try:
+                    dto = store.asset_at(row)
+                except Exception:
+                    dto = None
+        if dto is not None:
+            return self._format_timeline_date(getattr(dto, "created_at", None))
+        index = model.index(row, 0)
+        if index.isValid():
+            return self._format_timeline_date(index.data(Roles.DT))
+        return ""
+
 
     def _layout_timeline_overlays(self) -> None:
         viewport = self.viewport()
@@ -330,18 +410,47 @@ class GalleryGridView(AssetGrid):
 
         badge = getattr(self, "_date_badge", None)
         if badge is not None and badge.isVisible():
-            self._position_date_badge()
+            self._position_date_badge(self._timeline_coarse_anchor)
 
-    def _position_date_badge(self) -> None:
+    def _show_date_badge(self, text: str, anchor_y: int | None = None) -> None:
+        """Show the date pill; ``anchor_y`` follows the pointer on the rail."""
+
+        badge = getattr(self, "_date_badge", None)
+        if badge is None or not text:
+            return
+        badge.setText(text)
+        self._timeline_coarse_anchor = anchor_y
+        self._position_date_badge(anchor_y)
+        badge.show()
+        badge.raise_()
+        self._date_badge_timer.stop()
+
+    def _reposition_date_badge(self, anchor_y: int | None) -> None:
+        self._timeline_coarse_anchor = anchor_y
+        self._position_date_badge(anchor_y)
+
+    def _position_date_badge(self, anchor_y: int | None = None) -> None:
+        """Place the pill centered, or beside the rail when following the pointer."""
+
         badge = self._date_badge
         hint = badge.sizeHint()
         viewport = self.viewport()
-        badge.setGeometry(
-            max(0, (viewport.width() - hint.width()) // 2),
-            10,
-            hint.width(),
-            max(24, hint.height()),
-        )
+        width = max(24, hint.width())
+        height = max(24, hint.height())
+
+        if anchor_y is None:
+            badge.setGeometry(
+                max(0, (viewport.width() - width) // 2),
+                10,
+                width,
+                height,
+            )
+        else:
+            scrubber = getattr(self, "_timeline_scrubber", None)
+            rail_left = scrubber.geometry().left() if scrubber is not None else viewport.width()
+            x = max(0, min(viewport.width() - width, rail_left - width - 10))
+            y = max(6, min(viewport.height() - height - 6, anchor_y - height // 2))
+            badge.setGeometry(x, y, width, height)
         badge.raise_()
 
     def _refresh_timeline(self) -> None:
@@ -385,15 +494,6 @@ class GalleryGridView(AssetGrid):
     def _schedule_timeline_refresh(self) -> None:
         QTimer.singleShot(0, self._refresh_timeline)
 
-    def _on_timeline_year_activated(self, row: int) -> None:
-        model = self.model()
-        if model is None or row < 0 or row >= model.rowCount():
-            return
-        index = model.index(row, 0)
-        if not index.isValid():
-            return
-        self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtTop)
-
     def _on_visible_rows_for_timeline(self, first: int, last: int) -> None:
         index = self.indexAt(QPoint(self.viewport().width() // 2, 2))
         if not index.isValid():
@@ -415,22 +515,25 @@ class GalleryGridView(AssetGrid):
         if scrubber is not None:
             scrubber.set_active_year(year)
 
-        text = self._format_timeline_date(created_at)
-        badge = getattr(self, "_date_badge", None)
-        if badge is None or not text:
+        # While the pointer is on the rail the badge follows the pointer instead of
+        # the scroll position, so the two update paths do not fight each other.
+        if self._timeline_coarse_anchor is not None:
             return
-        badge.setText(text)
-        self._position_date_badge()
-        badge.show()
-        badge.raise_()
+
+        text = self._format_timeline_date(created_at)
+        if not text:
+            return
+        self._show_date_badge(text)
         self._date_badge_timer.start()
 
     @staticmethod
     def _format_timeline_date(created_at: object) -> str:
+        """Format a row date for the badge; unknown values stay empty."""
+
         if hasattr(created_at, "year"):
-            pattern = tr("timeline.day_format", default="{year}年{month:02d}月{day:02d}日")
             try:
-                return pattern.format(
+                return tr(
+                    "timeline.day_format",
                     year=created_at.year,
                     month=created_at.month,
                     day=created_at.day,
@@ -440,8 +543,7 @@ class GalleryGridView(AssetGrid):
         if isinstance(created_at, str) and len(created_at) >= 10:
             try:
                 return tr(
-                    "timeline.day_format", default="{year}年{month:02d}月{day:02d}日"
-                ).format(
+                    "timeline.day_format",
                     year=int(created_at[0:4]),
                     month=int(created_at[5:7]),
                     day=int(created_at[8:10]),
@@ -452,7 +554,8 @@ class GalleryGridView(AssetGrid):
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.PaletteChange:
-            if not self._updating_style:                self._apply_scrollbar_style()
+            if not self._updating_style:
+                self._apply_scrollbar_style()
         super().changeEvent(event)
 
     def _apply_scrollbar_style(self) -> None:

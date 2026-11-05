@@ -71,6 +71,8 @@ _ZH: dict[str, str] = {
     "sidebar.basic_library_unbound": "基础图库 — 未绑定",
     "sidebar.albums": "相册",
     "sidebar.pinned": "置顶",
+    # -- Timeline rail --
+    "timeline.day_format": "{year}年{month:02d}月{day:02d}日",
 
     # -- Startup --
     "startup.starting": "正在启动…",
@@ -344,6 +346,8 @@ _EN: dict[str, str] = {
     "sidebar.basic_library_unbound": "Basic Library — not bound",
     "sidebar.albums": "Albums",
     "sidebar.pinned": "Pinned",
+    # -- Timeline rail --
+    "timeline.day_format": "{month:02d}/{day:02d}/{year}",
 
     # -- Startup --
     "startup.starting": "Starting…",

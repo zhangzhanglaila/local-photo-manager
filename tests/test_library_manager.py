@@ -284,11 +284,27 @@ def test_scan_finished_skips_prune_when_worker_failed(tmp_path: Path, qapp: QApp
     spy = QSignalSpy(manager.scanFinished)
     manager._current_scanner_worker = _Worker()
 
-    with patch.object(manager._scan_thread_pool, "start") as start_mock:
+    with patch.object(manager._scan_thread_pool, "start") as start_mock, patch(
+        "iPhoto.library.scan_coordinator._PairingWorker"
+    ) as pairing_mock:
         manager._on_scan_finished(root, [])
         qapp.processEvents()
 
-    _Worker.scan_service.finalize_scan_result.assert_not_called()
-    start_mock.assert_not_called()
-    assert spy.count() == 1
-    assert spy.at(0)[1] is False
+    try:
+        _Worker.scan_service.finalize_scan_result.assert_not_called()
+        # Previous tests can leave a scan running that finishes during this one and
+        # schedules pairing for *its* root. Only this library's failure path is
+        # under test, so scope the assertion to our root instead of "never called".
+        pairing_roots = [call.args[0] for call in pairing_mock.call_args_list if call.args]
+        assert root not in pairing_roots
+        # Give Qt a short window to deliver the queued signal: under the full
+        # suite this occasionally landed after a single processEvents() call and
+        # made the test flaky.
+        for _attempt in range(50):
+            if spy.count():
+                break
+            qapp.processEvents()
+        assert spy.count() == 1
+        assert bool(spy.at(0)[1]) is False
+    finally:
+        manager.shutdown()

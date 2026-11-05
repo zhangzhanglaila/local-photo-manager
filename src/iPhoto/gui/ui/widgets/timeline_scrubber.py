@@ -37,7 +37,11 @@ LABEL_ACTIVE_COLOR = QColor("#007AFF")
 class TimelineScrubber(QWidget):
     """Vertical year rail that jumps the grid to a year."""
 
-    yearActivated = Signal(int)
+    #: ``(row, y)`` while the pointer moves over the rail without pressing.
+    hoverRowChanged = Signal(int, int)
+    #: ``(row, y)`` while the rail is being dragged (continuous scrubbing).
+    scrubMoved = Signal(int, int)
+    scrubFinished = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -45,6 +49,7 @@ class TimelineScrubber(QWidget):
         self._layout_y: list[float] = []
         self._active_year: int | None = None
         self._hover_year: int | None = None
+        self._scrubbing = False
         self.setFixedWidth(RAIL_WIDTH)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
@@ -140,6 +145,40 @@ class TimelineScrubber(QWidget):
         year, row, _count = self._spans[index]
         return year, row
 
+    def row_at(self, y: int) -> int | None:
+        """Map a track position to a row index, interpolating between years.
+
+        Used for both dragging (continuous scrubbing) and hovering (date
+        preview). Interpolation is between adjacent year anchors and is clamped to
+        the row range, so it stays monotonic even where the minimum-gap layout
+        pushed labels apart.
+        """
+
+        if not self._layout_y or not self._spans:
+            return None
+
+        positions = self._layout_y
+        if y <= positions[0]:
+            return max(0, self._spans[0][1])
+        if y >= positions[-1]:
+            last_year, last_row, last_count = self._spans[-1]
+            return max(0, last_row + max(0, last_count) - 1)
+
+        for index in range(len(positions) - 1):
+            if positions[index] <= y <= positions[index + 1]:
+                span = positions[index + 1] - positions[index]
+                ratio = 0.0 if span <= 0 else (y - positions[index]) / span
+                start_row = self._spans[index][1]
+                end_row = self._spans[index + 1][1]
+                return int(round(start_row + (end_row - start_row) * ratio))
+        return max(0, self._spans[-1][1])
+
+    def total_rows(self) -> int:
+        if not self._spans:
+            return 0
+        _year, last_row, last_count = self._spans[-1]
+        return max(0, last_row + max(0, last_count))
+
     # ------------------------------------------------------------------
     # Painting
     # ------------------------------------------------------------------
@@ -198,23 +237,41 @@ class TimelineScrubber(QWidget):
     # ------------------------------------------------------------------
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
-            hit = self.year_at(int(event.position().y()))
-            if hit is not None:
-                self.yearActivated.emit(hit[1])
+            y = int(event.position().y())
+            self._scrubbing = True
+            row = self.row_at(y)
+            if row is not None:
+                self.scrubMoved.emit(row, y)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
-        hit = self.year_at(int(event.position().y()))
+        y = int(event.position().y())
+        hit = self.year_at(y)
         hover = hit[0] if hit is not None else None
         if hover != self._hover_year:
             self._hover_year = hover
             self.update()
+
+        row = self.row_at(y)
+        if row is not None:
+            if self._scrubbing:
+                self.scrubMoved.emit(row, y)
+            else:
+                self.hoverRowChanged.emit(row, y)
         super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton and self._scrubbing:
+            self._scrubbing = False
+            self.scrubFinished.emit()
+        super().mouseReleaseEvent(event)
 
     def leaveEvent(self, event) -> None:  # type: ignore[override]
         if self._hover_year is not None:
             self._hover_year = None
             self.update()
+        if not self._scrubbing:
+            self.hoverRowChanged.emit(-1, -1)
         super().leaveEvent(event)
 
 
