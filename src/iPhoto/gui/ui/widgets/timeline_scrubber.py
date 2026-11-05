@@ -1,7 +1,7 @@
 """Right-edge year rail for the photo gallery.
 
 The rail mirrors the timeline scrubber used by photo managers: a hairline track
-with a draggable grip at the top, one tick and label per year, a position dot that
+with one tick and label per year, a draggable position dot that
 tracks the visible date, and vertical space allocated in proportion to how many
 photos each year holds.
 
@@ -24,7 +24,7 @@ LABEL_RIGHT_INSET = 16
 TICK_LENGTH = 6
 TOP_INSET = 26
 BOTTOM_INSET = 12
-DOT_RADIUS = 5.5
+DOT_RADIUS = 7.0
 KNOB_CENTER_Y = 12.0
 MIN_LABEL_GAP = 17.0
 
@@ -52,7 +52,6 @@ class TimelineScrubber(QWidget):
         self._hover_year: int | None = None
         self._scrubbing = False
         self._current_y: float | None = None
-        self._pointer_y: float | None = None
         self.setFixedWidth(RAIL_WIDTH)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
@@ -213,17 +212,14 @@ class TimelineScrubber(QWidget):
         self._current_y = y
         self.update()
 
-    def set_pointer_y(self, y: float | None) -> None:
-        """Let the dot follow the pointer while hovering or dragging."""
-
-        if y == self._pointer_y:
-            return
-        self._pointer_y = y
-        self.update()
-
     def _dot_y(self) -> float | None:
-        if self._pointer_y is not None:
-            return self._pointer_y
+        """Return where the position dot goes.
+
+        The dot marks the photo currently at the top of the grid — never the
+        pointer. Dragging looks like the dot follows the cursor only because the
+        grid itself is moving.
+        """
+
         return self._current_y
 
     # ------------------------------------------------------------------
@@ -247,15 +243,7 @@ class TimelineScrubber(QWidget):
             QRectF(track_x, bottom, 0, 0).topLeft(),
         )
 
-        # Top grip: a short thicker segment that reads as "this is draggable".
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(TRACK_COLOR)
-        painter.drawRoundedRect(
-            QRectF(track_x - 1.5, track_top - 2.0, 3.0, 22.0),
-            1.5,
-            1.5,
-        )
-
+        # No grip: the position dot itself is the draggable handle.
         font = QFont(self.font())
         font.setPixelSize(10)
         font.setWeight(QFont.Weight.Medium)
@@ -283,13 +271,18 @@ class TimelineScrubber(QWidget):
                 str(year),
             )
 
-        # Position dot: marks the date currently at the top of the grid, and
-        # follows the pointer while hovering or dragging.
+        # Position dot: the draggable handle that also marks where the photos
+        # currently are. A soft ring keeps it readable over photos.
         dot_y = self._dot_y()
         if dot_y is not None:
             dot_y = max(track_top, min(bottom, dot_y))
             radius = DOT_RADIUS
-            painter.setPen(QPen(TRACK_COLOR, 1.2))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 26))
+            painter.drawEllipse(
+                QRectF(track_x - radius - 1.5, dot_y - radius, (radius + 1.5) * 2, (radius + 1.5) * 2)
+            )
+            painter.setPen(QPen(QColor(0, 0, 0, 40), 1.2))
             painter.setBrush(QColor(255, 255, 255))
             painter.drawEllipse(
                 QRectF(track_x - radius, dot_y - radius, radius * 2, radius * 2)
@@ -304,7 +297,6 @@ class TimelineScrubber(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             y = int(event.position().y())
             self._scrubbing = True
-            self.set_pointer_y(float(y))
             row = self.row_at(y)
             if row is not None:
                 self.scrubMoved.emit(row, y)
@@ -312,7 +304,6 @@ class TimelineScrubber(QWidget):
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
         y = int(event.position().y())
-        self.set_pointer_y(float(y))
         hit = self.year_at(y)
         hover = hit[0] if hit is not None else None
         if hover != self._hover_year:
@@ -330,12 +321,10 @@ class TimelineScrubber(QWidget):
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton and self._scrubbing:
             self._scrubbing = False
-            self.set_pointer_y(None)
             self.scrubFinished.emit()
         super().mouseReleaseEvent(event)
 
     def leaveEvent(self, event) -> None:  # type: ignore[override]
-        self.set_pointer_y(None)
         if self._hover_year is not None:
             self._hover_year = None
             self.update()

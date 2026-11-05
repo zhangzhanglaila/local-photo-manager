@@ -3,8 +3,21 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QModelIndex, QPoint, QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QMouseEvent, QPainter, QPaintEvent, QPalette, QGuiApplication
-from PySide6.QtWidgets import QAbstractItemView, QListView, QLabel, QStyleOptionViewItem
+from PySide6.QtGui import (
+    QColor,
+    QGuiApplication,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPalette,
+)
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QGraphicsDropShadowEffect,
+    QLabel,
+    QListView,
+    QStyleOptionViewItem,
+)
 
 from ..styles import modern_scrollbar_style
 from .asset_grid import AssetGrid
@@ -281,28 +294,36 @@ class GalleryGridView(AssetGrid):
         # Parented to the view (not the viewport): the rail lives in the margin
         # reserved by ``setViewportMargins`` so it cannot cover a thumbnail.
         self._timeline_scrubber = TimelineScrubber(self)
-        self._timeline_coarse_anchor: int | None = None
 
         self._date_badge = QLabel(self)
         self._date_badge.setObjectName("galleryDateBadge")
         self._date_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Frosted pill: translucent white so the year labels behind it stay
+        # faintly visible, plus a soft drop shadow for elevation.
         self._date_badge.setStyleSheet(
             "QLabel#galleryDateBadge {"
-            "  background-color: rgba(255, 255, 255, 0.92);"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 11px;"
+            "  background-color: rgba(255, 255, 255, 0.88);"
+            "  border: 1px solid rgba(0, 0, 0, 0.06);"
+            "  border-radius: 15px;"
             "  color: #1D1D1F;"
-            "  font-size: 12px;"
+            "  font-size: 13px;"
             "  font-weight: 600;"
-            "  padding: 1px 10px;"
+            "  padding: 2px 12px;"
             "}"
         )
+        badge_shadow = QGraphicsDropShadowEffect(self._date_badge)
+        badge_shadow.setBlurRadius(22.0)
+        badge_shadow.setOffset(0.0, 3.0)
+        badge_shadow.setColor(QColor(0, 0, 0, 60))
+        self._date_badge.setGraphicsEffect(badge_shadow)
         self._date_badge.hide()
 
+        # Auto-hide the pill shortly after scrolling stops; hovering keeps it up.
         self._date_badge_timer = QTimer(self)
         self._date_badge_timer.setSingleShot(True)
-        self._date_badge_timer.setInterval(1400)
-        self._date_badge_timer.timeout.connect(self._date_badge.hide)
+        self._date_badge_timer.setInterval(1100)
+        self._date_badge_timer.timeout.connect(self._hide_date_badge)
+
 
         # ``visibleRowsChanged`` is already debounced (50 ms) and only fires when
         # the range actually moves, so the badge costs one cached role read per
@@ -322,6 +343,7 @@ class GalleryGridView(AssetGrid):
         self._scrub_timer.timeout.connect(self._flush_scrub_scroll)
 
         self._last_hover_row: int | None = None
+        self._hover_anchor_y: int | None = None
         QTimer.singleShot(0, self._refresh_timeline)
 
     def _on_timeline_hover(self, row: int, y: int) -> None:
@@ -330,7 +352,7 @@ class GalleryGridView(AssetGrid):
         if row < 0:
             self._last_hover_row = None
             if not self._scrub_timer.isActive():
-                self._date_badge.hide()
+                self._hide_date_badge()
             return
         if row == self._last_hover_row:
             self._reposition_date_badge(y)
@@ -341,10 +363,14 @@ class GalleryGridView(AssetGrid):
             self._show_date_badge(text, y)
 
     def _on_timeline_scrub(self, row: int, y: int) -> None:
-        """Continuous scrubbing: jump the grid toward the dragged position."""
+        """Continuous scrubbing: move the grid, and the dot with it."""
 
         self._scrub_pending_row = row
         self._last_hover_row = row
+        # While dragging, the photos are moving, so the position dot travels too.
+        setter = getattr(self._timeline_scrubber, "set_current_row", None)
+        if callable(setter):
+            setter(row)
         text = self._date_text_for_row(row)
         if text:
             self._show_date_badge(text, y)
@@ -364,8 +390,9 @@ class GalleryGridView(AssetGrid):
             self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtTop)
 
     def _on_timeline_scrub_finished(self) -> None:
+        # The pointer is still over the rail, so the date pill stays until the
+        # pointer leaves; the dot follows the grid from now on.
         self._last_hover_row = None
-        self._date_badge_timer.start()
 
     def _date_text_for_row(self, row: int) -> str:
         """Resolve a row's date from the cached DTO, falling back to one read."""
@@ -410,7 +437,7 @@ class GalleryGridView(AssetGrid):
 
         badge = getattr(self, "_date_badge", None)
         if badge is not None and badge.isVisible():
-            self._position_date_badge(self._timeline_coarse_anchor)
+            self._position_date_badge(getattr(self, "_hover_anchor_y", None))
 
     def _show_date_badge(self, text: str, anchor_y: int | None = None) -> None:
         """Show the date pill; ``anchor_y`` follows the pointer on the rail."""
@@ -419,14 +446,21 @@ class GalleryGridView(AssetGrid):
         if badge is None or not text:
             return
         badge.setText(text)
-        self._timeline_coarse_anchor = anchor_y
+        self._hover_anchor_y = anchor_y
         self._position_date_badge(anchor_y)
         badge.show()
         badge.raise_()
-        self._date_badge_timer.stop()
+
+    def _hide_date_badge(self) -> None:
+        """Hide the date pill (pointer left the rail)."""
+
+        self._hover_anchor_y = None
+        badge = getattr(self, "_date_badge", None)
+        if badge is not None:
+            badge.hide()
 
     def _reposition_date_badge(self, anchor_y: int | None) -> None:
-        self._timeline_coarse_anchor = anchor_y
+        self._hover_anchor_y = anchor_y
         self._position_date_badge(anchor_y)
 
     def _position_date_badge(self, anchor_y: int | None = None) -> None:
@@ -447,11 +481,12 @@ class GalleryGridView(AssetGrid):
         else:
             scrubber = getattr(self, "_timeline_scrubber", None)
             if scrubber is not None:
-                # The bubble's right edge sits on the track, like the reference:
-                # the rail is a sibling of the badge, so it may overlap that column.
+                # The pill's right edge stops just short of the track, so it
+                # overlaps the year labels (which stay faintly visible through the
+                # translucent background) exactly like the reference.
                 rail_left = scrubber.geometry().left()
                 track_x = rail_left + scrubber.width() - 7
-                x = max(0, track_x + 4 - width)
+                x = max(0, track_x - 14 - width)
             else:
                 x = max(0, self.width() - width - 12)
             y = max(6, min(self.height() - height - 6, anchor_y - height // 2))
@@ -500,6 +535,12 @@ class GalleryGridView(AssetGrid):
         QTimer.singleShot(0, self._refresh_timeline)
 
     def _on_visible_rows_for_timeline(self, first: int, last: int) -> None:
+        """Keep the rail's position dot and active year in sync with the grid.
+
+        Scrolling never shows the date pill: the pill belongs to hovering the rail,
+        while the dot is what reports "where the photos currently are".
+        """
+
         index = self.indexAt(QPoint(self.viewport().width() // 2, 2))
         if not index.isValid():
             index = self.model().index(max(0, first), 0) if self.model() else None
@@ -517,23 +558,22 @@ class GalleryGridView(AssetGrid):
                 year = None
 
         scrubber = getattr(self, "_timeline_scrubber", None)
-        if scrubber is not None:
-            scrubber.set_active_year(year)
-            # Park the rail's position dot at the row shown at the top.
-            top_row = index.row()
-            if callable(getattr(scrubber, "set_current_row", None)):
-                scrubber.set_current_row(top_row)
-
-        # While the pointer is on the rail the badge follows the pointer instead of
-        # the scroll position, so the two update paths do not fight each other.
-        if self._timeline_coarse_anchor is not None:
+        if scrubber is None:
             return
+        scrubber.set_active_year(year)
+        # Park the position dot at the row shown at the top of the grid.
+        setter = getattr(scrubber, "set_current_row", None)
+        if callable(setter):
+            setter(index.row())
 
-        text = self._format_timeline_date(created_at)
-        if not text:
-            return
-        self._show_date_badge(text)
-        self._date_badge_timer.start()
+        # Scrolling shows the date of the top row and hides it shortly after the
+        # scroll stops. While the pointer is on the rail, the pointer position wins
+        # so the two update paths do not fight each other.
+        if self._hover_anchor_y is None:
+            text = self._format_timeline_date(created_at)
+            if text:
+                self._show_date_badge(text)
+                self._date_badge_timer.start()
 
     @staticmethod
     def _format_timeline_date(created_at: object) -> str:

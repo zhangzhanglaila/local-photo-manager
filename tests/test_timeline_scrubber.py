@@ -323,3 +323,52 @@ def test_scrub_moves_the_grid_and_throttles_scroll(qapp: QApplication) -> None:
     # The timer coalesces bursts into one scroll instead of fighting the layout.
     assert view._scrub_timer.isActive()
     view.close()
+
+def test_scrolling_shows_the_date_then_hides_it(qapp: QApplication) -> None:
+    """Scrolling reveals the date briefly; it fades out once scrolling stops."""
+
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    view.setModel(_GridModel())
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    view._on_visible_rows_for_timeline(0, 8)
+    qapp.processEvents()
+
+    assert view._date_badge.isVisible() is True
+    assert "2024" in view._date_badge.text()
+    assert view._date_badge_timer.isActive() is True
+    # The position dot follows the photos.
+    assert view._timeline_scrubber._dot_y() is not None
+
+    view._hide_date_badge()
+    assert view._date_badge.isVisible() is False
+    view.close()
+
+
+def test_dragging_moves_the_position_dot(qapp: QApplication) -> None:
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    view.setModel(_GridModel())
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    scrubber = view._timeline_scrubber
+    before = scrubber._dot_y()
+    view._on_timeline_scrub(400, 500)
+    qapp.processEvents()
+    after = scrubber._dot_y()
+
+    assert after is not None
+    assert after != before, "the dot must track the photos while scrubbing"
+    assert view._date_badge.isVisible() is True, "dragging also shows the date"
+    view.close()
