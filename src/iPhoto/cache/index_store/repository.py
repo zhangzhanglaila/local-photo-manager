@@ -458,6 +458,30 @@ class AssetRepository:
             if should_close:
                 conn.close()
 
+    def metadata_version(self) -> int:
+        """Return the extraction version stamped into this index (0 when unset)."""
+
+        conn = self._db_manager.get_connection()
+        should_close = (conn != self._db_manager._conn)
+        try:
+            row = conn.execute("PRAGMA user_version").fetchone()
+            return int(row[0]) if row else 0
+        finally:
+            if should_close:
+                conn.close()
+
+    def set_metadata_version(self, version: int) -> None:
+        """Stamp this index with the extraction version that produced its rows."""
+
+        conn = self._db_manager.get_connection()
+        should_close = (conn != self._db_manager._conn)
+        try:
+            conn.execute(f"PRAGMA user_version = {int(version)}")
+            conn.commit()
+        finally:
+            if should_close:
+                conn.close()
+
     def read_geotagged(self) -> Iterator[Dict[str, Any]]:
         """Yield only rows that contain GPS metadata."""
         conn = self._db_manager.get_connection()

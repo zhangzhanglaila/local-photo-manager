@@ -37,6 +37,18 @@ LIVE_DURATION_PREFERRED: Final[tuple[float, float]] = (1.0, 3.5)
 LOCK_EXPIRE_SEC: Final[int] = 30
 THUMB_SIZES: Final[list[tuple[int, int]]] = [(256, 256), (512, 512)]
 
+# Version of the scan metadata extraction pipeline.
+#
+# The incremental scan reuses an existing index row whenever the file's size and
+# mtime are unchanged, which is what keeps startup scans fast. That optimisation
+# also freezes metadata bugs: a row written by an older extractor keeps its wrong
+# values forever, and neither a restart nor a rescan repaired it.
+#
+# Bump this number whenever extraction results change in a way that must reach
+# existing libraries. A library stamped with an older version is re-extracted
+# once, then stamped again.
+SCANNER_METADATA_VERSION: Final[int] = 2
+
 THUMBNAIL_SEEK_GUARD_SEC: Final[float] = 0.35
 
 SCHEMA_DIR: Final[Path] = Path(__file__).resolve().parent / "schemas"

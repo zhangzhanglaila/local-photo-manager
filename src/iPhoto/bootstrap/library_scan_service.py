@@ -20,6 +20,7 @@ from ..config import (
     DEFAULT_EXCLUDE,
     DEFAULT_INCLUDE,
     RECENTLY_DELETED_DIR_NAME,
+    SCANNER_METADATA_VERSION,
 )
 from ..errors import (
     AlbumNotFoundError,
@@ -196,8 +197,15 @@ class LibraryScanService:
         batch_failed_callback: Callable[[int], None] | None = None,
         chunk_size: int = 50,
         persist_chunks: bool = False,
+        reuse_existing_index: bool = True,
     ) -> ScanLibraryResult:
-        """Scan *root* using the shared application use case."""
+        """Scan *root* using the shared application use case.
+
+        ``reuse_existing_index`` lets an incremental scan skip metadata extraction
+        for files whose size and mtime are unchanged. An explicit rescan passes
+        ``False`` so that stale metadata (for example a row indexed before GPS
+        parsing was fixed) is actually re-extracted instead of being carried over.
+        """
 
         scan_root = Path(root)
         resolved_include, resolved_exclude = self.scan_filters(
@@ -206,17 +214,27 @@ class LibraryScanService:
             exclude=exclude,
         )
         repository = self._repository()
-        existing_index = load_incremental_index_cache(
-            scan_root,
-            library_root=self.library_root,
-            repository=repository,
+        reuse = reuse_existing_index and self._index_metadata_is_current(repository)
+        if reuse_existing_index and not reuse:
+            LOGGER.info(
+                "Index metadata version is stale for %s; re-extracting metadata once",
+                self.library_root,
+            )
+        existing_index = (
+            load_incremental_index_cache(
+                scan_root,
+                library_root=self.library_root,
+                repository=repository,
+            )
+            if reuse
+            else {}
         )
 
         use_case = ScanLibraryUseCase(
             scanner=self._scanner,
             asset_repository=repository,
         )
-        return use_case.execute(
+        result = use_case.execute(
             ScanLibraryRequest(
                 root=scan_root,
                 include=resolved_include,
@@ -231,6 +249,39 @@ class LibraryScanService:
                 persist_chunks=persist_chunks,
             )
         )
+        if not reuse and not (is_cancelled is not None and is_cancelled()):
+            # A full extraction of the library root is what makes the whole index
+            # current; a partial (album-scoped) refresh must not claim that.
+            if self._is_library_root(scan_root):
+                self._stamp_metadata_version(repository)
+        return result
+
+    def _is_library_root(self, scan_root: Path) -> bool:
+        try:
+            return scan_root.resolve() == Path(self.library_root).resolve()
+        except OSError:
+            return scan_root == Path(self.library_root)
+
+    def _index_metadata_is_current(self, repository: object) -> bool:
+        """Return whether the index was produced by the current extractor."""
+
+        getter = getattr(repository, "metadata_version", None)
+        if not callable(getter):
+            return True
+        try:
+            return int(getter() or 0) >= SCANNER_METADATA_VERSION
+        except Exception:
+            LOGGER.debug("Could not read index metadata version", exc_info=True)
+            return False
+
+    def _stamp_metadata_version(self, repository: object) -> None:
+        setter = getattr(repository, "set_metadata_version", None)
+        if not callable(setter):
+            return
+        try:
+            setter(SCANNER_METADATA_VERSION)
+        except Exception:
+            LOGGER.warning("Could not stamp index metadata version", exc_info=True)
 
     def rescan_album(
         self,
@@ -257,6 +308,9 @@ class LibraryScanService:
             progress_callback=progress_callback,
             is_cancelled=is_cancelled,
             persist_chunks=False,
+            # A rescan is the user's explicit "refresh this library" action, so it
+            # must never be satisfied by cached rows from an older extractor.
+            reuse_existing_index=False,
         )
         rows = self.finalize_scan_result(
             root,
