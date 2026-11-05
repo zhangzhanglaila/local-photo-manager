@@ -25,7 +25,6 @@ from PySide6.QtGui import (
     QPalette,
 )
 from PySide6.QtWidgets import (
-    QToolTip,
     QAbstractItemView,
     QFrame,
     QLabel,
@@ -233,6 +232,7 @@ class AlbumSidebar(QWidget):
         self._tree.setIconSize(QSize(SIDEBAR_ICON_SIZE, SIDEBAR_ICON_SIZE))
         self._tree.setMouseTracking(True)
         self._tree.viewport().installEventFilter(self)
+        self._build_action_hint()
         self._tree.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self._tree.setItemDelegate(AlbumSidebarDelegate(self._tree))
         self._indicator_controller = BranchIndicatorController(self._tree)
@@ -511,7 +511,7 @@ class AlbumSidebar(QWidget):
             self.bindLibraryRequested.emit()
 
     def eventFilter(self, watched: QObject, event) -> bool:  # type: ignore[override]
-        """Give the header ＋ a button affordance (cursor + tooltip)."""
+        """Give the header ＋ a button affordance (cursor + hint)."""
 
         if getattr(event, "type", None) is not None and watched is self._tree.viewport():
             if event.type() == QEvent.Type.MouseMove:
@@ -524,18 +524,59 @@ class AlbumSidebar(QWidget):
                     )
                 if over_action:
                     self._tree.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
-                    QToolTip.showText(
-                        event.globalPosition().toPoint(),
-                        tr("action.set_basic_library"),
-                        self._tree.viewport(),
-                    )
+                    self._show_action_hint(event.position().toPoint())
                 else:
                     self._tree.viewport().unsetCursor()
-                    QToolTip.hideText()
+                    self._hide_action_hint()
             elif event.type() == QEvent.Type.Leave:
                 self._tree.viewport().unsetCursor()
-                QToolTip.hideText()
+                self._hide_action_hint()
         return super().eventFilter(watched, event)
+
+    def _build_action_hint(self) -> None:
+        """Create the in-widget hint shown over the header ＋.
+
+        ``QToolTip`` was used first, but on Windows the native popup follows the
+        system colour scheme while its text colour comes from the application
+        palette, which produced a black box with dark text that no stylesheet could
+        fix. Painting our own label keeps the contrast under our control.
+        """
+
+        hint = QLabel(self)
+        hint.setObjectName("sidebarActionHint")
+        hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        hint.setStyleSheet(
+            "QLabel#sidebarActionHint {"
+            "  background-color: #FFFFFF;"
+            "  color: #1D1D1F;"
+            "  border: 1px solid rgba(0, 0, 0, 0.12);"
+            "  border-radius: 6px;"
+            "  padding: 3px 8px;"
+            "  font-size: 12px;"
+            "}"
+        )
+        hint.hide()
+        self._action_hint = hint
+
+    def _show_action_hint(self, viewport_pos: QPoint) -> None:
+        hint = getattr(self, "_action_hint", None)
+        if hint is None:
+            return
+        hint.setText(tr("action.set_basic_library"))
+        hint.adjustSize()
+
+        # Anchor under the pointer but keep the label inside the sidebar.
+        anchor = self._tree.viewport().mapTo(self, viewport_pos + QPoint(12, 18))
+        x = max(2, min(self.width() - hint.width() - 2, anchor.x()))
+        y = max(2, min(self.height() - hint.height() - 2, anchor.y()))
+        hint.move(x, y)
+        hint.show()
+        hint.raise_()
+
+    def _hide_action_hint(self) -> None:
+        hint = getattr(self, "_action_hint", None)
+        if hint is not None:
+            hint.hide()
 
     def _on_clicked(self, index: QModelIndex) -> None:
         """Toggle expansion when the branch indicator hot zone is clicked,

@@ -286,3 +286,40 @@ def test_sidebar_indent_steps_are_uniform() -> None:
     level2_icon = 2 * SIDEBAR_INDENT_PER_LEVEL + SIDEBAR_INDICATOR_SLOT_WIDTH
     assert level1_icon - header_icon == SIDEBAR_INDENT_PER_LEVEL
     assert level2_icon - level1_icon == SIDEBAR_INDENT_PER_LEVEL
+
+def test_sidebar_action_hint_is_an_in_widget_label(tmp_path: Path, qapp: QApplication) -> None:
+    """The hint must be our own label, not a native ``QToolTip``.
+
+    On Windows the native popup takes its background from the system colour scheme
+    and its text colour from the app palette, which produced an unreadable black
+    box; a label keeps both colours under our control.
+    """
+
+    from PySide6.QtCore import QPoint
+
+    from iPhoto.gui.ui.widgets.album_sidebar import AlbumSidebar
+
+    library_root = tmp_path / "Library"
+    library_root.mkdir()
+    _create_album(library_root, "Trips")
+
+    manager = LibraryRuntimeController()
+    manager.bind_path(library_root)
+    sidebar = AlbumSidebar(manager, None)
+    sidebar.resize(260, 480)
+    sidebar.show()
+    qapp.processEvents()
+    try:
+        sidebar._show_action_hint(QPoint(200, 200))
+        qapp.processEvents()
+
+        hint = sidebar._action_hint
+        assert hint.isVisible() is True
+        assert hint.parent() is sidebar, "the hint is painted by the sidebar itself"
+        assert hint.width() > 0 and hint.height() > 0
+
+        sidebar._hide_action_hint()
+        assert hint.isVisible() is False
+    finally:
+        sidebar.close()
+        manager.shutdown()
