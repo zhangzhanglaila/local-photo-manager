@@ -249,12 +249,19 @@ class LibraryScanService:
                 persist_chunks=persist_chunks,
             )
         )
-        if not reuse and not (is_cancelled is not None and is_cancelled()):
-            # A full extraction of the library root is what makes the whole index
-            # current; a partial (album-scoped) refresh must not claim that.
-            if self._is_library_root(scan_root):
-                self._stamp_metadata_version(repository)
+        if not reuse:
+            self._stamp_if_library_root(scan_root, repository)
         return result
+
+    def _stamp_if_library_root(self, scan_root: Path, repository: object) -> None:
+        """Record that *scan_root* is now fully extracted at the current version.
+
+        Only a full-library pass may claim the whole index is current; refreshing a
+        single album leaves the rest of the library untouched.
+        """
+
+        if self._is_library_root(scan_root):
+            self._stamp_metadata_version(repository)
 
     def _is_library_root(self, scan_root: Path) -> bool:
         try:
@@ -376,6 +383,10 @@ class LibraryScanService:
             materialized_rows,
             exclude_globs=resolved_exclude,
         )
+        # Stamping here as well keeps the version honest for scans that are driven
+        # by the Qt scanner worker: that worker reports the scan as finished only
+        # after this hook runs, and its own return path may already be cancelled.
+        self._stamp_if_library_root(scan_root, self._repository())
         if pair_live:
             self.pair_album(scan_root)
         return materialized_rows

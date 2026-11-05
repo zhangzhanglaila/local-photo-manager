@@ -146,3 +146,31 @@ def test_album_scoped_refresh_does_not_stamp_the_library(
     # The album was refreshed, but the rest of the library was not, so the index
     # must keep advertising itself as stale.
     assert repository.version == SCANNER_METADATA_VERSION - 1
+
+
+def test_scan_finished_hook_stamps_the_library_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Qt scanner worker finishes through ``finalize_scan_result``.
+
+    Its ``scan_album`` return path can already be flagged as cancelled by the time
+    the scan is done, so the stamp must not depend on that path.
+    """
+
+    from iPhoto.bootstrap.library_asset_lifecycle_service import (
+        LibraryAssetLifecycleService,
+    )
+
+    service, _scanner, repository = _service(tmp_path, version=SCANNER_METADATA_VERSION - 1)
+    monkeypatch.setattr(service, "finalize_scan", lambda *a, **k: None)
+    monkeypatch.setattr(service, "pair_album", lambda *a, **k: None)
+    monkeypatch.setattr(
+        LibraryAssetLifecycleService,
+        "reconcile_missing_scan_rows",
+        lambda *a, **k: 0,
+    )
+
+    service.finalize_scan_result(tmp_path, rows=[])
+
+    assert repository.version == SCANNER_METADATA_VERSION
