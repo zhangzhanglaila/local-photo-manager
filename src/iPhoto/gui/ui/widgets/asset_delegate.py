@@ -128,7 +128,10 @@ class AssetGridDelegate(QStyledItemDelegate):
             painter.restore()
 
         if clip_path is not None:
-            painter.setClipPath(QPainterPath())
+            # Disable clipping rather than resetting it to an empty path: an empty
+            # QPainterPath clips everything away, which silently hid the live /
+            # video / favourite badges drawn below.
+            painter.setClipping(False)
 
         if self._filmstrip_mode and is_current:
             highlight = option.palette.color(QPalette.Highlight)
