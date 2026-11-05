@@ -74,25 +74,55 @@ class FloatingToolTip(QWidget):
         self._border_width = 1
         self._corner_radius = 6.0
 
-        # Respect the palette whenever possible so the tooltip integrates with
-        # the current theme while falling back to readable colours when the
-        # palette omits dedicated tooltip roles (a common occurrence on Linux).
-        palette = QGuiApplication.palette()
-        self._background_colour = self._resolve_colour(
-            palette.color(QPalette.ColorRole.ToolTipBase), QColor("#ffffe1")
-        )
-        self._text_colour = self._resolve_colour(
-            palette.color(QPalette.ColorRole.ToolTipText), QColor("#000000")
-        )
-        self._border_colour = self._resolve_colour(
-            palette.color(QPalette.ColorRole.Mid), QColor("#999999")
-        )
+        self._background_colour = QColor("#ffffe1")
+        self._text_colour = QColor("#000000")
+        self._border_colour = QColor("#999999")
+        self._refresh_colours()
 
         tooltip_font = QGuiApplication.font()
         self._font = QFont(tooltip_font)
 
         self._last_text: str = ""
         self.hide()
+
+    def _refresh_colours(self) -> None:
+        """Re-read the palette so the popup follows theme changes.
+
+        Colours used to be resolved once in `__init__`, which happens before the
+        runtime applies its theme.  The popup then kept a dark background with dark
+        text — the "black box" users saw when hovering a button.
+        """
+
+        palette = QGuiApplication.palette()
+        background = self._resolve_colour(
+            palette.color(QPalette.ColorRole.ToolTipBase), QColor("#ffffe1")
+        )
+        text = self._resolve_colour(
+            palette.color(QPalette.ColorRole.ToolTipText), QColor("#000000")
+        )
+        if abs(background.lightness() - text.lightness()) < 60:
+            # Nearly identical shades are unreadable; mirror Qt's defaults instead.
+            background = QColor("#ffffe1")
+            text = QColor("#000000")
+        self._background_colour = background
+        self._text_colour = text
+        self._border_colour = self._resolve_colour(
+            palette.color(QPalette.ColorRole.Mid), QColor("#999999")
+        )
+        self.update()
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        if event.type() in {
+            QEvent.Type.PaletteChange,
+            QEvent.Type.ApplicationPaletteChange,
+            QEvent.Type.ThemeChange,
+        }:
+            self._refresh_colours()
+        super().changeEvent(event)
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        self._refresh_colours()
+        super().showEvent(event)
 
     @staticmethod
     def _resolve_colour(candidate: QColor, fallback: QColor) -> QColor:

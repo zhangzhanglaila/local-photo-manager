@@ -792,7 +792,20 @@ class FramelessWindowManager(QObject):
         )
         scrollbar_style = modern_scrollbar_style(text_color, extra_selectors=selectors)
 
-        qmenu_style = qmenu_style + "\n" + scrollbar_style
+        # Tooltips are native popups: on Windows the system colour scheme wins over
+        # the palette, which produced a black bubble with barely visible text. A
+        # stylesheet rule is applied by Qt itself and therefore follows the theme.
+        tooltip_style = (
+            "QToolTip {\n"
+            f"    background-color: {window_color_name};\n"
+            f"    color: {text_color_name};\n"
+            f"    border: 1px solid {border_color_name};\n"
+            "    border-radius: 6px;\n"
+            "    padding: 4px 8px;\n"
+            "}"
+        )
+
+        qmenu_style = qmenu_style + "\n" + scrollbar_style + "\n" + tooltip_style
 
         menubar_style = (
             "QMenuBar {\n"
