@@ -18,6 +18,11 @@ compatibility code is quarantined under `src/iPhoto/legacy/`.
 - New business logic belongs in application use cases/services, session
   surfaces, domain values/pure services, or infrastructure adapters. GUI code
   is presentation and Qt transport only.
+- Both architecture violations that used to be outstanding are fixed, and
+  `tools/check_architecture.py` exits 0. Treat a new violation as a bug in the
+  change that introduced it, not as an accepted baseline.
+- The test suite is green (`1473 passed, 34 skipped, 0 failed`); see §9 for how
+  to run it and for the rules that keep it that way.
 
 The authoritative refactor status is tracked in:
 
@@ -61,9 +66,14 @@ Forbidden directions:
 domain -> application/gui/infrastructure
 application -> gui/concrete cache/concrete infrastructure
 infrastructure/cache/core/io/library/people -> gui
+gui -> iPhoto.cache.index_store        (ask bootstrap/ for a helper instead)
 production runtime -> iPhoto.legacy
 production runtime -> iPhoto.models.*
 ```
+
+`tools/check_architecture.py` enforces the first five; it currently exits 0. When
+GUI needs concrete storage that no session surface exposes, add a small helper in
+`bootstrap/` (see `bootstrap/embedding_index.py`) instead of importing the store.
 
 Key runtime objects:
 
@@ -83,18 +93,33 @@ to `src/iPhoto/legacy/app.py`, `src/iPhoto/legacy/appctx.py`,
 
 Album markers:
 
-- `.iphoto.album.json`: folder-local album manifest.
-- `.iphoto.album`: minimal marker for folder-native album discovery.
-- `.iPhoto/manifest.json`: compatibility manifest location supported by the
-  current manifest repository.
+- `.iphoto.album.json`: folder-local album manifest. **Only used when no custom
+  workspace is configured** (self-contained album layout).
+- `.iPhoto/manifest.json`: manifest inside the album/library workspace. This is
+  where manifests are written when `workspace_base` is configured.
+- `.iphoto.album`: legacy minimal marker, still honoured for discovery but no
+  longer created by `ensure_manifest()`.
+
+Manifest location rules:
+
+- `utils.pathutils.album_manifest_path(root)` is the single place that decides
+  where a manifest is written: `<workspace>/<library>/.iPhoto/manifest.json` when
+  a workspace base is configured, otherwise `<root>/.iphoto.album.json`.
+- `utils.pathutils.find_album_manifest(root)` reads it and **migrates** a legacy
+  in-library manifest into the workspace once (id and content preserved).
+- Do not build `root / ".iphoto.album.json"` by hand anywhere else: that is how
+  the manifest ended up inside the photo folder before.
 
 Library workspace:
 
 ```text
-/<LibraryRoot>/.iPhoto/
+/<WorkspaceBase>/<LibraryName>/.iPhoto/     (or /<LibraryRoot>/.iPhoto/ without one)
   global_index.db       # SQLite index and current asset/state repository store
+  manifest.json         # Album manifest (workspace mode)
   links.json            # Live Photo compatibility materialization
-  cache/thumbs/         # Rebuildable thumbnail cache
+  ocr_index.db          # Rebuildable OCR index
+  thumbs/               # Rebuildable thumbnail cache (JPEG, quality 85)
+  cache/shaders/        # Qt shader cache; resolved from settings at startup
   faces/
     face_index.db       # Rebuildable People runtime snapshot
     face_state.db       # Durable People user decisions
@@ -102,6 +127,11 @@ Library workspace:
   manifest.bak/         # Manifest/links backup area
   locks/                # File-level locks for JSON sidecars
 ```
+
+The photo folder itself must contain **only** photos and videos. The shader
+cache resolution runs before `RuntimeContext` exists, so it reads
+`workspace_base` from `settings.json` directly (`bootstrap/qt_shader_cache.py`);
+otherwise it falls back to `<library>/.iPhoto` and writes into the photo folder.
 
 State rules:
 
@@ -131,7 +161,10 @@ Trash identity rules:
 ## 5. Module Responsibilities
 
 - `bootstrap/`: `RuntimeContext`, `LibrarySession`, and session-bound services
-  that wire application behavior to the current library root.
+  that wire application behavior to the current library root. It is also the home
+  for narrow helpers that own a concrete infrastructure dependency on behalf of
+  presentation code — `qt_shader_cache.py` (settings-driven cache location) and
+  `embedding_index.py` (stored CLIP embeddings for the AI search worker).
 - `application/ports/`: public application boundary protocols, including
   `AssetRepositoryPort`, `LibraryStateRepositoryPort`, `MediaScannerPort`,
   `PeopleIndexPort`, `MapRuntimePort`, `EditSidecarPort`,
@@ -141,7 +174,9 @@ Trash identity rules:
   pinned state, location queries, map interaction, and explicit location
   assignment.
 - `domain/`: dataclasses, value objects, query models, and pure domain services.
-  Domain code must not perform IO or import Qt/SQLite/runtime adapters.
+  Domain code must not perform IO or import Qt/SQLite/runtime adapters. Value
+  objects consumed by application services belong here even when the GUI renders
+  them (for example `domain/models/trail.py`).
 - `infrastructure/`: concrete adapters for SQLite-backed state, manifests,
   `.ipo` sidecars, ExifTool, FFmpeg, maps runtime discovery, thumbnail caches,
   filesystem scanning, and runtime services.
@@ -161,6 +196,14 @@ Trash identity rules:
   adjustment math, geometry, export transforms, filters, raw loading, and
   preview backends.
 - `io/`: metadata extraction, scanner adapters, and sidecar parsing helpers.
+- `utils/`: cross-cutting helpers with no workflow knowledge. `timeutils.py`
+  converts datetimes to epoch values without relying on platform `mktime` (which
+  raises `OSError` on Windows around the epoch), and `pathutils.py` owns the
+  work-directory, trash and album-manifest path rules.
+- `ai/`: OCR engine/worker and the shared ONNX thread policy
+  (`ai/onnx_threads.py`: `intra_op_num_threads <= 4`, overridable via
+  `IPHOTO_FACE_THREADS`). Background AI scans must never default to "one thread
+  per core".
 - `legacy/`: quarantine only. No production imports and no new functionality.
 
 ## 6. Coding Rules
@@ -235,26 +278,58 @@ Trash identity rules:
 
 Run architecture checks after boundary changes:
 
-```bash
-python3 tools/check_architecture.py
-.venv/bin/python -m pytest tests/architecture -q
+```powershell
+.venv\Scripts\python.exe tools\check_architecture.py
+.venv\Scripts\python.exe -m pytest tests/architecture -q
+```
+
+Run the whole suite before claiming a change is done:
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests -q
+```
+
+Current baseline (keep it green; do not "fix" a red suite by weakening
+assertions):
+
+```text
+1473 passed, 34 skipped, 0 failed   (~73 s, three consecutive identical runs)
 ```
 
 Use targeted regression tests for changed behavior:
 
-```bash
-.venv/bin/python -m pytest tests/application/test_runtime_context.py tests/application/test_library_session.py tests/application/test_scan_library_use_case.py -q
-.venv/bin/python -m pytest tests/application/test_temp_library_end_to_end.py tests/application/test_library_asset_lifecycle_service.py tests/services/test_asset_move_service.py tests/services/test_restoration_service.py -q
-.venv/bin/python -m pytest tests/performance -q
+```powershell
+.venv\Scripts\python.exe -m pytest tests/application/test_runtime_context.py tests/application/test_library_session.py -q
+.venv\Scripts\python.exe -m pytest tests/test_gallery_collection_scan_refresh.py tests/test_asset_grid_visible_range.py tests/test_asset_grid_wheel.py -q
+.venv\Scripts\python.exe -m pytest tests/performance -q
 ```
 
 Required guardrail expectations:
 
 - `application/` has no GUI or concrete persistence imports.
 - `infrastructure/` has no GUI imports.
+- `gui/` has no `iPhoto.cache.index_store` imports.
 - production source has no `iPhoto.legacy` or `iPhoto.models.*` imports.
 - GUI runtime has no compatibility service factory fallback.
-- Architecture checks are part of CI.
+- Architecture checks are **not** yet wired into CI: `.github/` contains issue
+  templates only. Run them locally until a workflow exists.
+
+Test-writing rules that this suite depends on:
+
+- Platform-specific behaviour declares its own precondition (`pytest.skip` for
+  macOS packaging, Windows-only `QWindow` masks, and similar) instead of failing
+  on another OS.
+- Tests must not depend on machine configuration such as `IPHOTO_EXIFTOOL_PATH`;
+  point the code at a stub inside the test.
+- A `QThread` that is destroyed while still running aborts the process and the
+  crash surfaces in an unrelated test. `tests/conftest.py` tracks every started
+  thread and stops it politely after each test — never call `terminate()`.
+- Assert user-visible text through `tr(...)`, never as a literal English string.
+
+`tests/gui` is excluded from the default run, and part of it is stale (for
+example `tests/gui/viewmodels/test_gallery_collection_store.py` still assumes
+synchronous window loading). New coverage for the store belongs in
+`tests/test_gallery_collection_scan_refresh.py`, which does run by default.
 
 Pytest configuration lives in a single place: `[tool.pytest.ini_options]` in
 `pyproject.toml`. Do not reintroduce a `pytest.ini`, a `[pytest]` section in

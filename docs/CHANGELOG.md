@@ -4,6 +4,82 @@ All notable changes to **iPhotron** are documented in this file.
 
 ---
 
+## Unreleased — Stability, Browsing Performance & Test Suite
+
+*A hardening pass driven by user-visible lag and by a suite that could not be
+trusted: 65 failing tests, intermittent native aborts, and state files written
+into the photo folder.*
+
+### Browsing performance
+
+- Fixed the gallery reload loop that pinned the CPU: `_window_needs_reload()`
+  applied its hysteresis margin unconditionally, and `handle_scan_chunk()`
+  refreshed whenever the viewport started at row 0. Both now require an actual
+  reason to reload, and scan-driven refreshes are coalesced (150 ms) and consumed
+  once applied. Idle reloads went from ~11/s to 0; process CPU from ~19 cores to
+  ~0.13 cores.
+- Restored the intended cache window: loads now cover 200–1000 rows with one
+  screen of look-behind and two of look-ahead instead of exactly the visible rows
+  (`_compute_target_window` existed but was never called).
+- The grid now reports its visible rows. The previous probe used
+  `indexAt(viewport corners)`, which lands in icon spacing, so the store never
+  learned that the viewport moved and scrolling fell back to one query per row.
+- Painting no longer touches the database: `data()` reads `peek_asset()` and
+  queues missing rows through `request_row()`; they repaint via `row_changed`.
+- One wheel notch travels half as far (`WHEEL_STEP_RATIO = 0.5`, ~1.4 rows).
+
+### Background AI scans
+
+- Face and OCR inference are bounded to 4 intra-op threads (1 inter-op,
+  `IPHOTO_FACE_THREADS` overrides). InsightFace and RapidOCR both defaulted to
+  one thread per core, so a single automatic scan saturated the machine.
+- Both scans step aside while the user is viewing media: photo detail, grid
+  scrolling and video playback register "foreground viewing" and pause them.
+- Face-scan failures are logged per asset with their reason instead of a single
+  "N assets could not be processed" line.
+
+### Correctness fixes found by the failing tests
+
+- Rescans of the library root never pruned stale rows: `compute_album_path()`
+  returns `None` for both "outside the library" and "the library root", and the
+  root took the external-root branch whose absolute-prefix filter cannot match
+  relative rows.
+- `datetime.timestamp()` raises `OSError: [Errno 22]` on Windows around the epoch,
+  which crashed scan batches for 1970-era dates. Added `utils/timeutils.py`.
+- `with sqlite3.connect(...)` commits but never closes: four call sites leaked
+  handles, kept the index file locked on Windows and broke corrupted-database
+  recovery.
+- Sub-albums could not be created after the multi-root change (the depth guard
+  still compared against level 1) and were not rendered by the sidebar model
+  (two levels only). Levels are now library 1 / album 2 / sub-album 3.
+- `PhotoMapView.map_widget()` no longer requires a separate `activate_map()`
+  call; both go through the same lazy build.
+
+### Workspace cleanliness
+
+- Album manifests now live in the workspace (`<workspace>/<library>/.iPhoto/
+  manifest.json`) when `workspace_base` is set, and a legacy in-library manifest
+  is migrated once (id preserved). Previously the path was hard-coded to
+  `<library>/.iphoto.album.json`, and `ensure_manifest()` also dropped a marker
+  file next to the photos.
+- The Qt shader cache reads `workspace_base` from settings before
+  `RuntimeContext` exists; without that it fell back to `<library>/.iPhoto` and
+  recreated a directory inside the photo folder on every start.
+
+### Architecture and tests
+
+- Removed both layer violations: trail dataclasses moved to
+  `domain/models/trail.py`, and the AI search worker gets embeddings through
+  `bootstrap/embedding_index.py` instead of importing the index store.
+- Test suite: 65 failures → **0** (1473 passed, 34 skipped, three consecutive
+  identical runs, exit code 0). The intermittent aborts came from leaked
+  `QThread`s being collected while running; `tests/conftest.py` now stops them
+  politely after each test.
+- Platform-specific tests declare their own preconditions (macOS packaging,
+  Windows `QWindow` masks) instead of failing on another OS.
+
+---
+
 ## 🚧 Unreleased — macOS Rendering, Map Runtime & Location Resilience
 
 🖥️ *A platform-compatibility pass focused on macOS Metal/QRhi previews,

@@ -217,6 +217,16 @@ coordinators, menus, shortcuts, Qt workers, and signal adapters. GUI code calls
 session/application surfaces and does not directly write durable state or call
 concrete repository singletons.
 
+Two consequences are easy to violate from a worker that "just needs one row":
+
+- GUI must not import `iPhoto.cache.index_store` (or `iPhoto.cache` in general).
+  When presentation needs stored data that no session surface exposes, add a
+  helper under `bootstrap/` that owns that dependency — for example
+  `bootstrap/embedding_index.py:load_stored_embeddings()` for CLIP embeddings.
+- Value objects used by an application service do not live under `gui/`. The
+  trail/timeline dataclasses now live in `domain/models/trail.py`;
+  `gui/ui/models/trail_models.py` is only a re-export shim.
+
 ### Library Runtime
 
 `library/` contains the production runtime controller, album tree/watch shells,
@@ -361,6 +371,51 @@ sequenceDiagram
 Thumbnail infrastructure may apply edit state, but edit persistence remains
 behind session/edit sidecar services.
 
+## Performance Model
+
+Browsing performance is a product requirement, not a tuning detail. The rules
+below are what keep the gallery responsive with a 10k+ asset library while AI
+scans run in the background.
+
+### Gallery cache window
+
+- `GalleryCollectionStore` loads a **window** around the viewport, not just the
+  visible rows: `MIN_WINDOW_SIZE = 200`, `MAX_WINDOW_SIZE = 1000`,
+  `WINDOW_MULTIPLIER = 3`, with one screen of look-behind and two of look-ahead.
+  Loading only the visible range makes every scroll step a reload.
+- The grid reports its visible rows (`AssetGrid.visibleRowsChanged`) after a
+  50 ms debounce. This is the only signal the store uses to prefetch; if the
+  emitter breaks, scrolling silently falls back to one DB query per row.
+- Painting reads the cache only (`peek_asset`). A missing row is queued
+  (`request_row`) and repainted through `row_changed`; `data()` must never query
+  the database.
+- Scan-driven refreshes are coalesced (`SCAN_REFRESH_MIN_INTERVAL_S = 0.15`) and
+  only run when the chunk can actually change the visible rows (re-scanned
+  visible asset, sort key inside the range, or a still-filling window). The
+  pending flag is consumed when applied — leaving it set turned the gallery into
+  a reload loop that pinned every core.
+- `AssetGrid.WHEEL_STEP_RATIO = 0.5` scales one wheel notch to roughly one row.
+
+### Background AI scans
+
+- Both the face scan and the OCR scan run through onnxruntime. Sessions are built
+  with bounded threads (`ai/onnx_threads.py`: `intra_op = min(4, cpu//2)`,
+  `inter_op = 1`, override with `IPHOTO_FACE_THREADS`). The library default of
+  "one thread per core" made a single scan monopolise the machine.
+- Face and OCR scans are started after the file scan finishes and run
+  concurrently, so their bounded limits are what keeps the combined peak sane.
+- While the user is looking at something — photo detail open, grid scrolling,
+  video playing — the runtime registers foreground viewing and both scans pause,
+  resuming when the user returns to the grid.
+
+### Storage
+
+- Thumbnails are JPEG (quality 85) under `<workspace>/.iPhoto/thumbs/`; they are
+  disposable and rebuilt on demand.
+- SQLite connections are opened with `contextlib.closing`; `with
+  sqlite3.connect(...)` commits but never closes, which leaks handles and, on
+  Windows, prevents the corrupted-database recovery path from replacing the file.
+
 ## Legacy Quarantine And Removal Policy
 
 `src/iPhoto/legacy/` contains quarantined compatibility modules, including old
@@ -392,13 +447,23 @@ The guardrails enforce:
 - runtime `AppContext` imports are not reintroduced;
 - coordinators do not import collection-store implementation types directly;
 - vNext layer boundaries are respected;
-- `application/` does not import GUI or concrete persistence;
+- `application/` does not import GUI or concrete persistence (`iPhoto.cache`,
+  `iPhoto.infrastructure`);
 - `infrastructure/` does not import GUI;
+- `gui/` does not import the concrete index store (`iPhoto.cache.index_store`);
 - production runtime does not import quarantined legacy paths or old model
   shims.
 
-The GitHub Actions workflow also runs `python tools/check_architecture.py`
-before the broader test suite.
+All of the above currently pass (`tools/check_architecture.py` exits 0 and
+`tests/architecture` is green). Two violations used to be listed in this
+section — `application/services/trail_service.py` importing GUI trail models and
+`gui/coordinators/main_coordinator.py` importing the embedding repository — and
+both were removed by relocating the code rather than by relaxing the check.
+
+**CI status:** `.github/` currently contains issue templates only. The
+architectural checks and the test suite are not yet wired into a workflow, so run
+them locally as shown above. When a workflow is added it should run
+`tools/check_architecture.py` before the test suite.
 
 ## Decision Log
 
