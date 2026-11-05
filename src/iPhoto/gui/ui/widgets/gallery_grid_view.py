@@ -283,7 +283,7 @@ class GalleryGridView(AssetGrid):
         self._timeline_scrubber = TimelineScrubber(self)
         self._timeline_coarse_anchor: int | None = None
 
-        self._date_badge = QLabel(viewport)
+        self._date_badge = QLabel(self)
         self._date_badge.setObjectName("galleryDateBadge")
         self._date_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._date_badge.setStyleSheet(
@@ -430,26 +430,31 @@ class GalleryGridView(AssetGrid):
         self._position_date_badge(anchor_y)
 
     def _position_date_badge(self, anchor_y: int | None = None) -> None:
-        """Place the pill centered, or beside the rail when following the pointer."""
+        """Place the pill centered, or beside the track when following the pointer."""
 
         badge = self._date_badge
         hint = badge.sizeHint()
-        viewport = self.viewport()
         width = max(24, hint.width())
         height = max(24, hint.height())
 
         if anchor_y is None:
             badge.setGeometry(
-                max(0, (viewport.width() - width) // 2),
+                max(0, (self.width() - width) // 2),
                 10,
                 width,
                 height,
             )
         else:
             scrubber = getattr(self, "_timeline_scrubber", None)
-            rail_left = scrubber.geometry().left() if scrubber is not None else viewport.width()
-            x = max(0, min(viewport.width() - width, rail_left - width - 10))
-            y = max(6, min(viewport.height() - height - 6, anchor_y - height // 2))
+            if scrubber is not None:
+                # The bubble's right edge sits on the track, like the reference:
+                # the rail is a sibling of the badge, so it may overlap that column.
+                rail_left = scrubber.geometry().left()
+                track_x = rail_left + scrubber.width() - 7
+                x = max(0, track_x + 4 - width)
+            else:
+                x = max(0, self.width() - width - 12)
+            y = max(6, min(self.height() - height - 6, anchor_y - height // 2))
             badge.setGeometry(x, y, width, height)
         badge.raise_()
 
@@ -514,6 +519,10 @@ class GalleryGridView(AssetGrid):
         scrubber = getattr(self, "_timeline_scrubber", None)
         if scrubber is not None:
             scrubber.set_active_year(year)
+            # Park the rail's position dot at the row shown at the top.
+            top_row = index.row()
+            if callable(getattr(scrubber, "set_current_row", None)):
+                scrubber.set_current_row(top_row)
 
         # While the pointer is on the rail the badge follows the pointer instead of
         # the scroll position, so the two update paths do not fight each other.

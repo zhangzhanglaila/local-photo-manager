@@ -296,7 +296,10 @@ def test_hover_shows_the_date_bubble_beside_the_rail(qapp: QApplication) -> None
     assert "2024" in badge.text()
 
     rail_left = view._timeline_scrubber.geometry().left()
-    assert badge.geometry().right() < rail_left, "the bubble must sit left of the rail"
+    # Like the reference, the pill overlaps the track column instead of stopping
+    # short of it, but it must stay inside the window.
+    assert badge.geometry().right() >= rail_left
+    assert badge.geometry().right() <= view.width()
 
     view._on_timeline_hover(-1, -1)
     qapp.processEvents()
