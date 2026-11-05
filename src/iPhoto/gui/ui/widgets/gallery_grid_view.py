@@ -335,6 +335,19 @@ class GalleryGridView(AssetGrid):
         self._hover_anchor_y: int | None = None
         QTimer.singleShot(0, self._refresh_timeline)
 
+    def _scrubber_y_to_view(self, y: int) -> int:
+        """Convert a rail-local y (as reported by its signals) to view coordinates.
+
+        The signals carry coordinates inside the rail widget, while the pill is
+        positioned in the grid's coordinate system. Skipping this conversion put the
+        pill one rail-offset too high whenever the pointer was on the rail.
+        """
+
+        scrubber = getattr(self, "_timeline_scrubber", None)
+        if scrubber is None:
+            return y
+        return int(scrubber.geometry().top() + y)
+
     def _on_timeline_hover(self, row: int, y: int) -> None:
         """Preview the date under the pointer without moving the grid."""
 
@@ -343,13 +356,14 @@ class GalleryGridView(AssetGrid):
             if not self._scrub_timer.isActive():
                 self._hide_date_badge()
             return
+        anchor = self._scrubber_y_to_view(y)
         if row == self._last_hover_row:
-            self._reposition_date_badge(y)
+            self._reposition_date_badge(anchor)
             return
         self._last_hover_row = row
         text = self._date_text_for_row(row)
         if text:
-            self._show_date_badge(text, y)
+            self._show_date_badge(text, anchor)
 
     def _on_timeline_scrub(self, row: int, y: int) -> None:
         """Continuous scrubbing: the ball follows the pointer immediately.
@@ -368,7 +382,7 @@ class GalleryGridView(AssetGrid):
             setter(row)
         text = self._date_text_for_row(row, allow_blocking=False)
         if text:
-            self._show_date_badge(text, y)
+            self._show_date_badge(text, self._scrubber_y_to_view(y))
         if not self._scrub_timer.isActive():
             self._scrub_timer.start()
 
@@ -548,7 +562,7 @@ class GalleryGridView(AssetGrid):
         rail_left = scrubber.geometry().left()
         track_x = rail_left + scrubber.width() - 7
         x = max(0, track_x - 14 - width)
-        y = max(6, min(self.height() - height - 6, anchor - height // 2))
+        y = max(2, min(self.height() - height - 2, anchor - height // 2))
         badge.setGeometry(x, y, width, height)
         badge.raise_()
 

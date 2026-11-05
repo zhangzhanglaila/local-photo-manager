@@ -147,33 +147,55 @@ class TimelineScrubber(QWidget):
         year, row, _count = self._spans[index]
         return year, row
 
-    def row_at(self, y: int) -> int | None:
-        """Map a track position to a row index, interpolating between years.
+    def _track_bounds(self) -> tuple[float, float]:
+        track_top = float(KNOB_CENTER_Y) + 4.0
+        track_bottom = float(self.height() - BOTTOM_INSET) + 4.0
+        return track_top, max(track_top, track_bottom)
 
-        Used for both dragging (continuous scrubbing) and hovering (date
-        preview). Interpolation is between adjacent year anchors and is clamped to
-        the row range, so it stays monotonic even where the minimum-gap layout
-        pushed labels apart.
+    def _anchors(self) -> list[tuple[int, float]]:
+        """Return ``(row, y)`` anchor pairs spanning the whole track.
+
+        Year labels sit at the centre of each year's band, so anchoring purely on
+        them left a dead zone at both ends: dragging to the very top parked the dot
+        on the first label instead of the track edge. The first and last anchors are
+        therefore the track ends, which also makes :meth:`row_at` and
+        :meth:`y_for_row` exact inverses.
         """
 
         if not self._layout_y or not self._spans:
+            return []
+
+        track_top, track_bottom = self._track_bounds()
+        total = self.total_rows()
+        anchors: list[tuple[int, float]] = [(0, track_top)]
+        for index in range(1, len(self._spans)):
+            anchors.append((self._spans[index][1], self._layout_y[index]))
+        anchors.append((max(0, total - 1), track_bottom))
+        return anchors
+
+    def row_at(self, y: int) -> int | None:
+        """Map a track position to a row index.
+
+        Used for both dragging (continuous scrubbing) and hovering (date preview).
+        """
+
+        anchors = self._anchors()
+        if not anchors:
             return None
 
-        positions = self._layout_y
-        if y <= positions[0]:
-            return max(0, self._spans[0][1])
-        if y >= positions[-1]:
-            last_year, last_row, last_count = self._spans[-1]
-            return max(0, last_row + max(0, last_count) - 1)
+        if y <= anchors[0][1]:
+            return anchors[0][0]
+        if y >= anchors[-1][1]:
+            return anchors[-1][0]
 
-        for index in range(len(positions) - 1):
-            if positions[index] <= y <= positions[index + 1]:
-                span = positions[index + 1] - positions[index]
-                ratio = 0.0 if span <= 0 else (y - positions[index]) / span
-                start_row = self._spans[index][1]
-                end_row = self._spans[index + 1][1]
+        for index in range(len(anchors) - 1):
+            start_row, start_y = anchors[index]
+            end_row, end_y = anchors[index + 1]
+            if start_y <= y <= end_y:
+                span = end_y - start_y
+                ratio = 0.0 if span <= 0 else (y - start_y) / span
                 return int(round(start_row + (end_row - start_row) * ratio))
-        return max(0, self._spans[-1][1])
+        return anchors[-1][0]
 
     def total_rows(self) -> int:
         if not self._spans:
@@ -184,24 +206,23 @@ class TimelineScrubber(QWidget):
     def y_for_row(self, row: int) -> float | None:
         """Inverse of :meth:`row_at`, used to park the position dot."""
 
-        if not self._layout_y or not self._spans:
+        anchors = self._anchors()
+        if not anchors:
             return None
 
-        positions = self._layout_y
-        if row <= self._spans[0][1]:
-            return positions[0]
-        last_row = self._spans[-1][1] + max(0, self._spans[-1][2]) - 1
-        if row >= last_row:
-            return positions[-1]
+        if row <= anchors[0][0]:
+            return anchors[0][1]
+        if row >= anchors[-1][0]:
+            return anchors[-1][1]
 
-        for index in range(len(self._spans) - 1):
-            start_row = self._spans[index][1]
-            end_row = self._spans[index + 1][1]
+        for index in range(len(anchors) - 1):
+            start_row, start_y = anchors[index]
+            end_row, end_y = anchors[index + 1]
             if start_row <= row <= end_row:
                 span = end_row - start_row
                 ratio = 0.0 if span <= 0 else (row - start_row) / span
-                return positions[index] + (positions[index + 1] - positions[index]) * ratio
-        return positions[-1]
+                return start_y + (end_y - start_y) * ratio
+        return anchors[-1][1]
 
     def set_current_row(self, row: int | None) -> None:
         """Park the position dot at the row currently shown at the top."""

@@ -431,3 +431,34 @@ def test_drag_does_not_query_the_database(qapp: QApplication) -> None:
 
     assert calls == [], "dragging must not fetch rows synchronously"
     assert view._date_badge.text()
+
+def test_drag_keeps_the_pill_level_with_the_dot(qapp: QApplication) -> None:
+    """The pill must sit level with the ball, including while the pointer moves.
+
+    The signals carry rail-local coordinates; treating them as view coordinates put
+    the pill one rail-offset too high whenever the pointer was on the rail.
+    """
+
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    view.setModel(_GridModel())
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    scrubber = view._timeline_scrubber
+    top, bottom = scrubber._track_bounds()
+
+    for probe in (int(top) + 2, int(top) + 120, int((top + bottom) // 2), int(bottom) - 10):
+        row = scrubber.row_at(probe)
+        assert row is not None
+        view._on_timeline_scrub(row, probe)
+        qapp.processEvents()
+        pill_center = view._date_badge.geometry().center().y()
+        dot_center = scrubber.geometry().top() + scrubber.dot_y()
+        assert abs(pill_center - dot_center) <= 3, f"misaligned at y={probe}"
+
+    view.close()
