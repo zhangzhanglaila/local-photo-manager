@@ -785,11 +785,15 @@ class PhotoMapView(QWidget):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """Ensure background workers shut down before the widget closes."""
 
-        if self._last_tooltip_text:
+        # Qt can deliver closeEvent for an instance whose __init__ aborted early
+        # (a failing dependency, a test double), so nothing here may assume the
+        # tooltip state exists.
+        if getattr(self, "_last_tooltip_text", ""):
             self._tooltip.hide_tooltip()
             self._last_tooltip_text = ""
-        self._tooltip.hide_tooltip()
-        self._tooltip.deleteLater()
+        if getattr(self, "_tooltip", None) is not None:
+            self._tooltip.hide_tooltip()
+            self._tooltip.deleteLater()
         self._teardown_map_widget()
         super().closeEvent(event)
 

@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, List, Optional
 
-from ...gui.ui.models.trail_models import TrailData, TrailPoint, TrailSegment
+from ...domain.models.trail import TrailData, TrailPoint, TrailSegment
 
 if TYPE_CHECKING:
     from ...library.geo_aggregator import GeotaggedAsset

@@ -1288,7 +1288,7 @@ class MainCoordinator(QObject):
             def run(self):
                 try:
                     from iPhoto.agent.infrastructure.clip_embedding import CLIPEmbeddingService
-                    from iPhoto.cache.index_store.embedding_repository import get_embedding_repository
+                    from iPhoto.bootstrap.embedding_index import load_stored_embeddings
                     import time
 
                     # 1. Load model
@@ -1303,8 +1303,7 @@ class MainCoordinator(QObject):
                     self.progress.emit("AI 模型加载完成，正在加载索引...", 1, 3)
 
                     # 2. Load embeddings
-                    embedding_repo = get_embedding_repository(self._library_root)
-                    all_embeddings = embedding_repo.get_all_embeddings()
+                    all_embeddings = load_stored_embeddings(self._library_root)
 
                     if not all_embeddings:
                         self.finished.emit(None, "没有找到照片索引，请先生成索引")
