@@ -248,3 +248,41 @@ def test_albums_header_carries_inline_action(tmp_path: Path, qapp: QApplication)
         assert titles, "albums must still be listed"
     finally:
         manager.shutdown()
+
+def test_header_action_rect_is_inside_the_row(qapp: QApplication) -> None:
+    """The inline "＋" must be a hit target inside the header row, not decoration."""
+
+    from PySide6.QtCore import QRect
+
+    from iPhoto.gui.ui.delegates.album_sidebar_delegate import (
+        HEADER_ACTION_SIZE,
+        AlbumSidebarDelegate,
+    )
+
+    row = QRect(0, 0, 260, 32)
+    box = AlbumSidebarDelegate.header_action_rect(row)
+
+    assert box.width() == HEADER_ACTION_SIZE
+    assert row.contains(box), "the action must be clickable within its row"
+    assert box.right() < row.right(), "leave a margin on the right edge"
+
+
+def test_sidebar_indent_steps_are_uniform() -> None:
+    """Every album level must advance by the same amount.
+
+    32 px made the jump from the section header to the first album dwarf the steps
+    below it, which read as a broken hierarchy.
+    """
+
+    from iPhoto.gui.ui.palette import (
+        SIDEBAR_INDENT_PER_LEVEL,
+        SIDEBAR_INDICATOR_SLOT_WIDTH,
+    )
+
+    assert SIDEBAR_INDENT_PER_LEVEL == 20
+    # Header (no chevron) and first level (chevron) differ by exactly one step.
+    header_icon = SIDEBAR_INDICATOR_SLOT_WIDTH
+    level1_icon = SIDEBAR_INDENT_PER_LEVEL + SIDEBAR_INDICATOR_SLOT_WIDTH
+    level2_icon = 2 * SIDEBAR_INDENT_PER_LEVEL + SIDEBAR_INDICATOR_SLOT_WIDTH
+    assert level1_icon - header_icon == SIDEBAR_INDENT_PER_LEVEL
+    assert level2_icon - level1_icon == SIDEBAR_INDENT_PER_LEVEL

@@ -34,7 +34,8 @@ SIDEBAR_LEFT_PADDING = 14
 SIDEBAR_ICON_TEXT_GAP = 9
 SIDEBAR_BRANCH_CONTENT_GAP = 6
 SIDEBAR_INDICATOR_HOTZONE_MARGIN = 4
-SIDEBAR_INDENT_PER_LEVEL = 32  # ⭐ 增加缩进：从22px增加到32px，使APPLE与子文件夹层级更明显
+SIDEBAR_INDENT_PER_LEVEL = 20  # One step per album level; 32 made the gap between the
+# section header and the first album dwarf the steps below it.
 SIDEBAR_INDICATOR_SLOT_WIDTH = 22
 SIDEBAR_INDICATOR_SIZE = 16
 SIDEBAR_ICON_SIZE = 24

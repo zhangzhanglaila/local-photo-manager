@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QObject,
     QEvent,
     QModelIndex,
     QPoint,
@@ -24,6 +25,7 @@ from PySide6.QtGui import (
     QPalette,
 )
 from PySide6.QtWidgets import (
+    QToolTip,
     QAbstractItemView,
     QFrame,
     QLabel,
@@ -230,6 +232,7 @@ class AlbumSidebar(QWidget):
         self._tree.setIndentation(0)
         self._tree.setIconSize(QSize(SIDEBAR_ICON_SIZE, SIDEBAR_ICON_SIZE))
         self._tree.setMouseTracking(True)
+        self._tree.viewport().installEventFilter(self)
         self._tree.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self._tree.setItemDelegate(AlbumSidebarDelegate(self._tree))
         self._indicator_controller = BranchIndicatorController(self._tree)
@@ -506,6 +509,33 @@ class AlbumSidebar(QWidget):
             return
         if item.node_type == NodeType.ACTION:
             self.bindLibraryRequested.emit()
+
+    def eventFilter(self, watched: QObject, event) -> bool:  # type: ignore[override]
+        """Give the header ＋ a button affordance (cursor + tooltip)."""
+
+        if getattr(event, "type", None) is not None and watched is self._tree.viewport():
+            if event.type() == QEvent.Type.MouseMove:
+                index = self._tree.indexAt(event.position().toPoint())
+                over_action = False
+                if index.isValid() and index.data(AlbumTreeRole.HEADER_ACTION):
+                    item_rect = self._tree.visualRect(index)
+                    over_action = AlbumSidebarDelegate.header_action_rect(item_rect).contains(
+                        event.position().toPoint()
+                    )
+                if over_action:
+                    self._tree.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+                    QToolTip.showText(
+                        event.globalPosition().toPoint(),
+                        tr("action.set_basic_library"),
+                        self._tree.viewport(),
+                    )
+                else:
+                    self._tree.viewport().unsetCursor()
+                    QToolTip.hideText()
+            elif event.type() == QEvent.Type.Leave:
+                self._tree.viewport().unsetCursor()
+                QToolTip.hideText()
+        return super().eventFilter(watched, event)
 
     def _on_clicked(self, index: QModelIndex) -> None:
         """Toggle expansion when the branch indicator hot zone is clicked,

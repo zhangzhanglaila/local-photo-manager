@@ -10,6 +10,7 @@ from PySide6.QtCore import (
     QModelIndex,
     QObject,
     QRect,
+    QRectF,
     QSize,
     Qt,
     QVariantAnimation,
@@ -157,6 +158,7 @@ SIDEBAR_CHECKBOX_ICON_GAP = 6
 # drawn inside the header row so the action never looks like an album row.
 HEADER_ACTION_SIZE = 20
 HEADER_ACTION_MARGIN = 6
+HEADER_ACTION_RADIUS = 6.0
 
 
 class AlbumSidebarDelegate(QStyledItemDelegate):
@@ -218,17 +220,38 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
     def _draw_header_action(
         self, painter: QPainter, rect: QRect, state: _PaintState
     ) -> None:
+        """Draw the header's inline action as a real button, not decoration.
+
+        A bare glyph read as ornamentation, so the action gets a filled rounded
+        plate, a border, and a stronger fill while the row is hovered.
+        """
+
         box = self.header_action_rect(rect)
         colour = QColor(self._palette_for_state(state).color(QPalette.ColorRole.Link))
-        colour.setAlpha(190)
+        hovered = bool(getattr(state, "is_hover", False))
+
+        fill = QColor(colour)
+        fill.setAlpha(46 if hovered else 22)
+        border = QColor(colour)
+        border.setAlpha(180 if hovered else 110)
+        stroke = QColor(colour)
+        stroke.setAlpha(230)
+
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(colour, 1.2))
-        painter.drawEllipse(box.adjusted(2, 2, -2, -2))
+        painter.setBrush(fill)
+        painter.setPen(QPen(border, 1.0))
+        painter.drawRoundedRect(
+            QRectF(box).adjusted(1.0, 1.0, -1.0, -1.0),
+            HEADER_ACTION_RADIUS,
+            HEADER_ACTION_RADIUS,
+        )
+
         centre = box.center()
-        arm = box.width() // 4
-        painter.setPen(QPen(colour, 1.4))
+        arm = box.width() // 5
+        stroke_pen = QPen(stroke, 1.6)
+        stroke_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(stroke_pen)
         painter.drawLine(centre.x() - arm, centre.y(), centre.x() + arm, centre.y())
         painter.drawLine(centre.x(), centre.y() - arm, centre.x(), centre.y() + arm)
         painter.restore()
