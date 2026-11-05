@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import patch
 
 # Ensure we can import the modules
+from iPhoto.utils import exiftool
 from iPhoto.utils.exiftool import get_metadata_batch
 from iPhoto.utils.ffmpeg import probe_media
 
@@ -30,8 +31,14 @@ def mock_windows_environment(monkeypatch):
         monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows-only test")
-def test_exiftool_windows_startupinfo(mock_windows_environment):
+def test_exiftool_windows_startupinfo(mock_windows_environment, monkeypatch):
     """Test that exiftool calls subprocess with STARTUPINFO on Windows."""
+
+    # Do not depend on this machine's exiftool configuration: an
+    # ``IPHOTO_EXIFTOOL_PATH`` pointing at a missing file aborts the call.
+    monkeypatch.delenv("IPHOTO_EXIFTOOL_PATH", raising=False)
+    monkeypatch.setattr(exiftool, "_resolve_exiftool_executable", lambda: "exiftool")
+
     with patch("subprocess.run") as mock_run, \
          patch("shutil.which", return_value="exiftool"):
 

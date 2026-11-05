@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import pytest
 import os
 import subprocess
 import sys
@@ -19,6 +20,14 @@ def _load_sync_module():
 
 
 sync_module = _load_sync_module()
+
+# `scripts/sync_macos_map_extension.py` builds a macOS `.app` bundle: its
+# dependency resolution assumes Mach-O `@rpath`/`.framework` semantics, which
+# do not exist on other platforms.
+pytestmark = pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="macOS app-bundle packaging tooling",
+)
 
 
 def _create_fake_sdk(root: Path) -> None:

@@ -187,14 +187,15 @@ def test_has_usable_osmand_default_requires_helper(tmp_path, monkeypatch) -> Non
 
 
 def test_default_osmand_download_url_matches_platform_variants() -> None:
-    assert default_osmand_download_url("linux") == (
-        "https://github.com/OliverZhaohaibin/iPhotron-LocalPhotoAlbumManager/"
-        "releases/download/v5.0.0/extension.tar.xz"
+    # Compare against the configured constants instead of repeating the URL: the
+    # release location moves, the platform mapping is what this test guards.
+    from maps.map_sources import (
+        LINUX_MAP_EXTENSION_DOWNLOAD_URL,
+        WINDOWS_MAP_EXTENSION_DOWNLOAD_URL,
     )
-    assert default_osmand_download_url("win32") == (
-        "https://github.com/OliverZhaohaibin/iPhotron-LocalPhotoAlbumManager/"
-        "releases/download/v5.0.0/extension.zip"
-    )
+
+    assert default_osmand_download_url("linux") == LINUX_MAP_EXTENSION_DOWNLOAD_URL
+    assert default_osmand_download_url("win32") == WINDOWS_MAP_EXTENSION_DOWNLOAD_URL
     assert default_osmand_download_url("darwin") is None
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -16,6 +17,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSize, Qt,
 from PySide6.QtGui import QMouseEvent, QPainter, QPixmap, QWindow
 from PySide6.QtWidgets import QApplication, QWidget
 
+from iPhoto.i18n import tr
 from iPhoto.gui.ui.widgets.info_panel import (
     InfoPanel,
     _FACE_ADD_BUTTON_SIZE,
@@ -704,9 +706,9 @@ def test_info_panel_choose_person_reuses_group_people_dialog(
 
     assert len(dialog_calls) == 1
     assert [summary.person_id for summary in dialog_calls[0]["summaries"]] == ["person-2"]
-    assert dialog_calls[0]["kwargs"]["title_text"] == "Choose Someone Else"
-    assert dialog_calls[0]["kwargs"]["prompt_text"] == "Assign this face to"
-    assert dialog_calls[0]["kwargs"]["confirm_text"] == "Choose"
+    assert dialog_calls[0]["kwargs"]["title_text"] == tr("people.select_other")
+    assert dialog_calls[0]["kwargs"]["prompt_text"] == tr("people.assign_face_to")
+    assert dialog_calls[0]["kwargs"]["confirm_text"] == tr("people.select")
     assert dialog_calls[0]["kwargs"]["min_selection"] == 1
     assert dialog_calls[0]["kwargs"]["max_selection"] == 1
     assert dialog_calls[0]["kwargs"]["dark_mode"] is False
@@ -1168,6 +1170,11 @@ def test_info_panel_location_map_clips_qwindow_event_target_corners(
     qapp: QApplication,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # ``QWindow::setMask`` is a no-op on Windows, so the rounded-corner mask this
+    # test inspects only exists where window masks are honoured.
+    if sys.platform == "win32":
+        pytest.skip("QWindow masks are not supported on Windows")
+
     monkeypatch.setattr(info_location_map_module, "check_opengl_support", lambda: False)
     monkeypatch.setattr(
         info_location_map_module,

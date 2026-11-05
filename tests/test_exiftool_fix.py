@@ -93,8 +93,13 @@ def test_resolve_exiftool_invalid_env_path_stops_search(
     assert str(invalid) in str(exc_info.value)
 
 
-def test_get_metadata_batch_uses_posix_paths():
+def test_get_metadata_batch_uses_posix_paths(monkeypatch: pytest.MonkeyPatch):
     """Verify that paths are written to the argument file using POSIX style (forward slashes)."""
+
+    # Keep the test hermetic: an ``IPHOTO_EXIFTOOL_PATH`` pointing at a missing or
+    # non-executable file aborts before ``subprocess.run`` is ever reached.
+    monkeypatch.delenv("IPHOTO_EXIFTOOL_PATH", raising=False)
+    monkeypatch.setattr(exiftool, "_resolve_exiftool_executable", lambda: "exiftool")
 
     # Create a mock path that behaves like a Windows path
     mock_path = MagicMock(spec=Path)
