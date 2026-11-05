@@ -27,6 +27,9 @@ class GalleryGridView(AssetGrid):
     # potential internal margins.
     SAFETY_MARGIN = 10
 
+    # Visible channel between the last thumbnail column and the timeline rail.
+    TIMELINE_GAP = 14
+
     def __init__(self, parent=None) -> None:  # type: ignore[override]
         super().__init__(parent)
         self._selection_mode_enabled = False
@@ -275,7 +278,9 @@ class GalleryGridView(AssetGrid):
     def _build_timeline_overlays(self) -> None:
         viewport = self.viewport()
 
-        self._timeline_scrubber = TimelineScrubber(viewport)
+        # Parented to the view (not the viewport): the rail lives in the margin
+        # reserved by ``setViewportMargins`` so it cannot cover a thumbnail.
+        self._timeline_scrubber = TimelineScrubber(self)
         self._timeline_scrubber.yearActivated.connect(self._on_timeline_year_activated)
 
         self._date_badge = QLabel(viewport)
@@ -316,10 +321,10 @@ class GalleryGridView(AssetGrid):
         if scrubber is not None:
             rail_width = scrubber.width()
             scrubber.setGeometry(
-                max(0, width - rail_width - 4),
+                max(0, self.width() - rail_width - 4),
                 8,
                 rail_width,
-                max(0, height - 16),
+                max(0, self.height() - 16),
             )
             scrubber.raise_()
 
@@ -346,22 +351,31 @@ class GalleryGridView(AssetGrid):
         if scrubber is None:
             return
         model = self.model()
-        provider = getattr(model, "year_start_rows", None)
-        years: list[tuple[int, int]] = []
-        if callable(provider):
+        spans_provider = getattr(model, "year_spans", None)
+        years_provider = getattr(model, "year_start_rows", None)
+        if callable(spans_provider):
             try:
-                years = list(provider())
+                scrubber.set_spans(list(spans_provider()))
             except Exception:
-                years = []
-        scrubber.set_years(years)
+                scrubber.set_years([])
+        elif callable(years_provider):
+            try:
+                scrubber.set_years(list(years_provider()))
+            except Exception:
+                scrubber.set_years([])
+        else:
+            scrubber.set_years([])
         self._apply_timeline_margins()
         self._layout_timeline_overlays()
 
     def _apply_timeline_margins(self) -> None:
-        """Reserve room for the rail so it never covers the rightmost column."""
+        """Reserve room for the rail so it never touches the rightmost column."""
 
         scrubber = getattr(self, "_timeline_scrubber", None)
-        reserve = scrubber.width() if scrubber is not None and scrubber.isVisible() else 0
+        reserve = 0
+        if scrubber is not None and scrubber.isVisible():
+            # The extra gap keeps a clear channel between photos and the track.
+            reserve = scrubber.width() + self.TIMELINE_GAP
         if reserve == getattr(self, "_timeline_reserved_width", 0):
             return
         self._timeline_reserved_width = reserve

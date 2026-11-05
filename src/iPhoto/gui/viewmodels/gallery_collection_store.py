@@ -454,26 +454,41 @@ class GalleryCollectionStore:
             for (year, month), count in sorted(counts.items(), reverse=True)
         ]
 
-    def year_start_rows(self) -> list[tuple[int, int]]:
-        """Return ``(year, first_row)`` pairs in display order (newest first).
+    def year_spans(self) -> list[tuple[int, int, int]]:
+        """Return ``(year, first_row, count)`` in display order (newest first).
 
-        Rows are sorted by date descending, so cumulative bucket counts give the
-        exact row each year starts at — no scanning of asset rows required.
+        The rail sizes each year by ``count`` so a year holding thousands of
+        photos occupies far more of the track than a year holding three. Rows are
+        sorted by date descending, so cumulative bucket counts give the exact row
+        each year starts at — no scanning of asset rows required.
         """
 
         buckets = self.timeline_buckets()
         if not buckets:
             return []
 
-        result: list[tuple[int, int]] = []
+        result: list[tuple[int, int, int]] = []
         row = 0
         current_year: int | None = None
+        year_count = 0
         for year, _month, count in buckets:
             if year != current_year:
-                result.append((year, min(row, max(0, self._total_count - 1))))
+                if current_year is not None:
+                    result.append((current_year, first_row, year_count))
                 current_year = year
-            row += max(0, count)
+                year_count = 0
+                first_row = min(row, max(0, self._total_count - 1))
+            increment = max(0, count)
+            year_count += increment
+            row += increment
+        if current_year is not None:
+            result.append((current_year, first_row, year_count))
         return result
+
+    def year_start_rows(self) -> list[tuple[int, int]]:
+        """Return ``(year, first_row)`` pairs in display order (newest first)."""
+
+        return [(year, first_row) for year, first_row, _count in self.year_spans()]
 
     @property
     def generation(self) -> int:

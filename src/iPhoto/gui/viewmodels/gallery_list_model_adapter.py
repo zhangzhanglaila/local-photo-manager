@@ -70,6 +70,11 @@ class GalleryListModelAdapter(QAbstractListModel):
 
         return self._store.year_start_rows()
 
+    def year_spans(self) -> list[tuple[int, int, int]]:
+        """Expose ``(year, first_row, count)`` so the rail can size years."""
+
+        return self._store.year_spans()
+
     def roleNames(self) -> Dict[int, bytes]:  # type: ignore[override]
         return role_names(super().roleNames())
 

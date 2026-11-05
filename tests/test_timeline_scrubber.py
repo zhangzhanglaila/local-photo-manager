@@ -153,6 +153,9 @@ class _GridModel(QAbstractListModel):
     def year_start_rows(self):
         return [(2025, 0), (2024, 120), (2019, 400)]
 
+    def year_spans(self):
+        return [(2025, 0, 300), (2024, 120, 280), (2019, 400, 20)]
+
 
 def test_grid_view_shows_the_year_rail(qapp: QApplication) -> None:
     from PySide6.QtCore import QAbstractListModel
@@ -171,5 +174,65 @@ def test_grid_view_shows_the_year_rail(qapp: QApplication) -> None:
     scrubber = view._timeline_scrubber
     assert scrubber.years() == [(2025, 0), (2024, 120), (2019, 400)]
     assert scrubber.isVisible() is True
-    assert scrubber.geometry().right() <= view.viewport().width()
+    # The rail lives outside the viewport in its own reserved channel.\r\n    assert scrubber.geometry().left() >= view.viewport().width()
+    view.close()
+
+def test_rail_sizes_years_by_photo_count(qapp: QApplication) -> None:
+    """A year holding thousands of photos must occupy more of the track."""
+
+    scrubber = TimelineScrubber()
+    scrubber.resize(52, 600)
+    scrubber.set_spans(
+        [
+            (2025, 0, 5000),
+            (2024, 5000, 400),
+            (2023, 5400, 3),
+        ]
+    )
+    scrubber.show()
+    qapp.processEvents()
+
+    ys = scrubber._layout_y
+    big_span = ys[1] - ys[0]
+    small_span = ys[2] - ys[1]
+
+    assert big_span > 200, "the dominant year should own most of the rail"
+    assert big_span > small_span * 5
+
+
+def test_dense_years_keep_a_readable_gap(qapp: QApplication) -> None:
+    """Tiny years are nudged apart instead of stacking on one pixel."""
+
+    scrubber = TimelineScrubber()
+    scrubber.resize(52, 400)
+    scrubber.set_spans(
+        [(2025, 0, 1000)] + [(year, 1000 + i, 2) for i, year in enumerate(range(2020, 2000, -1))]
+    )
+    scrubber.show()
+    qapp.processEvents()
+
+    ys = scrubber._layout_y
+    gaps = [b - a for a, b in zip(ys, ys[1:])]
+
+    assert min(gaps) >= 16.0
+    assert ys == sorted(ys)
+    assert ys[0] >= 0 and ys[-1] <= scrubber.height()
+
+
+def test_rail_keeps_a_gap_from_the_photos(qapp: QApplication) -> None:
+    from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+
+    view = GalleryGridView()
+    view.resize(1000, 640)
+    view.setModel(_GridModel())
+    view.show()
+    qapp.processEvents()
+    view._refresh_timeline()
+    qapp.processEvents()
+
+    scrubber = view._timeline_scrubber
+    assert scrubber.isVisible()
+    # Reserved channel means the rail starts at (or after) the viewport edge.
+    assert scrubber.geometry().left() >= view.viewport().width()
+    assert view.viewport().width() <= view.width() - scrubber.width() - view.TIMELINE_GAP + 2
     view.close()

@@ -1,9 +1,12 @@
 """Right-edge year rail for the photo gallery.
 
-The rail mirrors what macOS Photos and Google Photos do: a compact column of
-years that can be clicked to jump through the library. It deliberately owns no
-data of its own — the caller hands it ``(year, first_row)`` pairs, which come from
-a single aggregate query, so painting and hit-testing stay O(number of years).
+The rail mirrors the timeline scrubber used by photo managers: a hairline track
+with a round knob at the top, one tick and label per year, and — importantly —
+vertical space allocated in proportion to how many photos each year holds.
+
+It owns no data of its own: the caller hands it ``(year, first_row, count)``
+triples that come from one aggregate query, so painting and hit-testing stay
+O(number of years).
 """
 
 from __future__ import annotations
@@ -12,17 +15,23 @@ from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QWidget
 
-# Rail geometry. Keep the rail narrow so it never competes with the thumbnails.
-RAIL_WIDTH = 58
-LABEL_RIGHT_PADDING = 6
-TICK_LENGTH = 7
-VERTICAL_INSET = 18
+# Rail geometry. ``LABEL_RESERVE`` is the room labels need; the track sits at the
+# right edge of that area so labels never straddle the photos.
+RAIL_WIDTH = 52
+TRACK_RIGHT_INSET = 7
+LABEL_RIGHT_INSET = 16
+TICK_LENGTH = 6
+TOP_INSET = 26
+BOTTOM_INSET = 12
+KNOB_RADIUS = 4.0
+KNOB_CENTER_Y = 11.0
+MIN_LABEL_GAP = 17.0
 
-# Animation-free styling: a subtle grey label, accent when active.
-LABEL_COLOR = QColor(60, 60, 67, 140)
-LABEL_ACTIVE_COLOR = QColor("#007AFF")
+# Colours: deliberately quiet so the rail reads as chrome, not content.
+TRACK_COLOR = QColor(60, 60, 67, 55)
 TICK_COLOR = QColor(60, 60, 67, 70)
-TICK_ACTIVE_COLOR = QColor("#007AFF")
+LABEL_COLOR = QColor(60, 60, 67, 150)
+LABEL_ACTIVE_COLOR = QColor("#007AFF")
 
 
 class TimelineScrubber(QWidget):
@@ -32,32 +41,44 @@ class TimelineScrubber(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._years: list[tuple[int, int]] = []
+        self._spans: list[tuple[int, int, int]] = []
+        self._layout_y: list[float] = []
         self._active_year: int | None = None
         self._hover_year: int | None = None
         self.setFixedWidth(RAIL_WIDTH)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.hide()
 
     # ------------------------------------------------------------------
     # Data
     # ------------------------------------------------------------------
-    def set_years(self, years: list[tuple[int, int]]) -> None:
-        """Set ``(year, first_row)`` pairs ordered newest first."""
+    def set_spans(self, spans: list[tuple[int, int, int]]) -> None:
+        """Set ``(year, first_row, count)`` triples ordered newest first."""
 
-        self._years = [(int(year), int(row)) for year, row in years]
+        self._spans = [
+            (int(year), int(row), max(0, int(count))) for year, row, count in spans
+        ]
         if self._active_year is not None and not any(
-            year == self._active_year for year, _row in self._years
+            year == self._active_year for year, _row, _count in self._spans
         ):
             self._active_year = None
-        # Two years is not worth a rail; the grid already shows dates.
-        self.setVisible(len(self._years) >= 2)
+        self._relayout()
+        # A single year is not worth a rail; the grid already shows dates.
+        self.setVisible(len(self._spans) >= 2)
         self.update()
 
+    def set_years(self, years: list[tuple[int, int]]) -> None:
+        """Compatibility helper for callers that only know year starts."""
+
+        self.set_spans([(year, row, 1) for year, row in years])
+
+    def spans(self) -> list[tuple[int, int, int]]:
+        return list(self._spans)
+
     def years(self) -> list[tuple[int, int]]:
-        return list(self._years)
+        return [(year, row) for year, row, _count in self._spans]
 
     def set_active_year(self, year: int | None) -> None:
         if self._active_year == year:
@@ -66,85 +87,108 @@ class TimelineScrubber(QWidget):
         self.update()
 
     # ------------------------------------------------------------------
-    # Geometry
+    # Layout
     # ------------------------------------------------------------------
-    def _label_rects(self) -> list[tuple[int, int, QRectF]]:
-        """Return ``(year, first_row, rect)`` for every year label."""
+    def _relayout(self) -> None:
+        """Place each year proportionally to its photo count.
 
-        count = len(self._years)
-        if count == 0:
-            return []
+        Pure proportional placement would stack sparse years on top of each other
+        (a three-photo year next to a three-thousand-photo year), so a minimum gap
+        is enforced afterwards while keeping chronological order.
+        """
 
-        usable_top = float(VERTICAL_INSET)
-        usable_height = max(1.0, float(self.height()) - 2 * VERTICAL_INSET)
-        step = usable_height / max(1, count - 1) if count > 1 else 0.0
-        rects: list[tuple[int, int, QRectF]] = []
-        for index, (year, row) in enumerate(self._years):
-            center = usable_top + step * index
-            rect = QRectF(
-                0.0,
-                center - 9.0,
-                float(self.width() - LABEL_RIGHT_PADDING - TICK_LENGTH - 4),
-                18.0,
-            )
-            rects.append((year, row, rect))
-        return rects
+        self._layout_y = []
+        if not self._spans:
+            return
+
+        total = sum(count for _year, _row, count in self._spans) or 1
+        top = float(TOP_INSET)
+        usable = max(1.0, float(self.height()) - TOP_INSET - BOTTOM_INSET)
+
+        positions: list[float] = []
+        consumed = 0
+        for _year, _row, count in self._spans:
+            center = (consumed + count / 2.0) / total
+            positions.append(top + center * usable)
+            consumed += count
+
+        # Push down to satisfy the minimum gap, then pull back inside the track.
+        for index in range(1, len(positions)):
+            positions[index] = max(positions[index], positions[index - 1] + MIN_LABEL_GAP)
+        overflow = positions[-1] - (top + usable)
+        if overflow > 0:
+            positions = [value - overflow for value in positions]
+        for index in range(len(positions) - 2, -1, -1):
+            positions[index] = min(positions[index], positions[index + 1] - MIN_LABEL_GAP)
+        positions[0] = max(top, positions[0])
+
+        self._layout_y = positions
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._relayout()
 
     def year_at(self, y: int) -> tuple[int, int] | None:
-        """Return the ``(year, row)`` nearest to a widget-local *y* coordinate."""
+        """Return the ``(year, first_row)`` nearest to a widget-local *y*."""
 
-        rects = self._label_rects()
-        if not rects:
+        if not self._layout_y:
             return None
-        best = min(rects, key=lambda item: abs(item[2].center().y() - y))
-        return best[0], best[1]
+        index = min(
+            range(len(self._layout_y)),
+            key=lambda i: abs(self._layout_y[i] - float(y)),
+        )
+        year, row, _count = self._spans[index]
+        return year, row
 
     # ------------------------------------------------------------------
     # Painting
     # ------------------------------------------------------------------
     def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
-        rects = self._label_rects()
-        if not rects:
+        if not self._spans or not self._layout_y:
             return
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        # A translucent plate keeps the years readable over bright photos without
-        # hiding the thumbnails completely.
-        panel = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        panel_color = QColor(255, 255, 255, 150)
-        blink = self.palette().color(self.backgroundRole())
-        if blink.lightness() < 128:
-            panel_color = QColor(28, 28, 30, 170)
-        painter.setPen(QPen(QColor(0, 0, 0, 18), 1.0))
-        painter.setBrush(panel_color)
-        painter.drawRoundedRect(panel, 12.0, 12.0)
+        track_x = float(self.width() - TRACK_RIGHT_INSET)
+        top = float(TOP_INSET) - 10.0
+        bottom = float(self.height() - BOTTOM_INSET) + 4.0
+
+        # Hairline track, plus the round knob that caps it (as in the reference).
+        painter.setPen(QPen(TRACK_COLOR, 1.0))
+        knob_y = KNOB_CENTER_Y
+        painter.drawLine(QRectF(track_x, knob_y + KNOB_RADIUS, 0, 0).topLeft(), QRectF(track_x, bottom, 0, 0).topLeft())
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(TRACK_COLOR, 1.2))
+        painter.drawEllipse(
+            QRectF(track_x - KNOB_RADIUS, knob_y - KNOB_RADIUS, KNOB_RADIUS * 2, KNOB_RADIUS * 2)
+        )
 
         font = QFont(self.font())
-        font.setPixelSize(11)
-        font.setWeight(QFont.Weight.DemiBold)
+        font.setPixelSize(10)
+        font.setWeight(QFont.Weight.Medium)
         painter.setFont(font)
 
-        for year, _row, rect in rects:
+        for index, (year, _row, _count) in enumerate(self._spans):
+            y = self._layout_y[index]
             active = year == self._active_year
             hovered = year == self._hover_year
-            color = LABEL_ACTIVE_COLOR if active else LABEL_COLOR
-            if hovered and not active:
-                color = QColor(60, 60, 67, 210)
-            painter.setPen(color)
-            painter.drawText(
-                rect,
-                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
-                str(year),
+
+            painter.setPen(QPen(LABEL_ACTIVE_COLOR if active else TICK_COLOR, 1.0))
+            painter.drawLine(
+                QRectF(track_x - TICK_LENGTH, y, 0, 0).topLeft(),
+                QRectF(track_x, y, 0, 0).topLeft(),
             )
 
-            tick_color = TICK_ACTIVE_COLOR if active else TICK_COLOR
-            painter.setPen(QPen(tick_color, 1.0))
-            center_y = rect.center().y()
-            painter.drawLine(
-                QRectF(rect.right() + 2, center_y, TICK_LENGTH, 0).topLeft(),
-                QRectF(rect.right() + 2 + TICK_LENGTH, center_y, 0, 0).topLeft(),
+            color = LABEL_ACTIVE_COLOR if active else LABEL_COLOR
+            if hovered and not active:
+                color = QColor(60, 60, 67, 220)
+            painter.setPen(color)
+            label_rect = QRectF(0.0, y - 8.0, float(self.width() - LABEL_RIGHT_INSET), 16.0)
+            painter.drawText(
+                label_rect,
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
+                str(year),
             )
 
         painter.end()
