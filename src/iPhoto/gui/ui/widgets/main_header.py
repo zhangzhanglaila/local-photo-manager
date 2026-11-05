@@ -51,9 +51,9 @@ class SearchInput(QLineEdit):
         self.setPlaceholderText(tr("search.placeholder", default="搜索照片（如：海边、黄色、狗）..."))
         self.setObjectName("searchInput")
         self.setClearButtonEnabled(True)
-        self.setMinimumWidth(180)
-        self.setMaximumWidth(280)
-        self.setFixedHeight(26)
+        self.setMinimumWidth(200)
+        self.setMaximumWidth(320)
+        self.setFixedHeight(30)
         self.setStyleSheet(self.SEARCH_FIELD_STYLESHEET)
         # The magnifier lives inside the field, like the macOS search field,
         # instead of sitting next to it as a separate emoji label.
@@ -92,7 +92,7 @@ class MainHeaderWidget(QWidget):
         layout = QHBoxLayout(self)
         # Left margin leaves room for the traffic lights, the right margin keeps
         # the search field off the window edge.
-        layout.setContentsMargins(14, 6, 14, 6)
+        layout.setContentsMargins(16, 7, 14, 7)
         layout.setSpacing(8)
 
         self.menu_bar = QMenuBar(self)
@@ -185,15 +185,15 @@ class MainHeaderWidget(QWidget):
         self.more_button.setObjectName("moreMenuButton")
         self.more_button.setAutoRaise(True)
         self.more_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.more_button.setIcon(load_icon("ellipsis.svg", size=(16, 16)))
-        self.more_button.setIconSize(QSize(16, 16))
-        self.more_button.setFixedSize(QSize(28, 26))
+        self.more_button.setIcon(load_icon("ellipsis.svg", size=(18, 18)))
+        self.more_button.setIconSize(QSize(18, 18))
+        self.more_button.setFixedSize(QSize(30, 28))
         self.more_button.setToolTip(tr("menu.more", default="More"))
         self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.more_button.setStyleSheet(
             "QToolButton#moreMenuButton {"
             "  border: none;"
-            "  border-radius: 6px;"
+            "  border-radius: 7px;"
             "  background: transparent;"
             "}"
             "QToolButton#moreMenuButton:hover {"
@@ -205,31 +205,24 @@ class MainHeaderWidget(QWidget):
             "}"
         )
 
-        self._more_menu = QMenu(self.more_button)
-        # Rebuild on show so translations and tristates stay in sync without
-        # duplicating the menu tree by hand.
-        self._more_menu.aboutToShow.connect(self._rebuild_more_menu)
-        self.more_button.setMenu(self._more_menu)
+        # Populate eagerly: building the menu from ``aboutToShow`` produced an
+        # empty popup, because Qt sizes the popup before that signal.
+        #
+        # The menus are *reused* (``addMenu(QMenu)``) rather than copied action by
+        # action. Copying the actions into fresh menus destroyed the originals:
+        # sharing a menu's child actions between two menus makes Qt tear down the
+        # source menus, which then broke ``retranslate()`` and the menu bar.
+        self.more_menu = QMenu(self.more_button)
+        for menu_action in self.menu_bar.actions():
+            source = menu_action.menu()
+            if source is not None:
+                self.more_menu.addMenu(source)
+        self.more_button.setMenu(self.more_menu)
 
         self.menu_bar.setVisible(False)
         layout = self.layout()
         if layout is not None:
             layout.insertWidget(0, self.more_button)
-
-    def _rebuild_more_menu(self) -> None:
-        """Mirror the menu bar structure into the compact menu."""
-
-        self._more_menu.clear()
-        for menu_action in self.menu_bar.actions():
-            source = menu_action.menu()
-            if source is None:
-                continue
-            submenu = self._more_menu.addMenu(menu_action.text())
-            for action in source.actions():
-                if action.isSeparator():
-                    submenu.addSeparator()
-                else:
-                    submenu.addAction(action)
 
     def _synchronise_palettes(self) -> None:
         """Ensure the container and menu bar share the same opaque background."""
@@ -460,6 +453,8 @@ class MainHeaderWidget(QWidget):
                 self._share_menu.setTitle(tr("menu.share_action"))
             if hasattr(self, '_language_menu') and self._language_menu is not None:
                 self._language_menu.setTitle(tr("menu.language"))
+            # The compact "⋯" menu reuses these very QMenu objects, so their
+            # titles update automatically.
         except RuntimeError:
             # Menu objects may have been deleted
             pass

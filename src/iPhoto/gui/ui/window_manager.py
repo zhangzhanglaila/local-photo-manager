@@ -868,5 +868,17 @@ class FramelessWindowManager(QObject):
                 if menu is None:
                     continue
                 self._configure_popup_menu(menu, qmenu_style)
+
+            # The compact "⋯" menu is a second presentation of the same menus and
+            # needs the same background treatment, otherwise it pops up as a bare
+            # (black-looking) frame.
+            header = getattr(self._ui, "menu_bar_container", None)
+            compact_menu = getattr(header, "more_menu", None)
+            if compact_menu is not None:
+                self._configure_popup_menu(compact_menu, qmenu_style)
+                for action in compact_menu.actions():
+                    submenu = action.menu()
+                    if submenu is not None:
+                        self._configure_popup_menu(submenu, qmenu_style)
         finally:
             self._applying_menu_styles = False

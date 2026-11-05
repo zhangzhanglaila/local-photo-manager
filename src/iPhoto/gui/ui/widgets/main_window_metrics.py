@@ -37,10 +37,10 @@ EDIT_DONE_BUTTON_TEXT_DISABLED = "#7F7F7F"
 # macOS traffic lights are ~12 pt dots; the previous 26 px buttons read as
 # Windows caption buttons even though the glyphs were round.
 
-WINDOW_CONTROL_GLYPH_SIZE = QSize(13, 13)
+WINDOW_CONTROL_GLYPH_SIZE = QSize(16, 16)
 """Icon size used for the custom window chrome buttons."""
 
-WINDOW_CONTROL_BUTTON_SIZE = QSize(14, 14)
+WINDOW_CONTROL_BUTTON_SIZE = QSize(18, 18)
 """Provides a reliable click target for the frameless window controls."""
 
 TITLE_BAR_HEIGHT = WINDOW_CONTROL_BUTTON_SIZE.height() + 16
