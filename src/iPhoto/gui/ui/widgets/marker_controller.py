@@ -20,6 +20,10 @@ from ....library.runtime_controller import GeotaggedAsset
 from ..tasks.thumbnail_loader import ThumbnailLoader
 
 
+#: Empty space kept between two marker footprints so badges never touch.
+MARKER_GAP = 8
+
+
 @dataclass
 class _MarkerCluster:
     """Aggregate of geotagged assets rendered as a single marker."""
@@ -89,6 +93,68 @@ class _MarkerCluster:
         count = float(len(self.assets))
         self.screen_x_sum = point.x() * count
         self.screen_y_sum = point.y() * count
+
+
+def _merge_cluster_into(target: _MarkerCluster, other: _MarkerCluster) -> None:
+    """Fold *other* into *target*, preserving counts and the weighted centre."""
+
+    target.assets.extend(other.assets)
+    target.latitude_sum += other.latitude_sum
+    target.longitude_sum += other.longitude_sum
+    target.screen_x_sum += other.screen_x_sum
+    target.screen_y_sum += other.screen_y_sum
+    count = len(target.assets) or 1
+    target.screen_pos = QPointF(target.screen_x_sum / count, target.screen_y_sum / count)
+    target.bounding_rect = target.bounding_rect.united(other.bounding_rect)
+
+
+def _merge_overlapping_clusters(
+    clusters: list[_MarkerCluster],
+    min_distance: float,
+    *,
+    max_passes: int = 6,
+) -> list[_MarkerCluster]:
+    """Merge clusters whose markers would overlap on screen.
+
+    The spatial threshold used for clustering only keeps cluster *centres* apart.
+    With a 72 px marker, two centres 48 px apart still produce overlapping badges,
+    which made the counts look wrong. Merging intersecting markers keeps every
+    asset counted exactly once while guaranteeing readable badges.
+    """
+
+    if len(clusters) < 2 or min_distance <= 0.0:
+        return clusters
+
+    current = clusters
+    for _pass in range(max_passes):
+        result: list[_MarkerCluster] = []
+        buckets: dict[tuple[int, int], list[int]] = {}
+        merged = False
+        for cluster in current:
+            point = cluster.screen_pos
+            cell = (int(point.x() // min_distance), int(point.y() // min_distance))
+            target: int | None = None
+            for dx in (-1, 0, 1):
+                if target is not None:
+                    break
+                for dy in (-1, 0, 1):
+                    for index in buckets.get((cell[0] + dx, cell[1] + dy), ()):
+                        if MarkerController.distance(result[index].screen_pos, point) < min_distance:
+                            target = index
+                            break
+                    if target is not None:
+                        break
+            if target is None:
+                result.append(cluster)
+                buckets.setdefault(cell, []).append(len(result) - 1)
+            else:
+                _merge_cluster_into(result[target], cluster)
+                merged = True
+        if not merged:
+            return result
+        current = result
+
+    return current
 
 
 class _ClusterWorker(QObject):
@@ -594,6 +660,12 @@ class MarkerController(QObject):
 
     def _publish_clusters(self, clusters: list[_MarkerCluster]) -> None:
         """Publish a stable cluster snapshot to the overlay and label layers."""
+
+        # Single funnel for both clustering paths (worker and exact projection):
+        # merge markers that would overlap so no badge hides another.
+        clusters = _merge_overlapping_clusters(
+            clusters, float(self._marker_size) + MARKER_GAP
+        )
 
         for cluster in clusters:
             cluster.bounding_rect = self._marker_rect(cluster.screen_pos)
