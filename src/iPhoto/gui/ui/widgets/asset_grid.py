@@ -59,6 +59,11 @@ class AssetGrid(QListView):
         self._visible_range: Optional[tuple[int, int]] = None
         self._model = None
         self._model_resetting = False
+        # While the user drags the timeline rail the grid position must follow the
+        # pointer, but each visible-range change would start a window reload and
+        # cancel the previous one. Suppressing the signal during the drag lets the
+        # position move instantly and keeps exactly one load for the release.
+        self._visible_rows_suppressed = False
         self._external_drop_enabled = False
         self._drop_handler: Optional[Callable[[List[Path]], None]] = None
         self._drop_validator: Optional[Callable[[List[Path]], bool]] = None
@@ -509,6 +514,11 @@ class AssetGrid(QListView):
             return
 
         self._visible_range = visible_range
+        if self._visible_rows_suppressed:
+            # The range is recorded so the release can publish it, but no reload is
+            # started: during a timeline drag each reload would cancel the previous
+            # one, so none finished until the pointer stopped.
+            return
         self.visibleRowsChanged.emit(first, last)
 
     def _extract_local_files(self, event: QDropEvent | QDragEnterEvent | QDragMoveEvent) -> List[Path]:

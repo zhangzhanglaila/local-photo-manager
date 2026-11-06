@@ -384,8 +384,10 @@ class GalleryGridView(AssetGrid):
         text = self._date_text_for_row(row, allow_blocking=False)
         if text:
             self._show_date_badge(text, self._scrubber_y_to_view(y))
-        if not self._scrub_timer.isActive():
-            self._scrub_timer.start()
+        # Follow the pointer immediately. Waiting for the next throttled step made a
+        # fast drag trail behind the cursor by hundreds of rows.
+        self.set_visible_rows_suppressed(True)
+        self._scroll_to_row_now(row)
 
     def _is_scrubbing(self) -> bool:
         """True while a drag is active, including a short settle window.
@@ -397,6 +399,33 @@ class GalleryGridView(AssetGrid):
         if self._timeline_scrubber.is_scrubbing():
             return True
         return (time.monotonic() - self._last_scrub_at) < self.SCRUB_SETTLE_S
+
+    def set_visible_rows_suppressed(self, suppressed: bool) -> None:
+        """Stop/start publishing the visible range (used while dragging the rail)."""
+
+        self._visible_rows_suppressed = suppressed
+
+    def _scroll_value_for_row(self, row: int) -> int:
+        """Return the vertical scroll offset that puts *row* near the top.
+
+        The grid reports its full row count even when only a window is loaded, so the
+        offset can be computed from the cell geometry without asking the model.
+        """
+
+        cell = self.gridSize()
+        cell_height = max(1, cell.height())
+        cell_width = max(1, cell.width())
+        columns = max(1, self.viewport().width() // cell_width)
+        first_row_of_band = max(0, row) // columns
+        return max(0, first_row_of_band * cell_height)
+
+    def _scroll_to_row_now(self, row: int) -> None:
+        """Move the viewport to *row* immediately (no model round-trip)."""
+
+        bar = self.verticalScrollBar()
+        if bar is None:
+            return
+        bar.setValue(min(bar.maximum(), self._scroll_value_for_row(row)))
 
     def _flush_scrub_scroll(self) -> None:
         row = self._scrub_pending_row
@@ -411,10 +440,11 @@ class GalleryGridView(AssetGrid):
             self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtTop)
 
     def _on_timeline_scrub_finished(self) -> None:
-        # Release: land exactly on the dragged position instead of the last
-        # throttled step.
+        # Release: publish the range once so exactly one window load runs, then land
+        # precisely on the dragged row.
         self._last_hover_row = None
         self._scrub_timer.stop()
+        self.set_visible_rows_suppressed(False)
         self._flush_scrub_scroll()
         # The month preview becomes a full date once the row is loaded.
         QTimer.singleShot(150, self._refresh_scrub_date)
