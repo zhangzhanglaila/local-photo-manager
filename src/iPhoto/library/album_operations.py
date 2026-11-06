@@ -79,11 +79,27 @@ class AlbumOperationsMixin:
             raise AlbumNameConflictError(f"An album named '{new_name}' already exists.") from exc
         except OSError as exc:  # pragma: no cover - defensive guard
             raise AlbumOperationError(str(exc)) from exc
-        # ``Album.open`` now normalises and persists manifest updates so the
-        # metadata stays aligned with the renamed directory immediately.
+        # The manifest keeps a custom title, so a directory rename has to update it
+        # explicitly; reading no longer rewrites the title from the folder name.
+        self._retitle_manifest(target, new_name)
         Album.open(target)
         self.albumRenamed.emit(original_path, target)
         self._refresh_tree()
+
+    @staticmethod
+    def _retitle_manifest(target: Path, new_name: str) -> None:
+        """Persist *new_name* as the album title after a directory rename."""
+
+        from ..domain.services.album_manifest import default_album_manifest
+        from ..utils.jsonio import write_json
+
+        manifest_path = find_album_manifest(target) or album_manifest_path(target)
+        try:
+            payload = read_json(manifest_path)
+        except Exception:
+            payload = default_album_manifest(target)
+        payload["title"] = new_name
+        write_json(manifest_path, payload)
 
     def ensure_manifest(self, node: AlbumNode) -> Path:
         Album.open(node.path)

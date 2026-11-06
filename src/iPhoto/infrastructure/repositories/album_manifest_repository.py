@@ -12,6 +12,10 @@ from ...cache.lock import FileLock
 from ...config import ALBUM_MANIFEST_NAMES
 from ...errors import AlbumNotFoundError, IPhotoError
 from ...schemas import validate_album
+from ...domain.services.album_manifest import (
+    default_album_manifest,
+    normalise_album_manifest,
+)
 from ...utils.jsonio import read_json, write_json
 from ...utils.logging import logger
 from ...utils.pathutils import album_manifest_path, ensure_work_dir, find_album_manifest
@@ -89,49 +93,19 @@ class AlbumManifestRepository(AlbumRepositoryPort):
 
     @staticmethod
     def _default_manifest(root: Path) -> dict[str, Any]:
-        return {
-            "schema": "iPhoto/album@1",
-            "id": str(uuid.uuid4()),
-            "title": root.name,
-            "filters": {},
-        }
+        return default_album_manifest(root)
 
     def _normalize_manifest(self, root: Path, manifest: dict[str, Any]) -> bool:
-        changed = False
-
-        if manifest.get("schema") != "iPhoto/album@1":
-            manifest["schema"] = "iPhoto/album@1"
-            changed = True
-
-        title = manifest.get("title")
-        if not isinstance(title, str) or not title or title != root.name:
-            manifest["title"] = root.name
-            changed = True
-
-        manifest_id = manifest.get("id")
-        if not isinstance(manifest_id, str) or not manifest_id:
-            manifest["id"] = str(uuid.uuid4())
-            changed = True
-
-        filters = manifest.get("filters")
-        if not isinstance(filters, dict):
-            manifest["filters"] = {}
-            changed = True
-
         try:
-            validate_album(manifest)
-        except IPhotoError as exc:
+            return normalise_album_manifest(root, manifest)
+        except IPhotoError:
             logger.error(
-                "Manifest for %s failed validation (%s); regenerating with defaults.",
-                root,
-                exc,
+                "Manifest for %s could not be repaired; regenerating.", root,
+                exc_info=True,
             )
             manifest.clear()
-            manifest.update(self._default_manifest(root))
-            validate_album(manifest)
-            changed = True
-
-        return changed
+            manifest.update(default_album_manifest(root))
+            return True
 
 
 __all__ = ["AlbumManifestRepository"]

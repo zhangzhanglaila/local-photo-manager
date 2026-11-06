@@ -11,6 +11,10 @@ from typing import Any
 from ...config import ALBUM_MANIFEST_NAMES
 from ...errors import AlbumNotFoundError, IPhotoError
 from ...schemas import validate_album
+from ...domain.services.album_manifest import (
+    default_album_manifest,
+    normalise_album_manifest,
+)
 from ...utils.jsonio import read_json, write_json
 from ...utils.logging import logger
 from ...utils.pathutils import album_manifest_path, ensure_work_dir, find_album_manifest
@@ -97,43 +101,11 @@ def _find_manifest(root: Path) -> Path | None:
 
 
 def _default_manifest(root: Path) -> dict[str, Any]:
-    return {
-        "schema": "iPhoto/album@1",
-        "id": str(uuid.uuid4()),
-        "title": root.name,
-        "filters": {},
-    }
+    return default_album_manifest(root)
 
 
 def _normalize_manifest(root: Path, manifest: dict[str, Any]) -> bool:
-    changed = False
-    if manifest.get("schema") != "iPhoto/album@1":
-        manifest["schema"] = "iPhoto/album@1"
-        changed = True
-    title = manifest.get("title")
-    if not isinstance(title, str) or not title or title != root.name:
-        manifest["title"] = root.name
-        changed = True
-    manifest_id = manifest.get("id")
-    if not isinstance(manifest_id, str) or not manifest_id:
-        manifest["id"] = str(uuid.uuid4())
-        changed = True
-    if not isinstance(manifest.get("filters"), dict):
-        manifest["filters"] = {}
-        changed = True
-    try:
-        validate_album(manifest)
-    except IPhotoError as exc:
-        logger.error(
-            "Manifest for %s failed validation (%s); regenerating with defaults.",
-            root,
-            exc,
-        )
-        manifest.clear()
-        manifest.update(_default_manifest(root))
-        validate_album(manifest)
-        changed = True
-    return changed
+    return normalise_album_manifest(root, manifest)
 
 
 def _write_manifest(root: Path, manifest_path: Path, manifest: dict[str, Any]) -> None:
