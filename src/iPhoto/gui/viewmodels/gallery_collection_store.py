@@ -96,6 +96,17 @@ class GalleryCollectionStore:
         self._total_count = 0
         self._generation = 0
         self._row_cache: Dict[int, AssetDTO] = {}
+        # Timing: end-to-end latency of a window load and how many requests were
+        # superseded before one finished (diag-only).
+        self._load_requested_at: float | None = None
+        # While the user drags the timeline the main thread is saturated by repaints
+        # and event handling; applying every finished load made the newest result wait
+        # seconds in the queue. Throttling application keeps at most one reset per
+        # interval and always applies the latest result on release.
+        self._apply_throttle_s = 0.0
+        self._last_apply_at = 0.0
+        self._deferred_result: tuple[int, dict, int] | None = None
+        self._load_superseded = 0
         self._window_range: Optional[tuple[int, int]] = None
         self._visible_range: Optional[tuple[int, int]] = None
         self._active_root: Optional[Path] = None
@@ -129,10 +140,6 @@ class GalleryCollectionStore:
         if self._load_worker is not None:
             self._load_worker.cancel()
             self._load_worker = None
-        # Timing: end-to-end latency of a window load and how many requests were
-        # superseded before one finished (diag-only).
-        self._load_requested_at: float | None = None
-        self._load_superseded = 0
         self._load_generation += 1
 
     def set_library_root(self, root: Optional[Path]) -> None:
@@ -949,9 +956,31 @@ class GalleryCollectionStore:
         self._emit_signals_on_load = emit_signals
         _GALLERY_LOAD_POOL.start(worker)
 
+    def set_apply_throttle(self, seconds: float) -> None:
+        """Limit how often a finished load is applied (0 disables the limit)."""
+
+        self._apply_throttle_s = max(0.0, float(seconds))
+        if self._apply_throttle_s == 0.0:
+            self._last_apply_at = 0.0
+
+    def flush_deferred_load(self) -> None:
+        """Apply the newest deferred load immediately (used on release)."""
+
+        deferred, self._deferred_result = self._deferred_result, None
+        self._last_apply_at = 0.0
+        if deferred is not None:
+            self._on_load_finished(*deferred)
+
     def _on_load_finished(self, generation: int, row_cache: dict, total: int) -> None:
         """Handle async load completion on the main thread."""
         import logging
+        if self._apply_throttle_s > 0.0:
+            now = time.monotonic()
+            if now - self._last_apply_at < self._apply_throttle_s:
+                self._deferred_result = (generation, row_cache, total)
+                return
+            self._last_apply_at = now
+        self._deferred_result = None
         _handler_started = time.monotonic()
         diag(
             "[DIAG] _on_load_finished: gen=%s (expected=%s) row_cache=%d total=%d active_root=%s library_root=%s has_query=%s",

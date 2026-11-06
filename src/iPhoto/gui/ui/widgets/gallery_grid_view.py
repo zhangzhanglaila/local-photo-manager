@@ -384,6 +384,7 @@ class GalleryGridView(AssetGrid):
         text = self._date_text_for_row(row, allow_blocking=False)
         if text:
             self._show_date_badge(text, self._scrubber_y_to_view(y))
+        self._set_load_apply_throttle(0.25)
         if not self._scrub_timer.isActive():
             self._scrub_timer.start()
 
@@ -410,11 +411,31 @@ class GalleryGridView(AssetGrid):
         if index.isValid():
             self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtTop)
 
+    def _store(self):
+        """Return the gallery store behind the model, when there is one."""
+
+        model = self.model()
+        return getattr(model, "_store", None)
+
+    def _set_load_apply_throttle(self, seconds: float) -> None:
+        store = self._store()
+        setter = getattr(store, "set_apply_throttle", None)
+        if callable(setter):
+            setter(seconds)
+
+    def _flush_deferred_load(self) -> None:
+        store = self._store()
+        flush = getattr(store, "flush_deferred_load", None)
+        if callable(flush):
+            flush()
+
     def _on_timeline_scrub_finished(self) -> None:
         # Release: land exactly on the dragged position instead of the last
         # throttled step.
         self._last_hover_row = None
         self._scrub_timer.stop()
+        self._set_load_apply_throttle(0.0)
+        self._flush_deferred_load()
         self._flush_scrub_scroll()
         # The month preview becomes a full date once the row is loaded.
         QTimer.singleShot(150, self._refresh_scrub_date)
