@@ -107,3 +107,18 @@ env = ["NUMBA_DISABLE_JIT=1"]
 
 [tool.typer]
 pretty_exceptions_enable = true
+# ---------------------------------------------------------------------------
+# Type checking
+#
+# ``# type: ignore[override]`` appeared 222 times, purely because Qt's stubs type
+# event handlers differently from their Python signatures. Silencing the code once
+# keeps every real ``[attr-defined]``/``[union-attr]`` suppression visible.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+disable_error_code = ["override"]
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = ["maps.*", "iPhoto.gui.ui.ui_main_window"]
+ignore_errors = true
