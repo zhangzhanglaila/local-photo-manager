@@ -21,6 +21,7 @@ from ..errors import LibraryUnavailableError
 from ..people.index_coordinator import PeopleIndexCoordinator, get_people_index_coordinator
 from ..people.service import PeopleService
 from ..utils.logging import get_logger
+from .service_registry import LibraryServiceRegistry
 from .tree import AlbumNode
 
 # Re-export GeotaggedAsset for presentation widgets that need the map DTO.
@@ -124,18 +125,9 @@ class LibraryRuntimeController(
         self._people_index_coordinator: PeopleIndexCoordinator | None = None
         self._library_session: "LibrarySession | None" = None
         self._owns_library_session = False
-        self._scan_service: "LibraryScanService | None" = None
-        self._asset_query_service: "LibraryAssetQueryService | None" = None
-        self._state_repository: "LibraryStateRepositoryPort | None" = None
-        self._asset_state_service: "AssetStateServicePort | None" = None
-        self._album_metadata_service: "LibraryAlbumMetadataService | None" = None
-        self._asset_lifecycle_service: "LibraryAssetLifecycleService | None" = None
-        self._asset_operation_service: "LibraryAssetOperationService | None" = None
-        self._people_service: PeopleService | None = None
-        self._map_runtime: "MapRuntimePort | None" = None
-        self._map_interaction_service: "MapInteractionServicePort | None" = None
-        self._edit_service: "EditServicePort | None" = None
-        self._location_service: "LocationAssetServicePort | None" = None
+        # Every session-scoped service lives in one immutable snapshot, so a
+        # half-finished bind cannot look like a bound library.
+        self._services = LibraryServiceRegistry()
 
     # ------------------------------------------------------------------
     # Basic properties
@@ -372,11 +364,11 @@ class LibraryRuntimeController(
     def bind_scan_service(self, scan_service: "LibraryScanService | None") -> None:
         """Bind the current library session scan command surface."""
 
-        self._scan_service = scan_service
+        self._services = self._services.with_service("scan_service", scan_service)
 
     @property
     def scan_service(self) -> "LibraryScanService | None":
-        return self._scan_service
+        return self._services.scan_service
 
     def bind_asset_query_service(
         self,
@@ -384,7 +376,7 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session asset query surface."""
 
-        self._asset_query_service = asset_query_service
+        self._services = self._services.with_service("asset_query_service", asset_query_service)
         self._geotagged_assets_cache = None
         self._geotagged_assets_cache_root = None
         active_session = self._library_session
@@ -395,18 +387,21 @@ class LibraryRuntimeController(
         if (
             current_root is not None
             and asset_query_service is not None
-            and self._location_service is default_location_service
+            and self._services.location_service is default_location_service
         ):
             from ..bootstrap.library_location_service import LibraryLocationService
 
-            self._location_service = LibraryLocationService(
-                current_root,
-                query_service=asset_query_service,
+            self._services = self._services.with_service(
+                "location_service",
+                LibraryLocationService(
+                    current_root,
+                    query_service=asset_query_service,
+                ),
             )
 
     @property
     def asset_query_service(self) -> "LibraryAssetQueryService | None":
-        return self._asset_query_service
+        return self._services.asset_query_service
 
     def bind_state_repository(
         self,
@@ -414,11 +409,11 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session durable-state surface."""
 
-        self._state_repository = state_repository
+        self._services = self._services.with_service("state_repository", state_repository)
 
     @property
     def state_repository(self) -> "LibraryStateRepositoryPort | None":
-        return self._state_repository
+        return self._services.state_repository
 
     def bind_asset_state_service(
         self,
@@ -426,11 +421,11 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session asset-state command surface."""
 
-        self._asset_state_service = asset_state_service
+        self._services = self._services.with_service("asset_state_service", asset_state_service)
 
     @property
     def asset_state_service(self) -> "AssetStateServicePort | None":
-        return self._asset_state_service
+        return self._services.asset_state_service
 
     def bind_album_metadata_service(
         self,
@@ -438,11 +433,11 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session album metadata command surface."""
 
-        self._album_metadata_service = album_metadata_service
+        self._services = self._services.with_service("album_metadata_service", album_metadata_service)
 
     @property
     def album_metadata_service(self) -> "LibraryAlbumMetadataService | None":
-        return self._album_metadata_service
+        return self._services.album_metadata_service
 
     def bind_asset_lifecycle_service(
         self,
@@ -450,11 +445,11 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session asset lifecycle command surface."""
 
-        self._asset_lifecycle_service = asset_lifecycle_service
+        self._services = self._services.with_service("asset_lifecycle_service", asset_lifecycle_service)
 
     @property
     def asset_lifecycle_service(self) -> "LibraryAssetLifecycleService | None":
-        return self._asset_lifecycle_service
+        return self._services.asset_lifecycle_service
 
     def bind_asset_operation_service(
         self,
@@ -462,17 +457,17 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session file-operation command surface."""
 
-        self._asset_operation_service = asset_operation_service
+        self._services = self._services.with_service("asset_operation_service", asset_operation_service)
 
     @property
     def asset_operation_service(self) -> "LibraryAssetOperationService | None":
-        return self._asset_operation_service
+        return self._services.asset_operation_service
 
     def bind_people_service(self, people_service: PeopleService | None) -> None:
         """Bind the current library session People surface."""
 
         self._unbind_people_index_coordinator()
-        self._people_service = people_service
+        self._services = self._services.with_service("people_service", people_service)
         if people_service is None:
             return
         coordinator = people_service.coordinator
@@ -486,16 +481,16 @@ class LibraryRuntimeController(
 
     @property
     def people_service(self) -> PeopleService | None:
-        return self._people_service
+        return self._services.people_service
 
     def bind_map_runtime(self, map_runtime: "MapRuntimePort | None") -> None:
         """Bind the current library session Maps runtime surface."""
 
-        self._map_runtime = map_runtime
+        self._services = self._services.with_service("map_runtime", map_runtime)
 
     @property
     def map_runtime(self) -> "MapRuntimePort | None":
-        return self._map_runtime
+        return self._services.map_runtime
 
     def bind_map_interaction_service(
         self,
@@ -503,20 +498,20 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session Maps interaction surface."""
 
-        self._map_interaction_service = map_interaction_service
+        self._services = self._services.with_service("map_interaction_service", map_interaction_service)
 
     @property
     def map_interaction_service(self) -> "MapInteractionServicePort | None":
-        return self._map_interaction_service
+        return self._services.map_interaction_service
 
     def bind_edit_service(self, edit_service: "EditServicePort | None") -> None:
         """Bind the current library session edit surface."""
 
-        self._edit_service = edit_service
+        self._services = self._services.with_service("edit_service", edit_service)
 
     @property
     def edit_service(self) -> "EditServicePort | None":
-        return self._edit_service
+        return self._services.edit_service
 
     def bind_location_service(
         self,
@@ -524,13 +519,13 @@ class LibraryRuntimeController(
     ) -> None:
         """Bind the current library session Location query surface."""
 
-        self._location_service = location_service
+        self._services = self._services.with_service("location_service", location_service)
         self._geotagged_assets_cache = None
         self._geotagged_assets_cache_root = None
 
     @property
     def location_service(self) -> "LocationAssetServicePort | None":
-        return self._location_service
+        return self._services.location_service
 
     def _bind_people_index_coordinator(self, root: Path) -> None:
         coordinator = get_people_index_coordinator(root)
