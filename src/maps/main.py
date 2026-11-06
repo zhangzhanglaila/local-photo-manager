@@ -24,6 +24,7 @@ from PySide6.QtGui import QAction, QKeySequence, QOffscreenSurface, QOpenGLConte
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
 
 from iPhoto.bootstrap.qt_shader_cache import configure_shader_cache_environment
+from maps.env import env_flag, is_truthy
 from maps.map_sources import (
     MapBackendMetadata,
     MapSourceSpec,
@@ -39,7 +40,6 @@ from maps.tile_backend import OsmAndRasterBackend
 from maps.tile_parser import TileLoadingError
 
 _PYTHON_OBF_RUNTIME_PROBE: dict[Path, tuple[bool, str | None]] = {}
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -68,11 +68,11 @@ def _allow_packaged_linux_wayland() -> bool:
     """Return whether packaged Linux preview builds may keep Qt's default platform selection."""
 
     raw_value = os.environ.get("IPHOTO_ALLOW_PACKAGED_LINUX_WAYLAND", "").strip().lower()
-    return raw_value in _TRUE_ENV_VALUES
+    return is_truthy(raw_value)
 
 
 def _opengl_explicitly_disabled() -> bool:
-    return os.environ.get("IPHOTO_DISABLE_OPENGL", "").strip().lower() in {"1", "true", "yes", "on"}
+    return env_flag("IPHOTO_DISABLE_OPENGL")
 
 
 def check_opengl_support() -> bool:
@@ -263,7 +263,7 @@ def configure_qt_opengl_defaults() -> None:
 
     _configure_qt_shader_disk_cache()
 
-    if os.environ.get("IPHOTO_DISABLE_OPENGL", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if env_flag("IPHOTO_DISABLE_OPENGL"):
         return
 
     try:

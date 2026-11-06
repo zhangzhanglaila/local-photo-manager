@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .env import is_truthy
+
 import os
 import shutil
 import shlex
@@ -93,7 +95,6 @@ else:
         Path("tools") / "osmand_render_helper_native" / "dist-linux" / "osmand_native_widget.so",
         Path("tools") / "osmand_render_helper_native" / "dist-linux" / "libosmand_native_widget.so",
     )
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 _FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 
 
@@ -106,7 +107,7 @@ def prefer_osmand_native_widget() -> bool:
     """
 
     raw_value = os.environ.get(ENV_PREFER_OSMAND_NATIVE_WIDGET, "").strip().lower()
-    if raw_value in _TRUE_ENV_VALUES:
+    if is_truthy(raw_value):
         return True
     if raw_value in _FALSE_ENV_VALUES:
         return False

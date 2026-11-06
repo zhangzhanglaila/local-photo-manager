@@ -23,12 +23,12 @@ from PySide6.QtOpenGL import QOpenGLWindow
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from ..env import env_flag, is_truthy
 from ._map_widget_base import MapWidgetController
 from .map_renderer import CityAnnotation
 from maps.map_sources import MapBackendMetadata, MapSourceSpec
 
 
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 _MAP_GL_CLEAR_COLOR = (0.533, 0.659, 0.761, 1.0)
 
 
@@ -49,7 +49,7 @@ def _map_gl_debug_enabled(environ: Mapping[str, str] | None = None) -> bool:
     """Return whether one-shot GL diagnostics should be printed."""
 
     environ = os.environ if environ is None else environ
-    return environ.get("IPHOTO_MAP_GL_DEBUG", "").strip().lower() in _TRUE_ENV_VALUES
+    return env_flag("IPHOTO_MAP_GL_DEBUG", environ=environ)
 
 
 def _map_gl_uses_no_partial_update(
@@ -64,7 +64,7 @@ def _map_gl_uses_no_partial_update(
     if platform not in {"darwin", "linux"}:
         return False
     partial_update = environ.get("IPHOTO_OSMAND_GL_PARTIAL_UPDATE", "").strip().lower()
-    return partial_update not in _TRUE_ENV_VALUES
+    return not is_truthy(partial_update)
 
 
 def _map_gl_uses_window_container(*, platform: str | None = None) -> bool:
