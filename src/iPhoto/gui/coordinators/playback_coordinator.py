@@ -40,6 +40,7 @@ from iPhoto.people.service import PeopleService
 from maps.osmand_search import OsmAndSearchService, SearchSuggestion
 
 if TYPE_CHECKING:
+    from ...bootstrap.library_session import LibrarySession
     from iPhoto.utils.settings import Settings
     from PySide6.QtWidgets import QPushButton, QSlider, QToolButton, QWidget
 
@@ -67,6 +68,10 @@ class PlaybackCoordinator(QObject):
     """Bind detail widgets to the current presentation from DetailViewModel."""
 
     assetChanged = Signal(int)
+    #: Delivered from the metadata worker thread; Qt queues it onto the GUI thread.
+    #: `QTimer.singleShot` cannot be used from a worker thread: the timer belongs
+    #: to that thread's event loop, which never runs, so the callback was dropped.
+    aiMetadataReady = Signal(str, object, object)
 
     def __init__(
         self,
@@ -94,6 +99,7 @@ class PlaybackCoordinator(QObject):
         people_dashboard_refresh_callback: Callable[[], None] | None = None,
         library_manager: LibraryRuntimeController | None = None,
         location_session_invalidator: Callable[[], None] | None = None,
+        library_session_getter: Callable[[], "LibrarySession | None"] | None = None,
         map_runtime: MapRuntimePort | None = None,
     ) -> None:
         super().__init__()
@@ -124,6 +130,10 @@ class PlaybackCoordinator(QObject):
         self._people_dashboard_refresh_callback = people_dashboard_refresh_callback
         self._library_manager = library_manager
         self._location_session_invalidator = location_session_invalidator
+        # The info panel shows AI captions/tags, which live in the current library
+        # session. The session is created lazily when an album opens, so the
+        # coordinator receives a getter instead of a value.
+        self._library_session_getter = library_session_getter
         self._map_runtime = map_runtime or getattr(library_manager, "map_runtime", None)
 
         self._is_playing = False
@@ -165,6 +175,7 @@ class PlaybackCoordinator(QObject):
         self._location_search_timer.setInterval(_LOCATION_SEARCH_DEBOUNCE_MS)
         self._location_search_timer.timeout.connect(self._perform_location_search)
 
+        self.aiMetadataReady.connect(self._apply_info_panel_ai_metadata)
         self._connect_signals()
         self._setup_zoom_handler()
         self._restore_filmstrip_preference()
@@ -1128,20 +1139,17 @@ class PlaybackCoordinator(QObject):
         if info_panel is None or asset_id is None:
             return
 
-        # Check if semantic search is enabled
-        settings = getattr(self, "_context", None)
-        if settings is None:
-            return
-        semantic_search_enabled = settings.settings.get("agent.semantic_search_enabled", False)
-        if not semantic_search_enabled:
+        if not self._settings.get("agent.semantic_search_enabled", False):
             info_panel.set_asset_ai_metadata(caption=None, tags=None)
             return
 
-        # Get the embedding repository
-        library_session = getattr(self, "_context", None)
-        if library_session is None:
+        # The session only exists once an album is open; ask for it on demand.
+        session = (
+            self._library_session_getter() if self._library_session_getter else None
+        )
+        if session is None:
             return
-        embedding_repo = library_session.library_session.get_embedding_repository()
+        embedding_repo = session.get_embedding_repository()
         if embedding_repo is None:
             return
 
@@ -1168,11 +1176,23 @@ class PlaybackCoordinator(QObject):
                     self._callback(None, None)
 
         def on_ai_metadata_ready(caption, tags):
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: info_panel.set_asset_ai_metadata(caption, tags))
+            self.aiMetadataReady.emit(asset_id, caption, tags)
 
         worker = AIMetadataWorker(embedding_repo, asset_id, on_ai_metadata_ready)
         QThreadPool.globalInstance().start(worker)
+
+    def _apply_info_panel_ai_metadata(
+        self, asset_id: str, caption: object, tags: object
+    ) -> None:
+        """Show AI metadata, but only if the user is still looking at *asset_id*."""
+
+        presentation = self._current_presentation
+        if presentation is None or presentation.asset_id != asset_id:
+            return
+        info_panel = self._info_panel
+        if info_panel is None:
+            return
+        info_panel.set_asset_ai_metadata(caption=caption, tags=tags)
 
     def _update_detail_map(self, info: dict) -> None:
         """Update the detail map panel with GPS coordinates from the current asset."""

@@ -132,6 +132,10 @@ class MainCoordinator(QObject):
         if self._facade:
             self._facade.set_model_provider(lambda: self._asset_list_vm)
 
+        # The playback coordinator reads AI captions/tags from the active library
+        # session, which only exists once an album opens.
+        self._session = None
+
         # --- Coordinators Setup ---
 
         # 1. View Router
@@ -215,6 +219,7 @@ class MainCoordinator(QObject):
             people_dashboard_refresh_callback=window.ui.people_page.schedule_index_refresh,
             library_manager=context.library,
             location_session_invalidator=self._gallery_vm.invalidate_location_session,
+            library_session_getter=lambda: self._session,
             map_runtime=self._map_runtime(),
         )
 
