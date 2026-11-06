@@ -45,8 +45,12 @@ def test_retry_policy_lives_in_one_place() -> None:
     assert module.MAP_FOCUS_RETRY_INTERVAL_MS == 400
 
 
-def test_missing_map_view_gives_up_instead_of_spinning(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without a map view there is nothing to focus; do not schedule more retries."""
+def test_missing_map_view_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing map view is a broken contract, not a state to retry.
+
+    The old guard (``if not hasattr(ui, "map_view") ...: return``) could never be
+    true — ``setupUi`` always builds the map page — so it only hid the bug.
+    """
 
     scheduled: list[int] = []
     monkeypatch.setattr(
@@ -57,6 +61,7 @@ def test_missing_map_view_gives_up_instead_of_spinning(monkeypatch: pytest.Monke
     # leaves an uninitialised QObject whose destruction can crash the process.
     coordinator = SimpleNamespace(_window=SimpleNamespace(ui=SimpleNamespace()))
 
-    MainCoordinator._try_focus_map(coordinator, 30.0, 120.0, 0)
+    with pytest.raises(AttributeError):
+        MainCoordinator._try_focus_map(coordinator, 30.0, 120.0, 0)
 
-    assert scheduled == [], "retrying a view that does not exist just burns timers"
+    assert scheduled == [], "no retries are scheduled for a broken contract"

@@ -112,7 +112,7 @@ class MainCoordinator(QObject):
         self._thumbnail_service = self._context.asset_runtime.thumbnail_service
         bound_people_service = self._people_service(library_root=lib_root)
         self._playback_people_service = bound_people_service or PeopleService()
-        if bound_people_service is not None and hasattr(window.ui.people_page, "set_people_service"):
+        if bound_people_service is not None:
             window.ui.people_page.set_people_service(self._playback_people_service)
         else:
             window.ui.people_page.set_library_root(lib_root)
@@ -469,17 +469,14 @@ class MainCoordinator(QObject):
         if self._edit:
             self._edit.shutdown()
 
-        if hasattr(self._window.ui, "preview_window"):
-            try:
-                self._window.ui.preview_window.close_preview(False)
-            except AttributeError:
-                self._window.ui.preview_window.close()
-        if hasattr(self._window.ui, "map_view"):
-            try:
-                self._window.ui.map_view.close()
-            except RuntimeError:
-                self._logger.warning("Failed to close map view during shutdown", exc_info=True)
-
+        try:
+            self._window.ui.preview_window.close_preview(False)
+        except AttributeError:
+            self._window.ui.preview_window.close()
+        try:
+            self._window.ui.map_view.close()
+        except RuntimeError:
+            self._logger.warning("Failed to close map view during shutdown", exc_info=True)
         # 4. Wait briefly for background threads (e.g. thumbnail generation) to finish
         thread_pool = QThreadPool.globalInstance()
         if not thread_pool.waitForDone(2000):
@@ -540,9 +537,7 @@ class MainCoordinator(QObject):
         # Filmstrip clicks are now handled by PlaybackCoordinator
 
         # Connect favorite click from grid view
-        if hasattr(ui.grid_view, "favoriteClicked"):
-            ui.grid_view.favoriteClicked.connect(self._on_favorite_clicked)
-
+        ui.grid_view.favoriteClicked.connect(self._on_favorite_clicked)
         # Coordinator Signals
         self._playback.assetChanged.connect(self._sync_selection)
         self._player_view_controller.imageLoadingFailed.connect(self._handle_media_load_failed)
@@ -558,23 +553,15 @@ class MainCoordinator(QObject):
         ui.video_area.playbackStateChanged.connect(self._on_video_playback_state_changed)
 
         # Prev / Next overlay buttons
-        if hasattr(ui.detail_page, "prev_button"):
-            ui.detail_page.prev_button.clicked.connect(self._playback.select_previous)
-            ui.detail_page.next_button.clicked.connect(self._playback.select_next)
-
+        ui.detail_page.prev_button.clicked.connect(self._playback.select_previous)
+        ui.detail_page.next_button.clicked.connect(self._playback.select_next)
         # Map view cluster interactions
-        if hasattr(ui, "map_view") and ui.map_view is not None:
-            ui.map_view.assetActivated.connect(self._on_map_asset_activated)
-            ui.map_view.clusterActivated.connect(self._on_cluster_activated)
-            ui.map_view.showAllRequested.connect(self._handle_map_show_all_requested)
-
+        ui.map_view.assetActivated.connect(self._on_map_asset_activated)
+        ui.map_view.clusterActivated.connect(self._on_cluster_activated)
+        ui.map_view.showAllRequested.connect(self._handle_map_show_all_requested)
         # Map feature buttons (in map source bar, to the right of map selector)
-        if hasattr(ui, "map_view") and ui.map_view is not None:
-            if hasattr(ui.map_view, "btn_person_filter"):
-                ui.map_view.btn_person_filter.clicked.connect(self._on_person_filter_toggled)
-            if hasattr(ui.map_view, "btn_trail_toggle"):
-                ui.map_view.btn_trail_toggle.clicked.connect(self._on_trail_toggle_toggled)
-
+        ui.map_view.btn_person_filter.clicked.connect(self._on_person_filter_toggled)
+        ui.map_view.btn_trail_toggle.clicked.connect(self._on_trail_toggle_toggled)
         # Menus
         ui.open_album_action.triggered.connect(self._handle_open_album_dialog)
         ui.rescan_action.triggered.connect(self._status_bar.begin_scan)
@@ -590,32 +577,24 @@ class MainCoordinator(QObject):
         ui.toggle_hidden_people_action.toggled.connect(self._handle_hidden_people_toggle_changed)
 
         # Semantic Search
-        if hasattr(ui, "main_header") and hasattr(ui.main_header, "search_requested"):
-            ui.main_header.search_requested.connect(self._handle_search_requested)
-        if hasattr(ui, "main_header") and hasattr(ui.main_header, "toggle_semantic_search_action"):
-            ui.main_header.toggle_semantic_search_action.toggled.connect(
-                self._handle_semantic_search_toggle
-            )
-
+        ui.main_header.search_requested.connect(self._handle_search_requested)
+        ui.main_header.toggle_semantic_search_action.toggled.connect(
+            self._handle_semantic_search_toggle
+        )
         # Agent Organize Features
-        if hasattr(ui.main_header, "find_duplicates_action"):
-            ui.main_header.find_duplicates_action.triggered.connect(self._handle_find_duplicates)
-        if hasattr(ui.main_header, "smart_album_event_action"):
-            ui.main_header.smart_album_event_action.triggered.connect(
-                lambda: self._handle_create_smart_album("event")
-            )
-        if hasattr(ui.main_header, "smart_album_location_action"):
-            ui.main_header.smart_album_location_action.triggered.connect(
-                lambda: self._handle_create_smart_album("location")
-            )
-        if hasattr(ui.main_header, "smart_album_time_action"):
-            ui.main_header.smart_album_time_action.triggered.connect(
-                lambda: self._handle_create_smart_album("time")
-            )
-        if hasattr(ui.main_header, "smart_album_theme_action"):
-            ui.main_header.smart_album_theme_action.triggered.connect(
-                lambda: self._handle_create_smart_album("theme")
-            )
+        ui.main_header.find_duplicates_action.triggered.connect(self._handle_find_duplicates)
+        ui.main_header.smart_album_event_action.triggered.connect(
+            lambda: self._handle_create_smart_album("event")
+        )
+        ui.main_header.smart_album_location_action.triggered.connect(
+            lambda: self._handle_create_smart_album("location")
+        )
+        ui.main_header.smart_album_time_action.triggered.connect(
+            lambda: self._handle_create_smart_album("time")
+        )
+        ui.main_header.smart_album_theme_action.triggered.connect(
+            lambda: self._handle_create_smart_album("theme")
+        )
         # Info Button
         ui.info_button.clicked.connect(self._playback.toggle_info_panel)
         # Back Button (detail page)
@@ -625,13 +604,9 @@ class MainCoordinator(QObject):
         # Map Button (detail page)
         ui.map_button.clicked.connect(self._toggle_detail_map)
         # Gallery page back button for cluster gallery mode
-        if hasattr(ui, "gallery_page") and hasattr(ui.gallery_page, "backRequested"):
-            ui.gallery_page.backRequested.connect(self._gallery_vm.return_from_cluster_gallery)
-
+        ui.gallery_page.backRequested.connect(self._gallery_vm.return_from_cluster_gallery)
         # Search back button
-        if hasattr(ui, "gallery_page") and hasattr(ui.gallery_page, "searchBackRequested"):
-            ui.gallery_page.searchBackRequested.connect(self._on_search_back)
-
+        ui.gallery_page.searchBackRequested.connect(self._on_search_back)
         # Dashboard Click
         ui.albums_dashboard_page.albumSelected.connect(self.open_album_from_path)
         ui.people_page.clusterActivated.connect(self._on_people_cluster_activated)
@@ -746,7 +721,7 @@ class MainCoordinator(QObject):
         if bound_people_service is not None:
             self._playback_people_service = bound_people_service
         if people_page is not None:
-            if bound_people_service is not None and hasattr(people_page, "set_people_service"):
+            if bound_people_service is not None:
                 people_page.set_people_service(bound_people_service)
             else:
                 people_page.set_library_root(root)
@@ -756,15 +731,15 @@ class MainCoordinator(QObject):
         self._map_extension_download.set_package_root(
             self._resolve_map_package_root(map_runtime)
         )
-        if ui is not None and hasattr(ui, "map_view"):
+        if ui is not None:
             ui.map_view.set_map_runtime(map_runtime)
             ui.map_view.set_map_interaction_service(map_interaction_service)
-        if ui is not None and hasattr(ui, "info_panel"):
+        if ui is not None:
             ui.info_panel.set_map_runtime(map_runtime)
         playback = getattr(self, "_playback", None)
         if playback is not None:
             playback.set_map_runtime(map_runtime)
-            if bound_people_service is not None and hasattr(playback, "set_people_service"):
+            if bound_people_service is not None:
                 playback.set_people_service(bound_people_service)
             else:
                 playback.set_people_library_root(root)
@@ -857,8 +832,7 @@ class MainCoordinator(QObject):
         # Remember the current photo so the header back button can return to it.
         self._return_from_map_path = presentation.path
         self._gallery_vm.open_location_map_focused(asset)
-        if hasattr(self._window.ui, "map_view"):
-            self._window.ui.map_view.set_focused_asset_mode(True)
+        self._window.ui.map_view.set_focused_asset_mode(True)
         # Show back button in header immediately.
         self._add_header_back_button()
         # Highlight sidebar immediately.
@@ -878,14 +852,10 @@ class MainCoordinator(QObject):
         if btn is not None:
             btn.hide()
         self._gallery_vm.show_all_location_assets()
-        if hasattr(self._window.ui, "map_view"):
-            self._window.ui.map_view.set_focused_asset_mode(False)
-
+        self._window.ui.map_view.set_focused_asset_mode(False)
     def _add_header_back_button(self) -> None:
         """Add a back button to the main header bar."""
         ui = self._window.ui
-        if not hasattr(ui, "main_header"):
-            return
         btn = getattr(self, "_header_back_btn", None)
         if btn is not None:
             btn.show()
@@ -918,8 +888,6 @@ class MainCoordinator(QObject):
     def _try_focus_map(self, lat: float, lon: float, attempt: int) -> None:
         """Center the Location map on the given coordinates at high zoom."""
         ui = self._window.ui
-        if not hasattr(ui, "map_view") or ui.map_view is None:
-            return
         try:
             map_widget = ui.map_view.map_widget()
         except RuntimeError:
@@ -953,8 +921,6 @@ class MainCoordinator(QObject):
             return
         path = self._return_from_map_path
         if path is None:
-            return
-        if not hasattr(self._window.ui, "map_page"):
             return
         self._return_from_map_path = None
         # Tell NavigationCoordinator to skip re-navigating to Location.
@@ -1209,7 +1175,7 @@ class MainCoordinator(QObject):
         # parents[4] = project root
         project_root = Path(__file__).resolve().parents[4]
         model_dir = project_root / 'extension' / 'models' / 'clip-vit-base-patch32'
-        library_root = Path(self._context.library.root()) if hasattr(self._context, 'library') else Path.cwd()
+        library_root = Path(self._context.library.root())
 
         class SearchThread(QThread):
             finished = Signal(object, str)  # results or None, error
@@ -1351,53 +1317,41 @@ class MainCoordinator(QObject):
     def _display_search_results_raw(self, results: list, query: str) -> None:
         """Display search results."""
         ui = self._window.ui
-        if hasattr(ui, 'gallery_page'):
-            ui.gallery_page.hide_loading()
-
+        ui.gallery_page.hide_loading()
         if not results:
             self._status_bar.show_message(f"未找到与 '{query}' 相关的照片")
             return
 
         # Show search results header with back button
         total_count = len(results)
-        if hasattr(ui, 'gallery_page'):
-            ui.gallery_page.show_search_results_header(query, total_count)
-
+        ui.gallery_page.show_search_results_header(query, total_count)
         # Show results (limit to 1000 for performance)
         max_results = 1000
         asset_ids = [r["asset_id"] for r in results[:max_results]]
         self._gallery_vm.show_search_results(asset_ids)
 
         # Scroll to top
-        if hasattr(ui, 'grid_view'):
-            ui.grid_view.scrollToTop()
-
+        ui.grid_view.scrollToTop()
         self._status_bar.show_message(f"找到 {total_count} 张与 '{query}' 相关的照片")
 
     def _show_search_loading(self, query: str, sub_message: str = None, show_continue: bool = False) -> None:
         """Show loading state in the grid view area."""
         ui = self._window.ui
-        if hasattr(ui, 'gallery_page'):
-            ui.gallery_page.show_search_loading(query)
-
+        ui.gallery_page.show_search_loading(query)
     def _update_search_progress(self, message: str, current: int, total: int) -> None:
         """Update search progress in the UI."""
         ui = self._window.ui
-        if hasattr(ui, 'gallery_page'):
-            page = ui.gallery_page
-            if "模型" in message:
-                page.show_model_loading()
-            elif "索引" in message:
-                page.show_model_loading()
-            else:
-                page.show_search_loading(message)
-
+        page = ui.gallery_page
+        if "模型" in message:
+            page.show_model_loading()
+        elif "索引" in message:
+            page.show_model_loading()
+        else:
+            page.show_search_loading(message)
     def _display_search_results(self, results: list, query: str = "") -> None:
         """Display search results in the grid view."""
         ui = self._window.ui
-        if hasattr(ui, 'gallery_page'):
-            ui.gallery_page.hide_loading()
-
+        ui.gallery_page.hide_loading()
         if not results:
             self._status_bar.show_message(f"未找到与 '{query}' 相关的照片")
             return
@@ -1409,17 +1363,14 @@ class MainCoordinator(QObject):
     def _display_search_error(self, error: str) -> None:
         """Display search error in the grid view."""
         ui = self._window.ui
-        if hasattr(ui, 'gallery_page'):
-            ui.gallery_page.show_error("搜索失败", error)
+        ui.gallery_page.show_error("搜索失败", error)
         self._status_bar.show_message(f"搜索失败: {error}", 10000)
 
     def _on_search_back(self) -> None:
         """Handle back button click during search."""
         # Hide search results header
         ui = self._window.ui
-        if hasattr(ui, 'gallery_page'):
-            ui.gallery_page.hide_search_results_header()
-
+        ui.gallery_page.hide_search_results_header()
         # Return to normal gallery view
         self._gallery_vm.open_all_photos()
         self._status_bar.show_message("")
@@ -1523,13 +1474,11 @@ class MainCoordinator(QObject):
 
         # Show progress in the gallery page with progress bar
         ui = self._window.ui
-        if hasattr(ui, 'gallery_page'):
-            ui.gallery_page.show_loading_message(
-                "正在初始化 AI 搜索...",
-                "首次使用需要为照片生成索引，之后搜索会很快",
-                show_progress=True
-            )
-
+        ui.gallery_page.show_loading_message(
+            "正在初始化 AI 搜索...",
+            "首次使用需要为照片生成索引，之后搜索会很快",
+            show_progress=True
+        )
         # Run model loading and embedding generation in background
         from PySide6.QtCore import QRunnable, Slot
 
@@ -1629,9 +1578,6 @@ class MainCoordinator(QObject):
         """Handle embedding generation status updates."""
         ui = self._window.ui
         self._logger.info(f"Embedding status: {status_type} - {message}")
-
-        if not hasattr(ui, 'gallery_page'):
-            return
 
         page = ui.gallery_page
 
@@ -1857,8 +1803,6 @@ class MainCoordinator(QObject):
     def _on_person_filter_toggled(self, checked: bool) -> None:
         """Toggle person filter panel on the map."""
         ui = self._window.ui
-        if not hasattr(ui, "map_view"):
-            return
         if checked:
             people_service = getattr(self, "_playback_people_service", None)
             if people_service is None:
@@ -1875,8 +1819,6 @@ class MainCoordinator(QObject):
     def _on_trail_toggle_toggled(self, checked: bool) -> None:
         """Toggle trail/timeline display on the map."""
         ui = self._window.ui
-        if not hasattr(ui, "map_view"):
-            return
         if checked:
             try:
                 from iPhoto.application.services.trail_service import TrailService
@@ -2035,11 +1977,9 @@ class MainCoordinator(QObject):
             semantic_search_enabled = stored_semantic_search.strip().lower() in {"1", "true", "yes", "on"}
         else:
             semantic_search_enabled = bool(stored_semantic_search)
-        if hasattr(ui, "main_header") and hasattr(ui.main_header, "toggle_semantic_search_action"):
-            ui.main_header.toggle_semantic_search_action.setChecked(semantic_search_enabled)
-            if semantic_search_enabled:
-                self._start_embedding_generation()
-
+        ui.main_header.toggle_semantic_search_action.setChecked(semantic_search_enabled)
+        if semantic_search_enabled:
+            self._start_embedding_generation()
         # 2. Volume / Mute
         stored_volume = settings.get("ui.volume", 75)
         try:
@@ -2077,9 +2017,7 @@ class MainCoordinator(QObject):
     def _handle_hidden_people_toggle_changed(self, checked: bool) -> None:
         if self._context.settings.get("ui.show_hidden_people") != checked:
             self._context.settings.set("ui.show_hidden_people", checked)
-        if hasattr(self._window.ui, "people_page"):
-            self._window.ui.people_page.set_show_hidden_people(checked)
-
+        self._window.ui.people_page.set_show_hidden_people(checked)
     def _prepare_paths_for_mutation(self, paths: list[Path]) -> None:
         """Release preview/player handles before mutating files on disk."""
 
@@ -2118,7 +2056,6 @@ class MainCoordinator(QObject):
         # 这些路径会导致 SQL album_paths 过滤掉所有照片
         from pathlib import Path as PathType
         resolved = [PathType(p) for p in stored]
-        current_roots = self._library_root_holder() if hasattr(self, "_library_root_holder") else None
         library_roots = self._context.library.roots()
         root_set = {str(p.resolve()).lower().replace("\\", "/") for p in library_roots}
         valid_resolved = []

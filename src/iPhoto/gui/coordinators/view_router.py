@@ -42,19 +42,14 @@ class ViewRouter(QObject):
         if hasattr(ui, "map_page"):
             self._map_idx = self._stack.indexOf(ui.map_page)
 
-        self._people_idx = -1
-        if hasattr(ui, "people_page"):
-            self._people_idx = self._stack.indexOf(ui.people_page)
+        self._people_idx = self._stack.indexOf(ui.people_page)
 
         # Dashboard View
-        self._dashboard_idx = -1
-        if hasattr(ui, "albums_dashboard_page"):
-            self._dashboard_idx = self._stack.indexOf(ui.albums_dashboard_page)
+        self._dashboard_idx = self._stack.indexOf(ui.albums_dashboard_page)
 
-        # Edit View: Currently part of Detail Page structure
+        # Edit lives inside the detail page, so there is no separate stack entry;
+        # probing `ui.edit_page` here only looked like a branch that might exist.
         self._edit_idx = -1
-        if hasattr(ui, "edit_page"):
-            self._edit_idx = self._stack.indexOf(ui.edit_page)
 
     def show_gallery(self):
         """Switch to the Gallery (Grid) view."""
