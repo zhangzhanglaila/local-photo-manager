@@ -79,7 +79,9 @@ class GalleryLoadWorker(QRunnable):
 
             # 1. COUNT query
             count_query = self._count_query(self._query)
+            t_count = time.monotonic()
             total = self._asset_query_service.count_query_assets(count_query)
+            t_count = time.monotonic() - t_count
 
             if self._is_cancelled:
                 return
@@ -94,9 +96,13 @@ class GalleryLoadWorker(QRunnable):
             query = self._slice_query(self._query, first, last - first + 1)
 
             row_cache: Dict[int, AssetDTO] = {}
-            for offset, row in enumerate(
-                self._asset_query_service.read_query_asset_rows(self._active_root, query)
-            ):
+            t_rows = 0.0
+            t_convert = 0.0
+            fetch_started = time.monotonic()
+            rows_iter = self._asset_query_service.read_query_asset_rows(self._active_root, query)
+            for offset, row in enumerate(rows_iter):
+                if offset == 0:
+                    t_rows = time.monotonic() - fetch_started
                 if self._is_cancelled:
                     return
                 row_index = first + offset
@@ -105,26 +111,39 @@ class GalleryLoadWorker(QRunnable):
                     continue
                 if _scan_row_is_thumbnail_fn(view_rel, row):
                     continue
+                convert_started = time.monotonic()
                 dto = _scan_row_to_dto_fn(self._active_root, view_rel, row)
+                t_convert += time.monotonic() - convert_started
                 if dto is None:
                     continue
                 row_cache[row_index] = dto
+            if t_rows == 0.0:
+                t_rows = time.monotonic() - fetch_started
 
             if self._is_cancelled:
                 return
 
             # 3. Path validation (moved from main thread)
+            t_validate = 0.0
+            validate_started = time.monotonic()
             if self._validate_paths and row_cache:
                 row_cache = {
                     k: v for k, v in row_cache.items()
                     if os.path.exists(v.abs_path)
                 }
 
+            t_validate = time.monotonic() - validate_started
+
             self._signals.finished.emit(self._generation, row_cache, total)
             diag(
-                "[DIAG] load worker gen=%s done: queue %.0f ms, run %.0f ms, rows=%d",
+                "[DIAG] load worker gen=%s: queue %.0f | count %.0f | rows %.0f | "
+                "convert %.0f | validate %.0f | total %.0f ms | rows=%d",
                 self._generation,
                 (started - self._queued_at) * 1000,
+                t_count * 1000,
+                t_rows * 1000,
+                t_convert * 1000,
+                t_validate * 1000,
                 (time.monotonic() - started) * 1000,
                 len(row_cache),
             )

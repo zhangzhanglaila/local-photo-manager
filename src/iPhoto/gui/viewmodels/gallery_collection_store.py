@@ -952,6 +952,7 @@ class GalleryCollectionStore:
     def _on_load_finished(self, generation: int, row_cache: dict, total: int) -> None:
         """Handle async load completion on the main thread."""
         import logging
+        _handler_started = time.monotonic()
         diag(
             "[DIAG] _on_load_finished: gen=%s (expected=%s) row_cache=%d total=%d active_root=%s library_root=%s has_query=%s",
             generation, self._load_generation, len(row_cache), total,
