@@ -178,6 +178,25 @@ class _VideoView(QGraphicsView):
         self._image_item.setPos(x, y)
 
 
+def _preview_needs_rotation_safe_surface(source: Path) -> bool:
+    """Return True when Qt's video item would double-rotate *source*.
+
+    Some iPhone clips store upright frames but still carry a 180-degree display
+    matrix (verified on the affected files: extracting a frame with
+    ``ffmpeg -noautorotate`` yields an upright picture). ``QGraphicsVideoItem``
+    honours that redundant matrix and flipped the long-press preview upside down,
+    while the detail player — which assumes the Qt6 FFmpeg backend already
+    delivers upright 180-degree frames — stayed correct. Routing these clips
+    through the same renderer makes both surfaces agree.
+    """
+
+    try:
+        rotation_cw, _raw_width, _raw_height = probe_video_rotation(source)
+    except Exception:  # noqa: BLE001 - preview must never fail on probing
+        return False
+    return int(rotation_cw) % 360 == 180
+
+
 class _PreviewFrame(QWidget):
     """Draws rounded chrome around the embedded video widget."""
 
@@ -598,6 +617,8 @@ class PreviewWindow(QWidget):
             or adjusted_preview
             or trim_range_ms is not None
         )
+        if not next_uses_rhi_popup and _preview_needs_rotation_safe_surface(path):
+            next_uses_rhi_popup = True
         self._current_native_size = QSizeF()
         self._native_size_seeded_from_probe = False
         self._native_size_seeded = False
