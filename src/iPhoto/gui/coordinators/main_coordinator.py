@@ -91,9 +91,7 @@ class MainCoordinator(QObject):
             context,
             package_root=self._resolve_map_package_root(self._map_runtime()),
         )
-        if hasattr(window.ui, "download_map_extension_action"):
-            window.ui.download_map_extension_action.setEnabled(supports_map_extension_download())
-
+        window.ui.download_map_extension_action.setEnabled(supports_map_extension_download())
         self._event_bus = context.event_bus
         edit_service_getter = self._edit_service
         asset_state_service = self._asset_state_service()
@@ -114,26 +112,22 @@ class MainCoordinator(QObject):
         self._thumbnail_service = self._context.asset_runtime.thumbnail_service
         bound_people_service = self._people_service(library_root=lib_root)
         self._playback_people_service = bound_people_service or PeopleService()
-        if hasattr(window.ui, "people_page"):
-            if bound_people_service is not None and hasattr(window.ui.people_page, "set_people_service"):
-                window.ui.people_page.set_people_service(self._playback_people_service)
-            else:
-                window.ui.people_page.set_library_root(lib_root)
-            window.ui.people_page.set_status_message(context.library.face_scan_status_message())
+        if bound_people_service is not None and hasattr(window.ui.people_page, "set_people_service"):
+            window.ui.people_page.set_people_service(self._playback_people_service)
+        else:
+            window.ui.people_page.set_library_root(lib_root)
+        window.ui.people_page.set_status_message(context.library.face_scan_status_message())
         self._pinned_items_service = PinnedItemsService(
             context.settings,
             people_service_getter=self._people_service,
             parent=self,
         )
         window.ui.sidebar.set_pinned_service(self._pinned_items_service)
-        if hasattr(window.ui, "people_page"):
-            window.ui.people_page.set_pinned_service(self._pinned_items_service)
-        if hasattr(window.ui, "albums_dashboard_page"):
-            window.ui.albums_dashboard_page.set_pinned_service(self._pinned_items_service)
-            self._facade.albumCoverUpdated.connect(
-                window.ui.albums_dashboard_page.update_album_cover
-            )
-
+        window.ui.people_page.set_pinned_service(self._pinned_items_service)
+        window.ui.albums_dashboard_page.set_pinned_service(self._pinned_items_service)
+        self._facade.albumCoverUpdated.connect(
+            window.ui.albums_dashboard_page.update_album_cover
+        )
         # Inject ViewModel provider into Facade for legacy operations (restore/delete)
         if self._facade:
             self._facade.set_model_provider(lambda: self._asset_list_vm)
@@ -236,22 +230,17 @@ class MainCoordinator(QObject):
             self._handle_people_snapshot_sidebar_refresh
         )
         # Manually attach info panel if available
-        if hasattr(window.ui, "info_panel"):
-            window.ui.info_panel.set_map_runtime(self._map_runtime())
-            self._playback.set_info_panel(window.ui.info_panel)
-            window.ui.info_panel.downloadMapExtensionRequested.connect(
-                lambda: self._map_extension_download.start_download(source="info_panel")
-            )
-        if hasattr(window.ui, "map_view"):
-            window.ui.map_view.set_map_runtime(self._map_runtime())
-            window.ui.map_view.set_map_interaction_service(
-                self._map_interaction_service()
-            )
-
+        window.ui.info_panel.set_map_runtime(self._map_runtime())
+        self._playback.set_info_panel(window.ui.info_panel)
+        window.ui.info_panel.downloadMapExtensionRequested.connect(
+            lambda: self._map_extension_download.start_download(source="info_panel")
+        )
+        window.ui.map_view.set_map_runtime(self._map_runtime())
+        window.ui.map_view.set_map_interaction_service(
+            self._map_interaction_service()
+        )
         # Detail map panel (kept for GPS coordinates display only).
-        if hasattr(window.ui, "map_panel"):
-            self._playback.set_detail_map_panel(window.ui.map_panel)
-
+        self._playback.set_detail_map_panel(window.ui.map_panel)
         # 4. Theme Controller
         self._theme_controller = WindowThemeController(window.ui, window, context.theme)
 
@@ -609,40 +598,32 @@ class MainCoordinator(QObject):
             )
 
         # Agent Organize Features
-        if hasattr(ui, "main_header"):
-            if hasattr(ui.main_header, "find_duplicates_action"):
-                ui.main_header.find_duplicates_action.triggered.connect(self._handle_find_duplicates)
-            if hasattr(ui.main_header, "smart_album_event_action"):
-                ui.main_header.smart_album_event_action.triggered.connect(
-                    lambda: self._handle_create_smart_album("event")
-                )
-            if hasattr(ui.main_header, "smart_album_location_action"):
-                ui.main_header.smart_album_location_action.triggered.connect(
-                    lambda: self._handle_create_smart_album("location")
-                )
-            if hasattr(ui.main_header, "smart_album_time_action"):
-                ui.main_header.smart_album_time_action.triggered.connect(
-                    lambda: self._handle_create_smart_album("time")
-                )
-            if hasattr(ui.main_header, "smart_album_theme_action"):
-                ui.main_header.smart_album_theme_action.triggered.connect(
-                    lambda: self._handle_create_smart_album("theme")
-                )
-
+        if hasattr(ui.main_header, "find_duplicates_action"):
+            ui.main_header.find_duplicates_action.triggered.connect(self._handle_find_duplicates)
+        if hasattr(ui.main_header, "smart_album_event_action"):
+            ui.main_header.smart_album_event_action.triggered.connect(
+                lambda: self._handle_create_smart_album("event")
+            )
+        if hasattr(ui.main_header, "smart_album_location_action"):
+            ui.main_header.smart_album_location_action.triggered.connect(
+                lambda: self._handle_create_smart_album("location")
+            )
+        if hasattr(ui.main_header, "smart_album_time_action"):
+            ui.main_header.smart_album_time_action.triggered.connect(
+                lambda: self._handle_create_smart_album("time")
+            )
+        if hasattr(ui.main_header, "smart_album_theme_action"):
+            ui.main_header.smart_album_theme_action.triggered.connect(
+                lambda: self._handle_create_smart_album("theme")
+            )
         # Info Button
-        if hasattr(ui, "info_button"):
-            ui.info_button.clicked.connect(self._playback.toggle_info_panel)
-
+        ui.info_button.clicked.connect(self._playback.toggle_info_panel)
         # Back Button (detail page)
-        if hasattr(ui, "back_button"):
-            ui.back_button.clicked.connect(self._detail_vm.back_to_gallery)
-
+        ui.back_button.clicked.connect(self._detail_vm.back_to_gallery)
         # Fullscreen Button — already connected in window_manager._configure_window_controls
 
         # Map Button (detail page)
-        if hasattr(ui, "map_button"):
-            ui.map_button.clicked.connect(self._toggle_detail_map)
-
+        ui.map_button.clicked.connect(self._toggle_detail_map)
         # Gallery page back button for cluster gallery mode
         if hasattr(ui, "gallery_page") and hasattr(ui.gallery_page, "backRequested"):
             ui.gallery_page.backRequested.connect(self._gallery_vm.return_from_cluster_gallery)
@@ -652,25 +633,22 @@ class MainCoordinator(QObject):
             ui.gallery_page.searchBackRequested.connect(self._on_search_back)
 
         # Dashboard Click
-        if hasattr(ui, "albums_dashboard_page"):
-            ui.albums_dashboard_page.albumSelected.connect(self.open_album_from_path)
-        if hasattr(ui, "people_page"):
-            ui.people_page.clusterActivated.connect(self._on_people_cluster_activated)
-            ui.people_page.groupActivated.connect(self._on_people_group_activated)
-            self._context.library.peopleIndexUpdated.connect(ui.people_page.schedule_index_refresh)
-            self._context.library.peopleSnapshotCommitted.connect(
-                self._gallery_vm.handle_people_snapshot_committed
-            )
-            self._context.library.peopleSnapshotCommitted.connect(
-                self._playback.handle_people_snapshot_committed
-            )
-            self._context.library.faceScanStatusChanged.connect(ui.people_page.set_status_message)
-            # Also surface face scan progress in the main status bar so the
-            # user can see it without switching to the People dashboard.
-            self._context.library.faceScanStatusChanged.connect(
-                lambda msg: self._status_bar.show_message(msg)
-            )
-
+        ui.albums_dashboard_page.albumSelected.connect(self.open_album_from_path)
+        ui.people_page.clusterActivated.connect(self._on_people_cluster_activated)
+        ui.people_page.groupActivated.connect(self._on_people_group_activated)
+        self._context.library.peopleIndexUpdated.connect(ui.people_page.schedule_index_refresh)
+        self._context.library.peopleSnapshotCommitted.connect(
+            self._gallery_vm.handle_people_snapshot_committed
+        )
+        self._context.library.peopleSnapshotCommitted.connect(
+            self._playback.handle_people_snapshot_committed
+        )
+        self._context.library.faceScanStatusChanged.connect(ui.people_page.set_status_message)
+        # Also surface face scan progress in the main status bar so the
+        # user can see it without switching to the People dashboard.
+        self._context.library.faceScanStatusChanged.connect(
+            lambda msg: self._status_bar.show_message(msg)
+        )
         # Sidebar checkbox filtering
         ui.sidebar.albumCheckStateChanged.connect(self._on_album_check_state_changed)
         self._restore_checked_library_paths()
@@ -2050,9 +2028,7 @@ class MainCoordinator(QObject):
         else:
             show_hidden_people = bool(stored_hidden_people)
         ui.toggle_hidden_people_action.setChecked(show_hidden_people)
-        if hasattr(ui, "people_page"):
-            ui.people_page.set_show_hidden_people(show_hidden_people)
-
+        ui.people_page.set_show_hidden_people(show_hidden_people)
         # 3. Semantic Search
         stored_semantic_search = settings.get("agent.semantic_search_enabled", False)
         if isinstance(stored_semantic_search, str):
