@@ -40,22 +40,6 @@ def test_legacy_use_case_package_import_is_blocked(tmp_path: Path) -> None:
     )
 
 
-def test_gui_viewmodel_domain_repository_import_is_blocked(tmp_path: Path) -> None:
-    source = tmp_path / "iPhoto"
-    module = source / "gui" / "viewmodels" / "example.py"
-    module.parent.mkdir(parents=True)
-    module.write_text(
-        "from iPhoto.legacy.domain.repositories import IAssetRepository\n",
-        encoding="utf-8",
-    )
-
-    violations = check_layer_boundaries.check(source)
-
-    assert any(
-        "runtime imports legacy quarantine module "
-        "iPhoto.legacy.domain.repositories" in violation
-        for violation in violations
-    )
 
 
 def test_gui_file_operation_service_planning_import_is_blocked(
@@ -84,21 +68,6 @@ def test_gui_file_operation_service_planning_import_is_blocked(
     )
 
 
-def test_gui_runtime_backend_import_is_blocked(tmp_path: Path) -> None:
-    source = tmp_path / "iPhoto"
-    module = source / "gui" / "coordinators" / "example.py"
-    module.parent.mkdir(parents=True)
-    module.write_text(
-        "from iPhoto.legacy import app as backend\n",
-        encoding="utf-8",
-    )
-
-    violations = check_layer_boundaries.check(source)
-
-    assert any(
-        "runtime imports legacy quarantine module iPhoto.legacy" in violation
-        for violation in violations
-    )
 
 
 def test_gui_runtime_compat_factory_import_is_blocked(tmp_path: Path) -> None:
@@ -197,22 +166,6 @@ def test_map_widgets_must_use_factory_for_concrete_widget_imports(tmp_path: Path
     )
 
 
-def test_gui_runtime_legacy_app_service_import_is_blocked(tmp_path: Path) -> None:
-    source = tmp_path / "iPhoto"
-    module = source / "gui" / "viewmodels" / "example.py"
-    module.parent.mkdir(parents=True)
-    module.write_text(
-        "from iPhoto.legacy.application.services.asset_service import AssetService\n",
-        encoding="utf-8",
-    )
-
-    violations = check_layer_boundaries.check(source)
-
-    assert any(
-        "runtime imports legacy quarantine module "
-        "iPhoto.legacy.application.services.asset_service" in violation
-        for violation in violations
-    )
 
 
 def test_gui_runtime_direct_start_scanning_call_is_blocked(tmp_path: Path) -> None:
@@ -296,22 +249,6 @@ def test_library_runtime_compat_factory_import_is_blocked(tmp_path: Path) -> Non
     )
 
 
-def test_runtime_legacy_quarantine_import_is_blocked(tmp_path: Path) -> None:
-    source = tmp_path / "iPhoto"
-    module = source / "gui" / "example.py"
-    module.parent.mkdir(parents=True)
-    module.write_text(
-        "from iPhoto.legacy.gui.viewmodels.album_viewmodel import AlbumViewModel\n",
-        encoding="utf-8",
-    )
-
-    violations = check_layer_boundaries.check(source)
-
-    assert any(
-        "runtime imports legacy quarantine module "
-        "iPhoto.legacy.gui.viewmodels.album_viewmodel" in violation
-        for violation in violations
-    )
 
 
 def test_runtime_old_compat_path_import_is_blocked(tmp_path: Path) -> None:

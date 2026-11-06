@@ -193,8 +193,6 @@ GUI_COMPAT_FACTORY_CALLS = LIBRARY_COMPAT_FACTORY_CALLS
 
 GUI_SCAN_ENTRY_FORBIDDEN_CALLS = {"start_scanning"}
 
-LEGACY_RUNTIME_IMPORT_FORBIDDEN = "iPhoto.legacy"
-
 LEGACY_QUARANTINED_OLD_PATHS = {
     "iPhoto.app",
     "iPhoto.appctx",
@@ -520,14 +518,6 @@ def check(src_root: Path) -> list[str]:
             if top_level == "library" and module in LIBRARY_COMPAT_FACTORY_FORBIDDEN:
                 violations.append(
                     f"{py_file}:{lineno}: library runtime imports compatibility service factory {module}"
-                )
-
-            if top_level != "legacy" and _is_or_under(
-                module,
-                LEGACY_RUNTIME_IMPORT_FORBIDDEN,
-            ):
-                violations.append(
-                    f"{py_file}:{lineno}: runtime imports legacy quarantine module {module}"
                 )
 
             if top_level != "legacy" and any(

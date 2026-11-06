@@ -1,5 +1,11 @@
 # 04 - 重构实施清单
 
+> **状态更新**：src/iPhoto/legacy/ 隔离区已移除（连同依赖它的 20 个测试文件与
+> check_layer_boundaries.py 中的 LEGACY_RUNTIME_IMPORT_FORBIDDEN 规则）。
+> 下文对 legacy 路径的描述仅作历史记录；LEGACY_QUARANTINED_OLD_PATHS 规则保留，
+> 用于阻止这些旧模块路径被重新引入 runtime。
+
+
 > **版本:** 1.3 | **日期:** 2026-05-04
 > **状态:** 全仓清理收口完成：legacy 强制隔离
 > **范围:** vNext 重构执行清单与回归要求
