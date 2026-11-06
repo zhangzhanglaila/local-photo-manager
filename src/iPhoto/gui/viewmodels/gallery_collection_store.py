@@ -86,10 +86,6 @@ class GalleryCollectionStore:
         self.window_changed = Signal()
         self.count_changed = Signal()
         self.row_changed = Signal()
-        # Emitted with the absolute row range that was just loaded. The row numbers are
-        # absolute, so merging a new window into the cache does not shift any existing
-        # row: the view only needs `dataChanged` for that range, not a model reset.
-        self.rows_loaded = Signal()
 
         self._asset_query_service = asset_query_service
         self._library_root = library_root or getattr(asset_query_service, "library_root", None)
@@ -105,12 +101,6 @@ class GalleryCollectionStore:
         # the query object, so any filter/sort change misses it automatically.
         self._cached_count: int | None = None
         self._cached_count_key: str | None = None
-        # Mapping (query + roots) currently backing the model's row numbers. When it
-        # changes the rows mean something else and a reset is required.
-        self._row_mapping_key: str | None = None
-        # Set per request; initialized here so a load result can be delivered without
-        # going through `_reload_window_for_visible_range` (tests, direct callers).
-        self._emit_signals_on_load = True
         # Timing: end-to-end latency of a window load and how many requests were
         # superseded before one finished (diag-only).
         self._load_requested_at: float | None = None
@@ -1021,21 +1011,6 @@ class GalleryCollectionStore:
         self._load_worker = None
 
         old_total = self._total_count
-        mapping_key = self._count_cache_key()
-        if (
-            self._row_mapping_key == mapping_key
-            and total == old_total
-            and self._row_cache
-            and row_cache
-        ):
-            # Same query, same count: fold the window in and let the view refresh just
-            # that range. No reset, so the scroll offset and selection stay put.
-            self._row_cache.update(row_cache)
-            self._store_total(total)
-            self.rows_loaded.emit(min(row_cache), max(row_cache))
-            return
-
-        self._row_mapping_key = mapping_key
         self._row_cache = row_cache
         self._total_count = total
         self._store_total(total)

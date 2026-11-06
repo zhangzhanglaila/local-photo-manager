@@ -42,7 +42,6 @@ class GalleryListModelAdapter(QAbstractListModel):
         self._store.window_changed.connect(self._on_window_changed)
         self._store.data_changed.connect(self._on_source_changed)
         self._store.row_changed.connect(self._on_row_changed)
-        self._store.rows_loaded.connect(self._on_rows_loaded)
         self._thumbnails.thumbnailReady.connect(self._on_thumbnail_ready)
 
     @classmethod
@@ -422,30 +421,6 @@ class GalleryListModelAdapter(QAbstractListModel):
         idx = self.index(row, 0)
         if idx.isValid():
             self.dataChanged.emit(idx, idx, [Qt.DecorationRole])
-
-    def _on_rows_loaded(self, first: int, last: int) -> None:
-        """Refresh only the loaded range instead of resetting the whole model.
-
-        Row numbers are absolute, so a new window adds data to rows that already exist;
-        emitting ``dataChanged`` keeps the scroll offset, the selection and the layout.
-        """
-
-        if first < 0 or last < first:
-            return
-        from PySide6.QtCore import QThread
-        from PySide6.QtWidgets import QApplication
-
-        app = QApplication.instance()
-        if app is not None:
-            main_thread = app.thread()
-            if main_thread is not None and QThread.currentThread() is not main_thread:
-                QTimer.singleShot(0, lambda: self._on_rows_loaded(first, last))
-                return
-
-        top = self.index(first, 0)
-        bottom = self.index(last, 0)
-        if top.isValid() and bottom.isValid():
-            self.dataChanged.emit(top, bottom, [])
 
     def _on_row_changed(self, row: int) -> None:
         # Same thread-safety guard as _on_source_changed.
