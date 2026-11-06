@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -12,6 +13,7 @@ from PySide6.QtCore import QObject, QRunnable, Signal
 
 from iPhoto.application.dtos import AssetDTO
 from iPhoto.domain.models.query import AssetQuery
+from ...utils.logging import diag
 
 from .asset_dto_converter import (
     scan_row_is_thumbnail as _scan_row_is_thumbnail_fn,
@@ -58,13 +60,21 @@ class GalleryLoadWorker(QRunnable):
         self._signals = signals
         self._validate_paths = validate_paths
         self._is_cancelled = False
+        # Timing instrumentation (emitted only with IPHOTO_DIAG=1): how long the task
+        # sat in the pool queue and how long it actually ran.
+        self._queued_at = time.monotonic()
 
     def cancel(self) -> None:
         self._is_cancelled = True
 
     def run(self) -> None:
+        started = time.monotonic()
         try:
             if self._is_cancelled:
+                diag(
+                    "[DIAG] load worker gen=%s cancelled in queue after %.0f ms",
+                    self._generation, (started - self._queued_at) * 1000,
+                )
                 return
 
             # 1. COUNT query
@@ -111,6 +121,13 @@ class GalleryLoadWorker(QRunnable):
                 }
 
             self._signals.finished.emit(self._generation, row_cache, total)
+            diag(
+                "[DIAG] load worker gen=%s done: queue %.0f ms, run %.0f ms, rows=%d",
+                self._generation,
+                (started - self._queued_at) * 1000,
+                (time.monotonic() - started) * 1000,
+                len(row_cache),
+            )
 
         except Exception as exc:
             LOGGER.error("GalleryLoadWorker failed: %s", exc, exc_info=True)

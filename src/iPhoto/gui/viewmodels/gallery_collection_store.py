@@ -121,6 +121,10 @@ class GalleryCollectionStore:
         if self._load_worker is not None:
             self._load_worker.cancel()
             self._load_worker = None
+        # Timing: end-to-end latency of a window load and how many requests were
+        # superseded before one finished (diag-only).
+        self._load_requested_at: float | None = None
+        self._load_superseded = 0
         self._load_generation += 1
 
     def set_library_root(self, root: Optional[Path]) -> None:
@@ -902,6 +906,7 @@ class GalleryCollectionStore:
         if self._load_worker is not None:
             self._load_worker.cancel()
             self._load_worker = None
+            self._load_superseded += 1
 
         self._load_generation += 1
         gen = self._load_generation
@@ -932,6 +937,7 @@ class GalleryCollectionStore:
             validate_paths=validate,
         )
         self._load_worker = worker
+        self._load_requested_at = time.monotonic()
         self._emit_signals_on_load = emit_signals
         QThreadPool.globalInstance().start(worker)
 
@@ -943,6 +949,16 @@ class GalleryCollectionStore:
             generation, self._load_generation, len(row_cache), total,
             self._active_root, self._library_root, self._current_query is not None,
         )
+        elapsed = (
+            (time.monotonic() - self._load_requested_at) * 1000
+            if self._load_requested_at is not None
+            else -1.0
+        )
+        diag(
+            "[DIAG] load finished: gen=%s rows=%d end_to_end=%.0f ms superseded=%d",
+            generation, len(row_cache), elapsed, self._load_superseded,
+        )
+        self._load_superseded = 0
         if generation != self._load_generation:
             diag(
                 "[DIAG] _on_load_finished: STALE (gen mismatch), discarding"
@@ -1005,6 +1021,16 @@ class GalleryCollectionStore:
 
     def _on_load_error(self, generation: int, error_msg: str) -> None:
         """Handle async load error on the main thread."""
+        elapsed = (
+            (time.monotonic() - self._load_requested_at) * 1000
+            if self._load_requested_at is not None
+            else -1.0
+        )
+        diag(
+            "[DIAG] load finished: gen=%s rows=%d end_to_end=%.0f ms superseded=%d",
+            generation, len(row_cache), elapsed, self._load_superseded,
+        )
+        self._load_superseded = 0
         if generation != self._load_generation:
             return
         self._load_worker = None
