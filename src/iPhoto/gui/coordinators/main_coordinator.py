@@ -1170,6 +1170,10 @@ class MainCoordinator(QObject):
         project_root = Path(__file__).resolve().parents[4]
         model_dir = project_root / 'extension' / 'models' / 'clip-vit-base-patch32'
         library_root = Path(self._context.library.root())
+        # Reuse the session's embedding service: it is warmed before the face scan
+        # starts, so rebuilding a service here would reload the weights on every
+        # single search.
+        library_session = getattr(self, "_session", None)
 
         class SearchThread(QThread):
             finished = Signal(object, str)  # results or None, error
@@ -1229,8 +1233,19 @@ class MainCoordinator(QObject):
 
                     # 1. Load model
                     self.progress.emit("正在加载 AI 模型...", 0, 0)
-                    service = CLIPEmbeddingService(model_dir=self._model_dir)
-                    service._ensure_loaded()
+                    service = None
+                    if library_session is not None:
+                        try:
+                            service = library_session.get_embedding_service()
+                        except Exception:
+                            service = None
+                    if service is None:
+                        service = CLIPEmbeddingService(model_dir=self._model_dir)
+                    loader = getattr(service, "load", None)
+                    if callable(loader):
+                        loader()
+                    else:
+                        service._ensure_loaded()
 
                     if not service.is_loaded():
                         self.finished.emit(None, "AI 模型加载失败")
