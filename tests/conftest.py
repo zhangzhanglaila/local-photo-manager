@@ -323,13 +323,23 @@ def _close_leftover_widgets():
     app = _session_qt_application()
     if app is None:
         return
-    for widget in app.topLevelWidgets():
+    leftovers = list(app.topLevelWidgets())
+    for widget in leftovers:
         try:
             widget.close()
+            widget.deleteLater()
         except RuntimeError:  # already gone
             continue
     app.processEvents()
     _stop_running_qt_threads()
+    if leftovers:
+        # Collect only when this test actually leaked widgets: eager collection
+        # keeps destruction order deterministic (leaks otherwise survive until
+        # interpreter exit and abort intermittently), but doing it for every test
+        # triples the suite run time.
+        import gc
+
+        gc.collect()
 
 
 _TRACKED_THREADS: "list" = []
