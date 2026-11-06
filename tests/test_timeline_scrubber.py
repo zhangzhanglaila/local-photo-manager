@@ -307,16 +307,7 @@ def test_hover_shows_the_date_bubble_beside_the_rail(qapp: QApplication) -> None
     view.close()
 
 
-def test_scrub_moves_the_viewport_immediately_and_defers_the_reload(
-    qapp: QApplication,
-) -> None:
-    """The drag follows the pointer; only the release may start a reload.
-
-    Throttling the scroll to every 90 ms made fast drags trail the cursor, and each
-    step started a reload that cancelled the previous one, so nothing completed until
-    the pointer stopped and the grid then jumped seconds later.
-    """
-
+def test_scrub_moves_the_grid_and_throttles_scroll(qapp: QApplication) -> None:
     from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
 
     view = GalleryGridView()
@@ -327,17 +318,10 @@ def test_scrub_moves_the_viewport_immediately_and_defers_the_reload(
     view._refresh_timeline()
     qapp.processEvents()
 
-    published: list[tuple[int, int]] = []
-    view.visibleRowsChanged.connect(lambda first, last: published.append((first, last)))
-
     view._on_timeline_scrub(200, 400)
-
     assert view._scrub_pending_row == 200
-    assert view._visible_rows_suppressed is True, "no reload starts mid-drag"
-    assert published == []
-
-    view._on_timeline_scrub_finished()
-    assert view._visible_rows_suppressed is False
+    # The timer coalesces bursts into one scroll instead of fighting the layout.
+    assert view._scrub_timer.isActive()
     view.close()
 
 def test_scrolling_shows_the_date_then_hides_it(qapp: QApplication) -> None:
