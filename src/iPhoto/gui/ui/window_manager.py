@@ -367,7 +367,7 @@ class FramelessWindowManager(QObject):
 
     # ------------------------------------------------------------------
     # QObject overrides
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Handle title-bar dragging and badge positioning."""
 
         if watched in self._drag_sources:

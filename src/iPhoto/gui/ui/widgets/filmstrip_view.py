@@ -22,7 +22,7 @@ class FilmstripView(AssetGrid):
         "QListView::item { border: none; padding: 0px; margin: 0px; }"
     )
 
-    def __init__(self, parent=None) -> None:  # type: ignore[override]
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._base_height = 120
         self._spacing = 2
@@ -75,7 +75,7 @@ class FilmstripView(AssetGrid):
         finally:
             self._updating_style = False
 
-    def setModel(self, model) -> None:  # type: ignore[override]
+    def setModel(self, model) -> None:
         old = self.model()
         old_selection_model = self.selectionModel()
         old_about_to_reset = getattr(old, "modelAboutToBeReset", None)
@@ -146,16 +146,16 @@ class FilmstripView(AssetGrid):
             self.scheduleDelayedItemsLayout()
             self.refresh_spacers(top)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self.refresh_spacers()
         self._schedule_restore_scroll("resize")
 
-    def showEvent(self, event) -> None:  # type: ignore[override]
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         self._schedule_restore_scroll("show")
 
-    def hideEvent(self, event) -> None:  # type: ignore[override]
+    def hideEvent(self, event) -> None:
         self._capture_scroll_state()
         super().hideEvent(event)
 
@@ -372,7 +372,7 @@ class FilmstripView(AssetGrid):
     # ------------------------------------------------------------------
     # Event handling
     # ------------------------------------------------------------------
-    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         """Always request navigation when the user scrolls over the filmstrip.
 
         The filmstrip acts as a lightweight transport control, so the wheel gesture should

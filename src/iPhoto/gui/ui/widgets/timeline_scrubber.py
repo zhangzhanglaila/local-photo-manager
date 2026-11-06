@@ -131,7 +131,7 @@ class TimelineScrubber(QWidget):
 
         self._layout_y = positions
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._relayout()
 
@@ -261,7 +261,7 @@ class TimelineScrubber(QWidget):
     # ------------------------------------------------------------------
     # Painting
     # ------------------------------------------------------------------
-    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+    def paintEvent(self, event: QPaintEvent) -> None:
         if not self._spans or not self._layout_y:
             return
 
@@ -329,7 +329,7 @@ class TimelineScrubber(QWidget):
     # ------------------------------------------------------------------
     # Interaction
     # ------------------------------------------------------------------
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             y = int(event.position().y())
             self._scrubbing = True
@@ -338,7 +338,7 @@ class TimelineScrubber(QWidget):
                 self.scrubMoved.emit(row, y)
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event) -> None:
         y = int(event.position().y())
         hit = self.year_at(y)
         hover = hit[0] if hit is not None else None
@@ -354,13 +354,13 @@ class TimelineScrubber(QWidget):
                 self.hoverRowChanged.emit(row, y)
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._scrubbing:
             self._scrubbing = False
             self.scrubFinished.emit()
         super().mouseReleaseEvent(event)
 
-    def leaveEvent(self, event) -> None:  # type: ignore[override]
+    def leaveEvent(self, event) -> None:
         if self._hover_year is not None:
             self._hover_year = None
             self.update()

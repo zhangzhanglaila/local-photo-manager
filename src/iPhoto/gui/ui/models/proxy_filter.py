@@ -12,7 +12,7 @@ from .roles import Roles
 class AssetFilterProxyModel(QSortFilterProxyModel):
     """Filter model that exposes convenience helpers for static collections."""
 
-    def __init__(self, parent=None) -> None:  # type: ignore[override]
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._filter_mode: Optional[str] = None
         self._search_text: str = ""
@@ -113,7 +113,7 @@ class AssetFilterProxyModel(QSortFilterProxyModel):
 
         self._reapply_default_sort()
 
-    def setSourceModel(self, sourceModel: QAbstractItemModel | None) -> None:  # type: ignore[override]
+    def setSourceModel(self, sourceModel: QAbstractItemModel | None) -> None:
         """Attach *sourceModel* while keeping default sort hooks in sync."""
 
         if sourceModel is self:
@@ -154,7 +154,7 @@ class AssetFilterProxyModel(QSortFilterProxyModel):
     # ------------------------------------------------------------------
     # QSortFilterProxyModel API
     # ------------------------------------------------------------------
-    def filterAcceptsRow(self, row: int, parent) -> bool:  # type: ignore[override]
+    def filterAcceptsRow(self, row: int, parent) -> bool:
         # When using DB-side filtering, the source model only contains matching rows.
         # However, we still support text search on top of the DB results.
         # If _filter_mode is active, we assume the source model has already
@@ -204,7 +204,7 @@ class AssetFilterProxyModel(QSortFilterProxyModel):
                 return False
         return True
 
-    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:  # type: ignore[override]
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
         """Apply a timestamp-aware comparison when sorting by :data:`Roles.DT`."""
 
         if self.sortRole() == int(Roles.DT):

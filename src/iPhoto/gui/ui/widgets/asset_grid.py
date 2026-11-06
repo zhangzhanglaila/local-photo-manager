@@ -40,7 +40,7 @@ class AssetGrid(QListView):
 
     _DRAG_CANCEL_THRESHOLD = 6
 
-    def __init__(self, parent=None) -> None:  # type: ignore[override]
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._press_timer = QTimer(self)
         self._press_timer.setSingleShot(True)
@@ -67,7 +67,7 @@ class AssetGrid(QListView):
     # ------------------------------------------------------------------
     # Mouse event handling
     # ------------------------------------------------------------------
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             viewport_pos = self._viewport_pos(event)
             index = self.indexAt(viewport_pos)
@@ -80,7 +80,7 @@ class AssetGrid(QListView):
                     self._press_timer.start(LONG_PRESS_THRESHOLD_MS)
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._press_pos is not None and not self._long_press_active:
             viewport_pos = self._viewport_pos(event)
             if (viewport_pos - self._press_pos).manhattanLength() > self._DRAG_CANCEL_THRESHOLD:
@@ -93,7 +93,7 @@ class AssetGrid(QListView):
                 self._reset_state()
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         was_long_press = self._long_press_active
         index = self._pressed_index
         self._cancel_pending_long_press()
@@ -104,7 +104,7 @@ class AssetGrid(QListView):
                 self.itemClicked.emit(index)
         super().mouseReleaseEvent(event)
 
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         viewport_pos = self._viewport_pos(event)
         index = self.indexAt(viewport_pos)
         if event.button() == Qt.MouseButton.LeftButton and index.isValid():
@@ -112,7 +112,7 @@ class AssetGrid(QListView):
             self.itemDoubleClicked.emit(index)
         super().mouseDoubleClickEvent(event)
 
-    def leaveEvent(self, event) -> None:  # type: ignore[override]
+    def leaveEvent(self, event) -> None:
         if self._long_press_active:
             if self._should_suppress_preview_leave():
                 self._suppress_next_preview_leave = False
@@ -122,7 +122,7 @@ class AssetGrid(QListView):
         self._cancel_pending_long_press()
         super().leaveEvent(event)
 
-    def showEvent(self, event) -> None:  # type: ignore[override]
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         QTimer.singleShot(0, self._schedule_visible_rows_update)
 
@@ -174,7 +174,7 @@ class AssetGrid(QListView):
         # as well; otherwise Qt will refuse to deliver drag/drop events to the grid.
         self.viewport().setAcceptDrops(self._external_drop_enabled)
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if _IS_LINUX:
             # On Linux with WA_TranslucentBackground, enlarging the window
@@ -188,7 +188,7 @@ class AssetGrid(QListView):
             self.viewport().repaint()
         self._schedule_visible_rows_update()
 
-    def scrollContentsBy(self, dx: int, dy: int) -> None:  # type: ignore[override]
+    def scrollContentsBy(self, dx: int, dy: int) -> None:
         if _IS_LINUX:
             # Double-buffering strategy for Linux with WA_TranslucentBackground:
             #
@@ -218,7 +218,7 @@ class AssetGrid(QListView):
             super().scrollContentsBy(dx, dy)
         self._schedule_visible_rows_update()
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # type: ignore[override]
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if not self._external_drop_enabled:
             super().dragEnterEvent(event)
             return
@@ -232,7 +232,7 @@ class AssetGrid(QListView):
         event.setDropAction(Qt.DropAction.CopyAction)
         event.accept()
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # type: ignore[override]
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         if not self._external_drop_enabled:
             super().dragMoveEvent(event)
             return
@@ -246,7 +246,7 @@ class AssetGrid(QListView):
         event.setDropAction(Qt.DropAction.CopyAction)
         event.accept()
 
-    def dropEvent(self, event: QDropEvent) -> None:  # type: ignore[override]
+    def dropEvent(self, event: QDropEvent) -> None:
         if not self._external_drop_enabled or self._drop_handler is None:
             super().dropEvent(event)
             return
@@ -261,7 +261,7 @@ class AssetGrid(QListView):
         event.accept()
         self._drop_handler(paths)
 
-    def setModel(self, model) -> None:  # type: ignore[override]
+    def setModel(self, model) -> None:
         if self._model is not None:
             try:
                 self._model.modelAboutToBeReset.disconnect(self._on_model_about_to_reset)
@@ -398,7 +398,7 @@ class AssetGrid(QListView):
     # untouched.
     WHEEL_STEP_RATIO = 0.5
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta()
         if delta.y() == 0 or event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             super().wheelEvent(event)

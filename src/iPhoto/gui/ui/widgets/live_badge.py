@@ -37,17 +37,17 @@ class LiveBadge(QWidget):
     # ------------------------------------------------------------------
     # QWidget overrides
     # ------------------------------------------------------------------
-    def sizeHint(self) -> QSize:  # type: ignore[override]
+    def sizeHint(self) -> QSize:
         metrics = QFontMetrics(self._font)
         text_width = metrics.horizontalAdvance(self._TEXT)
         height = max(metrics.height(), self._icon_size) + (2 * self._vertical_padding)
         width = self._icon_size + text_width + (2 * self._horizontal_padding) + self._spacing
         return QSize(width, height)
 
-    def minimumSizeHint(self) -> QSize:  # type: ignore[override]
+    def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         rect = self.rect()
@@ -73,7 +73,7 @@ class LiveBadge(QWidget):
         painter.setFont(self._font)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self._TEXT)
 
-    def changeEvent(self, event: QEvent) -> None:  # type: ignore[override]
+    def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if event.type() in {QEvent.Type.FontChange, QEvent.Type.ApplicationFontChange}:
             self._font = QFont(self.font())

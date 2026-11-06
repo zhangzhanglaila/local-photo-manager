@@ -345,14 +345,14 @@ class _SliderRow(QFrame):
     def setSession(self, session: Optional[EditSession]) -> None:
         self._session = session
 
-    def setEnabled(self, enabled: bool) -> None:  # type: ignore[override]
+    def setEnabled(self, enabled: bool) -> None:
         """Keep the row enabled to capture clicks, but disable the visual slider."""
 
         super().setEnabled(True)
         self.slider.setEnabled(enabled)
         self._opacity_effect.setOpacity(1.0 if enabled else 0.5)
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         """Handle clicks when the slider is disabled to re-enable it."""
 
         if event.button() == Qt.MouseButton.LeftButton:

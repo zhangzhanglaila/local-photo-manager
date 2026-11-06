@@ -111,7 +111,7 @@ class FloatingToolTip(QWidget):
         )
         self.update()
 
-    def changeEvent(self, event) -> None:  # type: ignore[override]
+    def changeEvent(self, event) -> None:
         if event.type() in {
             QEvent.Type.PaletteChange,
             QEvent.Type.ApplicationPaletteChange,
@@ -120,7 +120,7 @@ class FloatingToolTip(QWidget):
             self._refresh_colours()
         super().changeEvent(event)
 
-    def showEvent(self, event) -> None:  # type: ignore[override]
+    def showEvent(self, event) -> None:
         self._refresh_colours()
         super().showEvent(event)
 
@@ -186,7 +186,7 @@ class FloatingToolTip(QWidget):
 
         return self.sizeHint()
 
-    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+    def paintEvent(self, event: QPaintEvent) -> None:
         """Draw a clipped, rounded rectangle with the tooltip text."""
 
         if self.width() < 1 or self.height() < 1:
@@ -326,7 +326,7 @@ class ToolTipEventFilter(QObject):
         for obj in objects:
             self.ignore_object(obj)
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Intercept tooltip events and display them using the floating popup."""
 
         if id(watched) in self._ignored_ids:

@@ -40,7 +40,7 @@ class PreviewRenderWorker(QRunnable):
 
         return self._session
 
-    def run(self) -> None:  # type: ignore[override]
+    def run(self) -> None:
         """Render the adjusted frame and notify listeners when done."""
 
         try:

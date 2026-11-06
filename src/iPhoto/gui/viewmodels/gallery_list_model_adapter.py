@@ -76,16 +76,16 @@ class GalleryListModelAdapter(QAbstractListModel):
 
         return self._store.year_spans()
 
-    def roleNames(self) -> Dict[int, bytes]:  # type: ignore[override]
+    def roleNames(self) -> Dict[int, bytes]:
         return role_names(super().roleNames())
 
-    def rowCount(self, parent=QModelIndex()) -> int:  # type: ignore[override]
+    def rowCount(self, parent=QModelIndex()) -> int:
         return self._store.count()
 
-    def columnCount(self, parent=QModelIndex()) -> int:  # type: ignore[override]
+    def columnCount(self, parent=QModelIndex()) -> int:
         return 1
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:  # type: ignore[override]
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         try:
             return self._data_impl(index, role)
         except Exception:
@@ -265,7 +265,7 @@ class GalleryListModelAdapter(QAbstractListModel):
             self.endInsertRows()
         return bool(removed_rows or inserted_dtos)
 
-    def removeRows(self, row: int, count: int, parent: QModelIndex = QModelIndex()) -> bool:  # type: ignore[override]
+    def removeRows(self, row: int, count: int, parent: QModelIndex = QModelIndex()) -> bool:
         if count <= 0 or row < 0:
             return False
         rows = list(range(row, row + count))

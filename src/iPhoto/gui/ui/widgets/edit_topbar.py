@@ -126,14 +126,14 @@ class SegmentedTopBar(QWidget):
 
     # ------------------------------------------------------------------
     # Input handling helpers
-    def mousePressEvent(self, event):  # type: ignore[override]
+    def mousePressEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton:
             return
         index = self._index_from_x(event.position().x())
         if index is not None:
             self.setCurrentIndex(index, animate=True)
 
-    def keyPressEvent(self, event):  # type: ignore[override]
+    def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_A):
             self.setCurrentIndex(self._index - 1)
         elif event.key() in (Qt.Key.Key_Right, Qt.Key.Key_D):
@@ -143,7 +143,7 @@ class SegmentedTopBar(QWidget):
 
     # ------------------------------------------------------------------
     # Painting helpers
-    def paintEvent(self, _):  # type: ignore[override]
+    def paintEvent(self, _):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
@@ -262,7 +262,7 @@ class SegmentedTopBar(QWidget):
 
     # ------------------------------------------------------------------
     # Sizing helpers
-    def sizeHint(self) -> QSize:  # type: ignore[override]
+    def sizeHint(self) -> QSize:
         """Return the preferred control size based on the label lengths."""
 
         segment_width = self._segment_width_hint()
@@ -270,7 +270,7 @@ class SegmentedTopBar(QWidget):
         total_width = int(round(2 * self.h_pad + segment_width * count))
         return QSize(total_width, self.height_hint)
 
-    def minimumSizeHint(self) -> QSize:  # type: ignore[override]
+    def minimumSizeHint(self) -> QSize:
         """Mirror :meth:`sizeHint` so layouts never collapse the control."""
 
         return self.sizeHint()

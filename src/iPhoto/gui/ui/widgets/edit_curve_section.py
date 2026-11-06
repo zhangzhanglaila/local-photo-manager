@@ -169,7 +169,7 @@ class EditCurveSection(QWidget):
         layout.addStretch(1)
         self._update_control_sizes(self.width())
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._update_control_sizes(event.size().width())
 

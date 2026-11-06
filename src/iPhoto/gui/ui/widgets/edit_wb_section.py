@@ -319,7 +319,7 @@ class EditWBSection(QWidget):
             self._pipette.setChecked(False)
 
     # Allow click-to-enable when WB is disabled
-    def mousePressEvent(self, event):  # type: ignore[override]
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._session is not None and not self._session.value("WB_Enabled"):
                 self._session.set_value("WB_Enabled", True)

@@ -53,7 +53,7 @@ class _PreviewWheelGuard(QObject):
     as zoom input while the preview is visible.
     """
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         del watched
         if event.type() == QEvent.Type.Wheel:
             event.accept()
@@ -81,7 +81,7 @@ class _RoundedVideoItem(QGraphicsVideoItem):
         self._corner_radius = radius
         self.update()
 
-    def paint(self, painter: QPainter, option, widget=None) -> None:  # type: ignore[override]
+    def paint(self, painter: QPainter, option, widget=None) -> None:
         if self._corner_radius > 0.0:
             rect = self.boundingRect()
             radius = min(self._corner_radius, min(rect.width(), rect.height()) / 2.0)
@@ -140,7 +140,7 @@ class _VideoView(QGraphicsView):
         self._image_item.setPixmap(QPixmap())
         self._video_item.setVisible(True)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._update_video_geometry()
         self._fit_image_item()
@@ -214,7 +214,7 @@ class _PreviewFrame(QWidget):
         self._update_masks()
         self.update()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -236,7 +236,7 @@ class _PreviewFrame(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._update_masks()
 
@@ -264,7 +264,7 @@ class _RhiShadowFrame(QWidget):
         self._corner_radius = radius
         self.update()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         del event
         if self.width() <= 0 or self.height() <= 0:
             return
@@ -402,11 +402,11 @@ class _RhiPreviewPopup(QWidget):
         self._video_area.stop()
         self.hide()
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._layout_layers()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         del event
         painter = QPainter(self)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)

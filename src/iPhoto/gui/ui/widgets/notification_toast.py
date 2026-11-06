@@ -108,7 +108,7 @@ class NotificationToast(QWidget):
 
     checkmark_progress = Property(float, _get_checkmark_progress, _set_checkmark_progress)
 
-    def event(self, event: QEvent) -> bool:  # type: ignore[override]
+    def event(self, event: QEvent) -> bool:
         """Ignore close requests while we are animating.
 
         Qt may issue spontaneous close events when the parent window hides.  We
@@ -153,7 +153,7 @@ class NotificationToast(QWidget):
         self._checkmark_animation.start()
         self._hide_timer.start()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         """Render the rounded rectangle, checkmark glyph, and caption text."""
 
         del event  # Unused Qt paint event placeholder.

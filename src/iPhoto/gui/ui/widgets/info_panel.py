@@ -180,7 +180,7 @@ class _FaceAvatarWidget(QLabel):
     def set_candidates(self, candidates: list[PersonSummary]) -> None:
         self._candidates = list(candidates)
 
-    def contextMenuEvent(self, event) -> None:  # type: ignore[override]
+    def contextMenuEvent(self, event) -> None:
         menu = self._build_context_menu()
         if menu is None:
             event.ignore()
@@ -1284,14 +1284,14 @@ class InfoPanel(QWidget):
         # Use only the deferred reflow to avoid a double layout pass.
         self._schedule_post_show_reflow(recenter=first_show)
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event) -> None:
         """Emit a dismissal signal so the detail state stays in sync."""
 
         self.shutdown()
         self.dismissed.emit()
         super().closeEvent(event)
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         """Draw drop shadow and an anti-aliased rounded rectangle."""
 
         del event
@@ -1337,7 +1337,7 @@ class InfoPanel(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         """Begin a drag when clicking on the title bar area."""
 
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1349,7 +1349,7 @@ class InfoPanel(QWidget):
                 return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         """Move the panel when dragging the title bar."""
 
         if self._continue_drag(event):
@@ -1357,7 +1357,7 @@ class InfoPanel(QWidget):
             return
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         """End a title-bar drag."""
 
         if self._end_drag():

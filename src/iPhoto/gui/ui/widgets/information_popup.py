@@ -206,7 +206,7 @@ class InformationPopup(QWidget):
             self._apply_content_style()
         super().changeEvent(event)
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         """Draw an anti-aliased rounded rectangle matching the window palette."""
 
         del event
@@ -232,7 +232,7 @@ class InformationPopup(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         """Begin a drag when clicking on the title bar area."""
 
         if event.button() == Qt.MouseButton.LeftButton:
@@ -245,7 +245,7 @@ class InformationPopup(QWidget):
                 return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         """Move the popup when dragging the title bar."""
 
         if self._drag_active:
@@ -260,7 +260,7 @@ class InformationPopup(QWidget):
                 return
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         """End a title-bar drag."""
 
         if self._drag_active:

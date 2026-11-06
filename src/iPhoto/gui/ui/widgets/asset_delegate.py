@@ -29,7 +29,7 @@ class AssetGridDelegate(QStyledItemDelegate):
 
     _FILMSTRIP_RATIO = 0.6
 
-    def __init__(self, parent=None, *, filmstrip_mode: bool = False) -> None:  # type: ignore[override]
+    def __init__(self, parent=None, *, filmstrip_mode: bool = False) -> None:
         super().__init__(parent)
         self._filmstrip_mode = filmstrip_mode
         self._base_size = 192
@@ -45,7 +45,7 @@ class AssetGridDelegate(QStyledItemDelegate):
     # ------------------------------------------------------------------
     # Painting
     # ------------------------------------------------------------------
-    def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:  # type: ignore[override]
+    def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:
         if bool(index.data(Roles.IS_SPACER)):
             hint = index.data(Qt.ItemDataRole.SizeHintRole)
             if isinstance(hint, QSize) and hint.isValid():
@@ -62,7 +62,7 @@ class AssetGridDelegate(QStyledItemDelegate):
         width = int(height * self._FILMSTRIP_RATIO)
         return QSize(width, height)
 
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:  # type: ignore[override]
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
         if bool(index.data(Roles.IS_SPACER)):
             return
 

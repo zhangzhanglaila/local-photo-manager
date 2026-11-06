@@ -222,7 +222,7 @@ class ImageViewer(QWidget):
 
         self._wheel_action = "zoom" if action == "zoom" else "navigate"
 
-    def resizeEvent(self, event: QEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QEvent) -> None:
         """Ensure the loading overlay always covers the full viewer area."""
 
         super().resizeEvent(event)
@@ -300,7 +300,7 @@ class ImageViewer(QWidget):
     # ------------------------------------------------------------------
     # QWidget overrides
     # ------------------------------------------------------------------
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if self._pixmap is not None:
             # During the initial layout pass Qt may deliver resize events while the
@@ -318,7 +318,7 @@ class ImageViewer(QWidget):
         # intact.
         super().mousePressEvent(event)
 
-    def eventFilter(self, obj, event):  # type: ignore[override]
+    def eventFilter(self, obj, event):
         if obj is self._scroll_area.viewport():
             if event.type() == QEvent.Type.Wheel:
                 wheel_event = cast(QWheelEvent, event)

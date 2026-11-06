@@ -39,7 +39,7 @@ class ImageLoadWorker(QRunnable):
 
         return self._source
 
-    def run(self) -> None:  # type: ignore[override]
+    def run(self) -> None:
         """Execute the file I/O and decoding work on a background thread."""
 
         try:

@@ -55,7 +55,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------
     # QWidget overrides
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Tear down background services before the window closes."""
 
         if self.window_manager is not None:
@@ -64,31 +64,31 @@ class MainWindow(QMainWindow):
             self.coordinator.shutdown()
         super().closeEvent(event)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         # ``setupUi`` can emit a resize event before the frameless manager is
         # constructed.  Guard against that early call.
         if self.window_manager is not None:
             self.window_manager.handle_resize_event(event)
 
-    def changeEvent(self, event: QEvent) -> None:  # type: ignore[override]
+    def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if self.window_manager is not None:
             self.window_manager.handle_change_event(event)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         # Escape is handled by AppShortcutManager → exit_fullscreen (guarded).
         # Do NOT unconditionally close the window here.
         super().keyPressEvent(event)
 
     # ------------------------------------------------------------------
     # Window chrome accessors used by child widgets
-    def statusBar(self) -> ChromeStatusBar:  # type: ignore[override]
+    def statusBar(self) -> ChromeStatusBar:
         """Return the custom status bar embedded in the rounded shell."""
 
         return self.ui.status_bar
 
-    def menuBar(self) -> QMenuBar:  # type: ignore[override]
+    def menuBar(self) -> QMenuBar:
         """Expose the menu bar hosted inside the rounded window shell."""
 
         if self.window_manager is None:

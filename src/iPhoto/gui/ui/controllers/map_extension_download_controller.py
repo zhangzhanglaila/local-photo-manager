@@ -83,7 +83,7 @@ class _MapExtensionProgressDialog(QDialog):
     def allow_close(self) -> None:
         self._allow_close = True
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event) -> None:
         if not self._allow_close:
             event.ignore()
             return

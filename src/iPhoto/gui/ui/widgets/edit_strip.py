@@ -96,33 +96,33 @@ class BWSlider(QWidget):
 
     # ------------------------------------------------------------------
     # Event handlers
-    def enterEvent(self, _):  # type: ignore[override]
+    def enterEvent(self, _):
         self._hover = True
         self.update()
 
-    def leaveEvent(self, _):  # type: ignore[override]
+    def leaveEvent(self, _):
         self._hover = False
         self.update()
 
-    def mousePressEvent(self, event):  # type: ignore[override]
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.interactionStarted.emit()
             self._set_by_pos(event.position().x())
 
-    def mouseMoveEvent(self, event):  # type: ignore[override]
+    def mouseMoveEvent(self, event):
         if self._dragging:
             self._set_by_pos(event.position().x())
 
-    def mouseReleaseEvent(self, event):  # type: ignore[override]
+    def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._dragging:
             self._dragging = False
             self.unsetCursor()
             self.valueCommitted.emit(self._value)
             self.interactionFinished.emit()
 
-    def wheelEvent(self, event):  # type: ignore[override]
+    def wheelEvent(self, event):
         self.interactionStarted.emit()
         step = (self._maximum - self._minimum) * 0.01
         delta = event.angleDelta().y() / 120.0
@@ -130,7 +130,7 @@ class BWSlider(QWidget):
         self.valueCommitted.emit(self._value)
         self.interactionFinished.emit()
 
-    def keyPressEvent(self, event):  # type: ignore[override]
+    def keyPressEvent(self, event):
         step = (self._maximum - self._minimum) * 0.01
         if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_A):
             self.interactionStarted.emit()
@@ -146,7 +146,7 @@ class BWSlider(QWidget):
 
     # ------------------------------------------------------------------
     # Rendering helpers
-    def paintEvent(self, _):  # type: ignore[override]
+    def paintEvent(self, _):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 

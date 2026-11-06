@@ -181,17 +181,17 @@ class QtLocationMapWidget(QQuickWidget):
 
         return self
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         self.shutdown()
         super().closeEvent(event)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._wrap_center()
         self._sync_map_camera()
         self._emit_view_change()
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._last_mouse_pos = event.position()
@@ -201,7 +201,7 @@ class QtLocationMapWidget(QQuickWidget):
             return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._dragging and event.buttons() & Qt.MouseButton.LeftButton:
             self._set_drag_cursor()
             current_pos = event.position()
@@ -219,7 +219,7 @@ class QtLocationMapWidget(QQuickWidget):
             return
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._dragging:
             self._dragging = False
             self._reset_drag_cursor()
@@ -228,7 +228,7 @@ class QtLocationMapWidget(QQuickWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta().y()
         if delta == 0:
             super().wheelEvent(event)

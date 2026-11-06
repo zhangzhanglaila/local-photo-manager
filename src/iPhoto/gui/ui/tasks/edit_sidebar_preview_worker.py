@@ -79,7 +79,7 @@ class EditSidebarPreviewWorker(QRunnable):
         self.signals = EditSidebarPreviewSignals()
 
     # ------------------------------------------------------------------
-    def run(self) -> None:  # type: ignore[override]
+    def run(self) -> None:
         """Prepare the sidebar preview image and compute colour statistics."""
 
         if self._source_image.isNull():

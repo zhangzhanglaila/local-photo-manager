@@ -251,14 +251,14 @@ class MapGLWidget(QOpenGLWidget):
         return self
 
     # ------------------------------------------------------------------
-    def initializeGL(self) -> None:  # type: ignore[override]
+    def initializeGL(self) -> None:
         """Initialize the GL clear color to match the map background."""
 
         self._clear_opaque_backbuffer()
         self._log_gl_debug_once("initializeGL")
 
     # ------------------------------------------------------------------
-    def paintGL(self) -> None:  # type: ignore[override]
+    def paintGL(self) -> None:
         """Render the current frame inside the active OpenGL context."""
 
         self._clear_opaque_backbuffer()
@@ -283,7 +283,7 @@ class MapGLWidget(QOpenGLWidget):
             painter.end()
 
     # ------------------------------------------------------------------
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         """Propagate resize events and notify listeners about the new viewport."""
 
         super().resizeEvent(event)
@@ -292,7 +292,7 @@ class MapGLWidget(QOpenGLWidget):
         self._emit_view_change(*self._controller.view_state())
 
     # ------------------------------------------------------------------
-    def showEvent(self, event: QShowEvent) -> None:  # type: ignore[override]
+    def showEvent(self, event: QShowEvent) -> None:
         """Request a full repaint when the widget becomes visible."""
 
         super().showEvent(event)
@@ -301,7 +301,7 @@ class MapGLWidget(QOpenGLWidget):
         self._queue_macos_followup_update()
 
     # ------------------------------------------------------------------
-    def hideEvent(self, event: QHideEvent) -> None:  # type: ignore[override]
+    def hideEvent(self, event: QHideEvent) -> None:
         """Pause repaint requests while the GL map surface is hidden."""
 
         if sys.platform != "darwin":
@@ -395,35 +395,35 @@ class MapGLWidget(QOpenGLWidget):
         )
 
     # ------------------------------------------------------------------
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Ensure worker threads shut down before the OpenGL surface disappears."""
 
         self.shutdown()
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event) -> None:
         """Forward mouse press events to the shared interaction handler."""
 
         self._controller.handle_mouse_press(event)
         super().mousePressEvent(event)
 
     # ------------------------------------------------------------------
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event) -> None:
         """Forward mouse move events to the shared interaction handler."""
 
         self._controller.handle_mouse_move(event)
         super().mouseMoveEvent(event)
 
     # ------------------------------------------------------------------
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event) -> None:
         """Forward mouse release events to the shared interaction handler."""
 
         self._controller.handle_mouse_release(event)
         super().mouseReleaseEvent(event)
 
     # ------------------------------------------------------------------
-    def wheelEvent(self, event) -> None:  # type: ignore[override]
+    def wheelEvent(self, event) -> None:
         """Forward wheel events to the shared interaction handler."""
 
         self._controller.handle_wheel_event(event)
@@ -564,18 +564,18 @@ class _MapOpenGLWindow(QOpenGLWindow):
         self.request_full_update()
 
     # ------------------------------------------------------------------
-    def initializeGL(self) -> None:  # type: ignore[override]
+    def initializeGL(self) -> None:
         _clear_current_opaque_backbuffer()
         self._log_gl_debug_once("initializeGL")
 
     # ------------------------------------------------------------------
-    def resizeGL(self, width: int, height: int) -> None:  # type: ignore[override]
+    def resizeGL(self, width: int, height: int) -> None:
         del width, height
         self.request_full_update()
         self._owner._emit_view_change(*self._controller.view_state())
 
     # ------------------------------------------------------------------
-    def paintGL(self) -> None:  # type: ignore[override]
+    def paintGL(self) -> None:
         _clear_current_opaque_backbuffer()
 
         painter = QPainter()
@@ -595,28 +595,28 @@ class _MapOpenGLWindow(QOpenGLWindow):
             painter.end()
 
     # ------------------------------------------------------------------
-    def exposeEvent(self, event) -> None:  # type: ignore[override]
+    def exposeEvent(self, event) -> None:
         super().exposeEvent(event)
         if self.isExposed():
             self.request_full_update()
 
     # ------------------------------------------------------------------
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         self._controller.handle_mouse_press(event)
         super().mousePressEvent(event)
 
     # ------------------------------------------------------------------
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._controller.handle_mouse_move(event)
         super().mouseMoveEvent(event)
 
     # ------------------------------------------------------------------
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self._controller.handle_mouse_release(event)
         super().mouseReleaseEvent(event)
 
     # ------------------------------------------------------------------
-    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         self._controller.handle_wheel_event(event)
         super().wheelEvent(event)
 
@@ -776,19 +776,19 @@ class MapGLWindowWidget(QWidget):
         self._window.remove_post_render_painter(callback)
 
     # ------------------------------------------------------------------
-    def showEvent(self, event: QShowEvent) -> None:  # type: ignore[override]
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         self.request_full_update()
         if sys.platform == "darwin":
             QTimer.singleShot(0, self.request_full_update)
 
     # ------------------------------------------------------------------
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self.request_full_update()
 
     # ------------------------------------------------------------------
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         self.shutdown()
         super().closeEvent(event)
 

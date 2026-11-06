@@ -106,7 +106,7 @@ class _MarkerOverlayWidget(QWidget):
         self._painters = [existing for existing in self._painters if existing != callback]
         self.update()
 
-    def paintEvent(self, _event) -> None:  # type: ignore[override]
+    def paintEvent(self, _event) -> None:
         if not self._painters:
             return
         painter = QPainter(self)
@@ -654,7 +654,7 @@ class NativeOsmAndWidget(QWidget):
         top_left_y = center_py - self.height() / 2.0
         return QPointF(world_x - top_left_x, world_y - top_left_y)
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if self._is_shutdown():
             return super().eventFilter(watched, event)
         if watched is self._native_event_target or watched is self._native_widget:
@@ -688,7 +688,7 @@ class NativeOsmAndWidget(QWidget):
 
         return super().eventFilter(watched, event)
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if self._is_shutdown():
             return
@@ -696,7 +696,7 @@ class NativeOsmAndWidget(QWidget):
         self._sync_marker_overlay_geometry()
         self._schedule_deferred_view_sync()
 
-    def showEvent(self, event: QShowEvent) -> None:  # type: ignore[override]
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if self._is_shutdown():
             return
@@ -708,7 +708,7 @@ class NativeOsmAndWidget(QWidget):
         self._sync_marker_overlay_geometry()
         self._schedule_deferred_view_sync()
 
-    def hideEvent(self, event: QHideEvent) -> None:  # type: ignore[override]
+    def hideEvent(self, event: QHideEvent) -> None:
         if not self._is_shutdown():
             if self._state_timer.isActive():
                 self._state_timer.stop()
@@ -721,7 +721,7 @@ class NativeOsmAndWidget(QWidget):
                 self._overlay_window.hide()
         super().hideEvent(event)
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         self.shutdown()
         super().closeEvent(event)
 

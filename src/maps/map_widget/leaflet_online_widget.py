@@ -389,17 +389,17 @@ class LeafletOnlineMapWidget(QWidget):
     def event_target(self) -> QWidget:
         return self
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         self.shutdown()
         super().closeEvent(event)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._wrap_center()
         self.update()
         self._emit_view_change()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         del event
         painter = QPainter(self)
         try:
@@ -409,7 +409,7 @@ class LeafletOnlineMapWidget(QWidget):
         finally:
             painter.end()
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._last_mouse_pos = event.position()
@@ -419,7 +419,7 @@ class LeafletOnlineMapWidget(QWidget):
             return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._dragging and event.buttons() & Qt.MouseButton.LeftButton:
             current_pos = event.position()
             delta = current_pos - self._last_mouse_pos
@@ -430,7 +430,7 @@ class LeafletOnlineMapWidget(QWidget):
             return
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._dragging:
             self._dragging = False
             self._reset_drag_cursor()
@@ -439,7 +439,7 @@ class LeafletOnlineMapWidget(QWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta().y()
         if delta == 0:
             super().wheelEvent(event)

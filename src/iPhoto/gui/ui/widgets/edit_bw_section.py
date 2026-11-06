@@ -361,14 +361,14 @@ class _SliderRow(QFrame):
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity_effect)
 
-    def setEnabled(self, enabled: bool) -> None:  # type: ignore[override]
+    def setEnabled(self, enabled: bool) -> None:
         """Keep the wrapper enabled so we can detect activation clicks."""
 
         super().setEnabled(True)
         self.slider.setEnabled(enabled)
         self._opacity_effect.setOpacity(1.0 if enabled else 0.5)
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         """Forward left clicks to the slider even while disabled."""
 
         if event.button() == Qt.MouseButton.LeftButton:

@@ -1023,7 +1023,7 @@ class GLImageViewer(QRhiWidget):
 
     # --------------------------- GL lifecycle ---------------------------
 
-    def initialize(self, cb) -> None:  # type: ignore[override]
+    def initialize(self, cb) -> None:
         """QRhiWidget override: initialise renderer resources once."""
         if self._gl_initialized:
             return
@@ -1069,7 +1069,7 @@ class GLImageViewer(QRhiWidget):
         gf.glViewport(0, 0, int(self.width() * dpr), int(self.height() * dpr))
         self._gl_initialized = True
 
-    def releaseResources(self) -> None:  # type: ignore[override]
+    def releaseResources(self) -> None:
         """QRhiWidget override: release renderer resources."""
         self._gl_initialized = False
         if self._renderer is not None:
@@ -1080,7 +1080,7 @@ class GLImageViewer(QRhiWidget):
                 rhi.makeThreadLocalNativeContextCurrent()
             self._renderer.destroy_resources()
 
-    def render(self, cb) -> None:  # type: ignore[override]
+    def render(self, cb) -> None:
         """QRhiWidget override: render the current image/video frame."""
         if not self._uses_raw_gl:
             self._render_rhi(cb)
@@ -1504,7 +1504,7 @@ class GLImageViewer(QRhiWidget):
     # ``self.renderTarget().pixelSize()``, which automatically accounts for
     # DPR and window resizing.
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._loading_overlay.update_geometry(self.size())
         if self._auto_crop_view_locked and not self._crop_controller.is_active():
@@ -1525,7 +1525,7 @@ class GLImageViewer(QRhiWidget):
                 self._video_frame_dirty,
             )
 
-    def showEvent(self, event) -> None:  # type: ignore[override]
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         # Request a fresh render when the widget becomes visible again
         # (e.g. after switching back from the video surface).

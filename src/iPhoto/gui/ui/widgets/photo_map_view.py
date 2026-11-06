@@ -201,7 +201,7 @@ class _MarkerLayer(QWidget):
         for cluster in self._clusters:
             self._paint_cluster(painter, cluster)
 
-    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+    def paintEvent(self, event: QPaintEvent) -> None:
         if self._buffer_dirty or self._back_buffer is None or self._back_buffer.size() != self.size():
             buf = QPixmap(self.size())
             buf.fill(Qt.transparent)
@@ -321,7 +321,7 @@ class _GLMarkerLayer(_MarkerLayer):
         super().__init__(None)
         self._target = target
 
-    def update(self, *args, **kwargs) -> None:  # type: ignore[override]
+    def update(self, *args, **kwargs) -> None:
         del args, kwargs
         self._target.request_full_update()
 
@@ -687,7 +687,7 @@ class PhotoMapView(QWidget):
         self._assets_library_root = None
         self._marker_controller.clear()
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if not self._map_widget_built:
             return
@@ -697,7 +697,7 @@ class PhotoMapView(QWidget):
         # is what the one-shot auto-fit is waiting for.
         self._maybe_fit_online_map_to_assets(self._assets)
 
-    def hideEvent(self, event) -> None:  # type: ignore[override]
+    def hideEvent(self, event) -> None:
         """Ensure the custom tooltip is dismissed when the view is hidden."""
 
         if self._last_tooltip_text:
@@ -705,7 +705,7 @@ class PhotoMapView(QWidget):
             self._last_tooltip_text = ""
         super().hideEvent(event)
 
-    def focusOutEvent(self, event) -> None:  # type: ignore[override]
+    def focusOutEvent(self, event) -> None:
         """Clear hover feedback when the map relinquishes focus."""
 
         if self._last_tooltip_text:
@@ -713,7 +713,7 @@ class PhotoMapView(QWidget):
             self._last_tooltip_text = ""
         super().focusOutEvent(event)
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if not self._map_widget_built:
             return super().eventFilter(watched, event)
         if watched is self._map_widget and event.type() in {
@@ -785,7 +785,7 @@ class PhotoMapView(QWidget):
                         return True
         return super().eventFilter(watched, event)
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    def closeEvent(self, event) -> None:
         """Ensure background workers shut down before the widget closes."""
 
         # Qt can deliver closeEvent for an instance whose __init__ aborted early

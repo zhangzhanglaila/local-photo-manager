@@ -97,7 +97,7 @@ class FaceScanWorker(QThread):
             self.statusChanged.emit("正在扫描人脸...")
             LOGGER.info("Face scan resumed after video playback")
 
-    def run(self) -> None:  # type: ignore[override]
+    def run(self) -> None:
         try:
             self._run_impl()
         except Exception:

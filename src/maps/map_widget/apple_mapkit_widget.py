@@ -211,17 +211,17 @@ class AppleMapKitWidget(QWidget):
     def event_target(self) -> QWidget:
         return self._web_view if isinstance(self._web_view, QWidget) else self
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         self.shutdown()
         super().closeEvent(event)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._wrap_center()
         self._sync_map_camera()
         self._emit_view_change()
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         if self._web_view is not None:
             super().mousePressEvent(event)
             return
@@ -234,7 +234,7 @@ class AppleMapKitWidget(QWidget):
             return
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._web_view is not None:
             super().mouseMoveEvent(event)
             return
@@ -248,7 +248,7 @@ class AppleMapKitWidget(QWidget):
             return
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._web_view is not None:
             super().mouseReleaseEvent(event)
             return
@@ -260,7 +260,7 @@ class AppleMapKitWidget(QWidget):
             return
         super().mouseReleaseEvent(event)
 
-    def wheelEvent(self, event: QWheelEvent) -> None:  # type: ignore[override]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         if self._web_view is not None:
             super().wheelEvent(event)
             return

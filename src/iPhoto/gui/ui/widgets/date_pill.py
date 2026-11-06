@@ -60,7 +60,7 @@ class DatePill(QWidget):
     # ------------------------------------------------------------------
     # Geometry
     # ------------------------------------------------------------------
-    def sizeHint(self) -> QSize:  # type: ignore[override]
+    def sizeHint(self) -> QSize:
         metrics = QFontMetrics(self.font())
         width = metrics.horizontalAdvance(self._text) + PADDING_X * 2
         height = metrics.height() + PADDING_Y * 2
@@ -69,7 +69,7 @@ class DatePill(QWidget):
     # ------------------------------------------------------------------
     # Painting
     # ------------------------------------------------------------------
-    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+    def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
 

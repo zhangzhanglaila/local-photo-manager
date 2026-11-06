@@ -73,7 +73,7 @@ class RoundedWindowShell(QWidget):
 
     # ------------------------------------------------------------------
     # QWidget overrides
-    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+    def paintEvent(self, event: QPaintEvent) -> None:
         """Draw an anti-aliased rounded rectangle matching the window palette."""
 
         if self.width() <= 0 or self.height() <= 0:

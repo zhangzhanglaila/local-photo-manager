@@ -84,24 +84,24 @@ class _DropAwareTree(QTreeView):
     # ------------------------------------------------------------------
     # Qt overrides
     # ------------------------------------------------------------------
-    def setModel(self, model) -> None:  # type: ignore[override]
+    def setModel(self, model) -> None:
         super().setModel(model)
         if isinstance(model, AlbumTreeModel):
             self._model = model
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # type: ignore[override]
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if self._should_accept_event(event):
             event.acceptProposedAction()
             return
         event.ignore()
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # type: ignore[override]
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
         if self._should_accept_event(event):
             event.acceptProposedAction()
             return
         event.ignore()
 
-    def dropEvent(self, event: QDropEvent) -> None:  # type: ignore[override]
+    def dropEvent(self, event: QDropEvent) -> None:
         target = self._resolve_target_path(event)
         paths = self._extract_local_files(event)
         if target is None or not paths:
@@ -511,7 +511,7 @@ class AlbumSidebar(QWidget):
         if item.node_type == NodeType.ACTION:
             self.bindLibraryRequested.emit()
 
-    def eventFilter(self, watched: QObject, event) -> bool:  # type: ignore[override]
+    def eventFilter(self, watched: QObject, event) -> bool:
         """Give the header ＋ a button affordance (cursor + hint)."""
 
         if getattr(event, "type", None) is not None and watched is self._tree.viewport():

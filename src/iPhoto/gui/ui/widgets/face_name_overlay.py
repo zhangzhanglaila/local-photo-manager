@@ -64,7 +64,7 @@ class _FaceNameChip(QLabel):
         self.hovered.emit(self._face_id, True)
         super().enterEvent(event)
 
-    def leaveEvent(self, event) -> None:  # type: ignore[override]
+    def leaveEvent(self, event) -> None:
         self.hovered.emit(self._face_id, False)
         super().leaveEvent(event)
 
@@ -128,7 +128,7 @@ class _FaceNameEditor(QLineEdit):
         ]
         return matches[0] if len(matches) == 1 else None
 
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
+    def keyPressEvent(self, event) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._closing = True
             self.commitRequested.emit()
@@ -141,7 +141,7 @@ class _FaceNameEditor(QLineEdit):
             return
         super().keyPressEvent(event)
 
-    def focusOutEvent(self, event) -> None:  # type: ignore[override]
+    def focusOutEvent(self, event) -> None:
         super().focusOutEvent(event)
         popup = self._completer.popup()
         if popup is not None and popup.isVisible():
@@ -301,11 +301,11 @@ class FaceNameOverlayWidget(QWidget):
         target = self._manual_editor.geometry().center() if self._manual_editor is not None else self.rect().center()
         QToolTip.showText(self.mapToGlobal(target), message, self)
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._relayout()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         del event
         if not self.isVisible():
             return

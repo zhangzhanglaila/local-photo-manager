@@ -214,7 +214,7 @@ class _PinOverlay(QWidget):
     def pin_pixmap(self) -> QPixmap:
         return self._pin
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         pass
 
 
@@ -230,7 +230,7 @@ class _RoundedMapClipFrame(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setAutoFillBackground(False)
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -451,34 +451,34 @@ class InfoLocationMapView(QWidget):
         self._map_clip_frame.hide()
         self._map_host.hide()
 
-    def hasHeightForWidth(self) -> bool:  # type: ignore[override]
+    def hasHeightForWidth(self) -> bool:
         return True
 
-    def heightForWidth(self, width: int) -> int:  # type: ignore[override]
+    def heightForWidth(self, width: int) -> int:
         return max(self._MINIMUM_SIDE, int(width))
 
-    def sizeHint(self) -> QSize:  # type: ignore[override]
+    def sizeHint(self) -> QSize:
         return QSize(self._MINIMUM_SIDE, self._MINIMUM_SIDE)
 
-    def minimumSizeHint(self) -> QSize:  # type: ignore[override]
+    def minimumSizeHint(self) -> QSize:
         return QSize(self._MINIMUM_SIDE, self._MINIMUM_SIDE)
 
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._sync_square_height()
         self._sync_corner_masks()
         self._sync_overlay_geometry()
 
-    def showEvent(self, event) -> None:  # type: ignore[override]
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         self._sync_overlay_geometry()
         self._queue_viewport_sync()
 
-    def hideEvent(self, event) -> None:  # type: ignore[override]
+    def hideEvent(self, event) -> None:
         self._reset_drag_cursor()
         super().hideEvent(event)
 
-    def event(self, event: QEvent) -> bool:  # type: ignore[override]
+    def event(self, event: QEvent) -> bool:
         if event.type() == self._PIN_SYNC_EVENT:
             self._pending_pin_sync_queue = False
             if self._map_widget_ready_for_sync():

@@ -165,7 +165,7 @@ class StartupOverlay(QWidget):
         except RuntimeError:
             pass
 
-    def eventFilter(self, obj, event):  # type: ignore[override]
+    def eventFilter(self, obj, event):
         if (
             not self._dismissed
             and obj is self.parentWidget()

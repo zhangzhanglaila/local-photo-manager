@@ -582,7 +582,7 @@ class VideoRendererWidget(QRhiWidget):
     # ------------------------------------------------------------------
     # QRhiWidget overrides
     # ------------------------------------------------------------------
-    def initialize(self, cb) -> None:  # type: ignore[override]
+    def initialize(self, cb) -> None:
         """Create GPU resources the first time the widget is rendered."""
         if self._initialized:
             return
@@ -714,7 +714,7 @@ class VideoRendererWidget(QRhiWidget):
         self._initialized = True
         _log.debug("VideoRendererWidget: RHI resources initialised")
 
-    def render(self, cb) -> None:  # type: ignore[override]
+    def render(self, cb) -> None:
         """Render the current video frame (or letterbox if no frame is present)."""
         if not self._initialized:
             # GPU pipeline not yet ready but we MUST still clear the render
@@ -799,7 +799,7 @@ class VideoRendererWidget(QRhiWidget):
         color.setAlpha(255)
         return color
 
-    def releaseResources(self) -> None:  # type: ignore[override]
+    def releaseResources(self) -> None:
         """Clean up GPU resources."""
         self._initialized = False
         # Qt will clean up RHI resources when the widget is destroyed

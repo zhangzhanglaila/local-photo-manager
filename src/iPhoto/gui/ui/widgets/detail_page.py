@@ -616,7 +616,7 @@ class DetailPageWidget(QWidget):
         self.prev_button.raise_()
         self.next_button.raise_()
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._position_nav_buttons()
 

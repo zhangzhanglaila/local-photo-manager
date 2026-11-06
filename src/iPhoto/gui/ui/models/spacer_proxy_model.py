@@ -62,7 +62,7 @@ class SpacerProxyModel(QAbstractProxyModel):
     # ------------------------------------------------------------------
     # QAbstractProxyModel overrides
     # ------------------------------------------------------------------
-    def setSourceModel(self, source_model) -> None:  # type: ignore[override]
+    def setSourceModel(self, source_model) -> None:
         if source_model is self:
             raise ValueError(
                 "Circular reference detected: SpacerProxyModel cannot be its own source."

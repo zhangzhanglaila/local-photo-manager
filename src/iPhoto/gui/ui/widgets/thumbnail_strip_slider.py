@@ -149,7 +149,7 @@ class ThumbnailStripSlider(QFrame):
         finally:
             self.blockSignals(block)
 
-    def setEnabled(self, enabled: bool) -> None:  # type: ignore[override]
+    def setEnabled(self, enabled: bool) -> None:
         """Keep the frame enabled to capture clicks, but disable the visual track."""
         super().setEnabled(True)  # 保持 QFrame 启用
         if self._label_widget is not None:
@@ -306,16 +306,16 @@ class _ThumbnailTrack(QWidget):
         self._slider = slider
 
     # ------------------------------------------------------------------
-    def sizeHint(self) -> QSize:  # type: ignore[override]
+    def sizeHint(self) -> QSize:
         if self._slider is None:
             return QSize(320, 56)
         return QSize(320, self._slider._track_height)
 
-    def minimumSizeHint(self) -> QSize:  # type: ignore[override]
+    def minimumSizeHint(self) -> QSize:
         return self.sizeHint()
 
     # ------------------------------------------------------------------
-    def paintEvent(self, _) -> None:  # type: ignore[override]
+    def paintEvent(self, _) -> None:
         if self._slider is None:
             return
         slider = self._slider
@@ -388,7 +388,7 @@ class _ThumbnailTrack(QWidget):
 
     # ------------------------------------------------------------------
     # [Gemini] 修改 mousePressEvent
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton or self._slider is None:
             super().mousePressEvent(event)
             return
@@ -404,14 +404,14 @@ class _ThumbnailTrack(QWidget):
         self._update_value_from_position(event.position().x())
         event.accept()
 
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event) -> None:
         if self._slider is None or not self._slider._pressed:
             super().mouseMoveEvent(event)
             return
         self._update_value_from_position(event.position().x())
         event.accept()
 
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event) -> None:
         if (
             self._slider is None
             or not self._slider._pressed
@@ -425,7 +425,7 @@ class _ThumbnailTrack(QWidget):
         self._slider.interactionFinished.emit()
         event.accept()
 
-    def leaveEvent(self, event) -> None:  # type: ignore[override]
+    def leaveEvent(self, event) -> None:
         if self._slider is not None and not self._slider._pressed:
             self.unsetCursor()
         super().leaveEvent(event)

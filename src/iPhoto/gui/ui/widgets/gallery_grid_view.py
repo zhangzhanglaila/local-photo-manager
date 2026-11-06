@@ -53,7 +53,7 @@ class GalleryGridView(AssetGrid):
     # dot pinned for this long so it does not snap back.
     SCRUB_SETTLE_S = 0.35
 
-    def __init__(self, parent=None) -> None:  # type: ignore[override]
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._selection_mode_enabled = False
         self._empty_label = None
@@ -136,7 +136,7 @@ class GalleryGridView(AssetGrid):
     # ------------------------------------------------------------------
     # Painting
     # ------------------------------------------------------------------
-    def paintEvent(self, event: QPaintEvent) -> None:  # type: ignore[override]
+    def paintEvent(self, event: QPaintEvent) -> None:
         """Paint visible items and one extra row above/below the viewport.
 
         By pre-rendering items just outside the visible area we prevent the
@@ -245,7 +245,7 @@ class GalleryGridView(AssetGrid):
         finally:
             painter.end()
 
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         viewport_width = self.viewport().width()
         if viewport_width <= 0:
@@ -718,7 +718,7 @@ class GalleryGridView(AssetGrid):
         finally:
             self._updating_style = False
 
-    def setModel(self, model) -> None:  # type: ignore[override]
+    def setModel(self, model) -> None:
         previous = self.model()
         if previous is not None:
             for signal_name, handler in [

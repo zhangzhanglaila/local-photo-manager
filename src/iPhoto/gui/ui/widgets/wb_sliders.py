@@ -58,7 +58,7 @@ class _StyledComboBox(QComboBox):
             """
         )
 
-    def paintEvent(self, event):  # type: ignore[override]
+    def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -147,7 +147,7 @@ class _WarmthSlider(QWidget):
         return self._value / 100.0
 
     # -- painting --
-    def paintEvent(self, _):  # type: ignore[override]
+    def paintEvent(self, _):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
@@ -189,18 +189,18 @@ class _WarmthSlider(QWidget):
         painter.drawLine(QPointF(handle_x, 0), QPointF(handle_x, rect.bottom()))
 
     # -- interaction --
-    def mousePressEvent(self, event):  # type: ignore[override]
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.interactionStarted.emit()
             self._update_from_pos(event.position().x())
 
-    def mouseMoveEvent(self, event):  # type: ignore[override]
+    def mouseMoveEvent(self, event):
         if self._dragging:
             self._update_from_pos(event.position().x())
 
-    def mouseReleaseEvent(self, event):  # type: ignore[override]
+    def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._dragging:
             self._dragging = False
             self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -261,7 +261,7 @@ class _TemperatureSlider(QWidget):
         return (self._value - centre) / half
 
     # -- painting --
-    def paintEvent(self, _):  # type: ignore[override]
+    def paintEvent(self, _):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
@@ -300,18 +300,18 @@ class _TemperatureSlider(QWidget):
         painter.drawLine(QPointF(curr_x, 0), QPointF(curr_x, rect.bottom()))
 
     # -- interaction --
-    def mousePressEvent(self, event):  # type: ignore[override]
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.interactionStarted.emit()
             self._update_from_pos(event.position().x())
 
-    def mouseMoveEvent(self, event):  # type: ignore[override]
+    def mouseMoveEvent(self, event):
         if self._dragging:
             self._update_from_pos(event.position().x())
 
-    def mouseReleaseEvent(self, event):  # type: ignore[override]
+    def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._dragging:
             self._dragging = False
             self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -371,7 +371,7 @@ class _TintSlider(QWidget):
         return self._value / 100.0
 
     # -- painting --
-    def paintEvent(self, _):  # type: ignore[override]
+    def paintEvent(self, _):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
@@ -413,18 +413,18 @@ class _TintSlider(QWidget):
         painter.drawLine(QPointF(handle_x, 0), QPointF(handle_x, rect.bottom()))
 
     # -- interaction --
-    def mousePressEvent(self, event):  # type: ignore[override]
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.interactionStarted.emit()
             self._update_from_pos(event.position().x())
 
-    def mouseMoveEvent(self, event):  # type: ignore[override]
+    def mouseMoveEvent(self, event):
         if self._dragging:
             self._update_from_pos(event.position().x())
 
-    def mouseReleaseEvent(self, event):  # type: ignore[override]
+    def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._dragging:
             self._dragging = False
             self.setCursor(Qt.CursorShape.OpenHandCursor)

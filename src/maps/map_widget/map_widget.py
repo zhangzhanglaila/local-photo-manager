@@ -150,7 +150,7 @@ class MapWidget(QWidget):
         return self
 
     # ------------------------------------------------------------------
-    def paintEvent(self, event) -> None:  # type: ignore[override]
+    def paintEvent(self, event) -> None:
         """Render the current scene using CPU backed ``QPainter`` drawing."""
 
         painter = QPainter(self)
@@ -164,42 +164,42 @@ class MapWidget(QWidget):
             painter.end()
 
     # ------------------------------------------------------------------
-    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Tear down background threads before the widget is destroyed."""
 
         self.shutdown()
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+    def mousePressEvent(self, event) -> None:
         """Forward mouse press events to the shared interaction handler."""
 
         self._controller.handle_mouse_press(event)
         super().mousePressEvent(event)
 
     # ------------------------------------------------------------------
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+    def mouseMoveEvent(self, event) -> None:
         """Forward mouse move events to the shared interaction handler."""
 
         self._controller.handle_mouse_move(event)
         super().mouseMoveEvent(event)
 
     # ------------------------------------------------------------------
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event) -> None:
         """Forward mouse release events to the shared interaction handler."""
 
         self._controller.handle_mouse_release(event)
         super().mouseReleaseEvent(event)
 
     # ------------------------------------------------------------------
-    def wheelEvent(self, event) -> None:  # type: ignore[override]
+    def wheelEvent(self, event) -> None:
         """Forward wheel events to the shared interaction handler."""
 
         self._controller.handle_wheel_event(event)
         super().wheelEvent(event)
 
     # ------------------------------------------------------------------
-    def resizeEvent(self, event: QResizeEvent) -> None:  # type: ignore[override]
+    def resizeEvent(self, event: QResizeEvent) -> None:
         """Propagate resize events and notify listeners about the new viewport."""
 
         super().resizeEvent(event)

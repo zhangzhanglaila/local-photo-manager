@@ -55,7 +55,7 @@ class ThumbnailGeneratorWorker(QRunnable):
         self.signals = ThumbnailGeneratorSignals()
 
     # ------------------------------------------------------------------
-    def run(self) -> None:  # type: ignore[override]
+    def run(self) -> None:
         """Execute the thumbnail generation loop on a background thread."""
 
         if not self._values:
