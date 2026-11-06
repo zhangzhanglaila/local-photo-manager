@@ -35,9 +35,9 @@ apply_early_thread_limits()
 from iPhoto.bootstrap.qt_shader_cache import configure_shader_cache_environment
 from iPhoto.gui.render_backend import should_configure_global_desktop_opengl
 from iPhoto.i18n import tr
+from iPhoto.utils.env import env_flag, is_truthy
 
 _logger = logging.getLogger(__name__)
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 _MACOS_EXTERNAL_TOOL_PATHS = (
     Path("/opt/homebrew/bin"),
     Path("/opt/homebrew/sbin"),
@@ -91,7 +91,7 @@ def _configure_qt_shader_disk_cache() -> None:
 def _opengl_explicitly_disabled() -> bool:
     """Return whether all OpenGL-backed UI surfaces should be disabled."""
 
-    return os.environ.get("IPHOTO_DISABLE_OPENGL", "").strip().lower() in _TRUE_ENV_VALUES
+    return env_flag("IPHOTO_DISABLE_OPENGL")
 
 
 def _map_gl_surface_format(platform: str | None = None) -> QSurfaceFormat:
@@ -117,7 +117,7 @@ def _allow_packaged_linux_wayland() -> bool:
     """Return whether packaged Linux builds may keep Qt's default platform selection."""
 
     raw_value = os.environ.get("IPHOTO_ALLOW_PACKAGED_LINUX_WAYLAND", "").strip().lower()
-    return raw_value in _TRUE_ENV_VALUES
+    return is_truthy(raw_value)
 
 
 def _prefer_local_source_tree() -> None:

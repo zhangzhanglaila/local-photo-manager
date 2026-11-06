@@ -9,7 +9,6 @@ import sys
 from PySide6.QtWidgets import QRhiWidget
 
 _LOGGER = logging.getLogger(__name__)
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 _VALID_BACKENDS = {"auto", "metal", "opengl"}
 
 
@@ -71,7 +70,7 @@ def is_opengl_api(api: "QRhiWidget.Api | None") -> bool:
 def should_configure_global_desktop_opengl() -> bool:
     """Return whether app startup should set global desktop OpenGL defaults."""
 
-    if os.environ.get("IPHOTO_DISABLE_OPENGL", "").strip().lower() in _TRUE_ENV_VALUES:
+    if env_flag("IPHOTO_DISABLE_OPENGL"):
         return False
     override = _normalised_backend_override()
     return not (sys.platform == "darwin" and override != "opengl")

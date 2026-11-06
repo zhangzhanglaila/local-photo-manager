@@ -17,8 +17,8 @@ from maps.map_sources import (
 from maps.map_widget.native_osmand_widget import probe_native_widget_runtime
 
 from ...application.ports import MapRuntimeCapabilities, MapRuntimePort
+from ...utils.env import env_flag, is_truthy
 
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 _FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 _MAPS_PACKAGE_ROOT = Path(__file__).resolve().parents[3] / "maps"
 _GAODE_CONNECTIVITY_HOSTS = (
@@ -29,7 +29,7 @@ ENV_PREFER_ONLINE_MAP = "IPHOTO_PREFER_ONLINE_MAP"
 
 
 def _opengl_explicitly_disabled() -> bool:
-    return os.environ.get("IPHOTO_DISABLE_OPENGL", "").strip().lower() in _TRUE_ENV_VALUES
+    return env_flag("IPHOTO_DISABLE_OPENGL")
 
 
 def _has_qt_application() -> bool:
@@ -38,7 +38,7 @@ def _has_qt_application() -> bool:
 
 def _prefer_online_map() -> bool:
     raw_value = os.environ.get(ENV_PREFER_ONLINE_MAP, "").strip().lower()
-    if raw_value in _TRUE_ENV_VALUES:
+    if is_truthy(raw_value):
         return True
     if raw_value in _FALSE_ENV_VALUES:
         return False
