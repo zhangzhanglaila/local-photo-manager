@@ -48,6 +48,7 @@ class GalleryLoadWorker(QRunnable):
         signals: GalleryLoadSignals,
         *,
         validate_paths: bool = False,
+        known_total: int | None = None,
     ) -> None:
         super().__init__()
         self.setAutoDelete(True)
@@ -59,6 +60,7 @@ class GalleryLoadWorker(QRunnable):
         self._last = last
         self._signals = signals
         self._validate_paths = validate_paths
+        self._known_total = known_total
         self._is_cancelled = False
         # Timing instrumentation (emitted only with IPHOTO_DIAG=1): how long the task
         # sat in the pool queue and how long it actually ran.
@@ -80,7 +82,11 @@ class GalleryLoadWorker(QRunnable):
             # 1. COUNT query
             count_query = self._count_query(self._query)
             t_count = time.monotonic()
-            total = self._asset_query_service.count_query_assets(count_query)
+            if self._known_total is not None:
+                # The store already knows the count for this query scope.
+                total = int(self._known_total)
+            else:
+                total = self._asset_query_service.count_query_assets(count_query)
             t_count = time.monotonic() - t_count
 
             if self._is_cancelled:

@@ -96,6 +96,11 @@ class GalleryCollectionStore:
         self._total_count = 0
         self._generation = 0
         self._row_cache: Dict[int, AssetDTO] = {}
+        # Row counts only change when the query changes or a scan writes rows, yet every
+        # window load re-ran the count query (29-75 ms measured). The cache is keyed by
+        # the query object, so any filter/sort change misses it automatically.
+        self._cached_count: int | None = None
+        self._cached_count_key: str | None = None
         # Timing: end-to-end latency of a window load and how many requests were
         # superseded before one finished (diag-only).
         self._load_requested_at: float | None = None
@@ -950,6 +955,7 @@ class GalleryCollectionStore:
             last=load_last,
             signals=self._load_signals,
             validate_paths=validate,
+            known_total=self._cached_total(),
         )
         self._load_worker = worker
         self._load_requested_at = time.monotonic()
@@ -1007,6 +1013,7 @@ class GalleryCollectionStore:
         old_total = self._total_count
         self._row_cache = row_cache
         self._total_count = total
+        self._store_total(total)
 
         if total <= 0:
             self._reset_window_state()
@@ -1451,6 +1458,21 @@ class GalleryCollectionStore:
 
     def _iter_cached_rows(self) -> List[tuple[int, AssetDTO]]:
         return sorted(self._row_cache.items(), key=lambda item: item[0])
+
+    def _count_cache_key(self) -> str:
+        """Return a stable key for the current query scope."""
+
+        query = self._current_query
+        return repr((self._active_root, self._library_root, query)) if query is not None else ""
+
+    def _cached_total(self) -> int | None:
+        if self._cached_count_key != self._count_cache_key():
+            return None
+        return self._cached_count
+
+    def _store_total(self, total: int) -> None:
+        self._cached_count = int(total)
+        self._cached_count_key = self._count_cache_key()
 
     def _reset_window_state(self) -> None:
         self._generation += 1
