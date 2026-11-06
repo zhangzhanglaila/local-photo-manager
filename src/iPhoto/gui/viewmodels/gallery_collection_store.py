@@ -155,7 +155,7 @@ class GalleryCollectionStore:
             self._pending_load_after_service_bind = False
             first, last = self._pending_load_range or (0, self.INITIAL_VISIBLE_ROWS - 1)
             self._pending_load_range = None
-            self._load_initial_window()
+            self._load_initial_window((first, last))
 
     def rebind_asset_query_service(
         self,
@@ -833,10 +833,24 @@ class GalleryCollectionStore:
         self._clear_pending_scan_refresh()
         self._reload_window_for_visible_range(first, last, emit_signals=True)
 
-    def _load_initial_window(self) -> None:
-        visible_last = max(0, self.INITIAL_VISIBLE_ROWS - 1)
-        self._visible_range = (0, visible_last)
-        self._reload_window_for_visible_range(0, visible_last, emit_signals=True)
+    def _load_initial_window(
+        self, visible_range: tuple[int, int] | None = None
+    ) -> None:
+        """Load the first window, or a specific visible range when restoring.
+
+        ``visible_range`` matters when a load was deferred until the query service
+        became available: the gallery used to fall back to rows ``0..N`` and forget
+        where the user actually was.
+        """
+
+        if visible_range is None:
+            first, last = 0, self.INITIAL_VISIBLE_ROWS - 1
+        else:
+            first, last = visible_range
+            first = max(0, first)
+            last = max(first, last)
+        self._visible_range = (first, last)
+        self._reload_window_for_visible_range(first, last, emit_signals=True)
 
     def _window_bounds_to_load(self, first: int, last: int) -> tuple[int, int]:
         """Expand the requested visible range to the configured cache window.
@@ -873,6 +887,7 @@ class GalleryCollectionStore:
                     # ⭐ 如果 _active_root 已设置但服务还没绑定，等待服务绑定后再加载
                     if self._active_root is not None:
                         self._pending_load_after_service_bind = True
+                        self._pending_load_range = (max(0, first), max(first, last))
                     return
 
         # ⭐ 如果服务还没绑定但有 root，等待绑定

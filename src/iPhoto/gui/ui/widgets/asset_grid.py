@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -17,6 +18,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication, QListView
 
 from ....config import LONG_PRESS_THRESHOLD_MS
+
+LOGGER = logging.getLogger(__name__)
 
 _IS_DARWIN = sys.platform == "darwin"
 _IS_LINUX = sys.platform == "linux"
@@ -450,11 +453,12 @@ class AssetGrid(QListView):
     def _emit_visible_rows(self) -> None:
         try:
             self._emit_visible_rows_impl()
-        except Exception:
-            import logging
-            logging.getLogger(__name__).debug(
-                "_emit_visible_rows failed", exc_info=True
-            )
+        except RuntimeError:
+            # The model was destroyed while the debounce timer fired. Catching every
+            # exception here used to hide real bugs: when rowCount() raised, the
+            # visible range was never published, so the gallery stayed on its
+            # loading state forever and nothing appeared in the logs.
+            LOGGER.debug("_emit_visible_rows skipped: view torn down", exc_info=True)
 
     def _emit_visible_rows_impl(self) -> None:
         if self._model_resetting:
@@ -464,7 +468,7 @@ class AssetGrid(QListView):
             return
         try:
             row_count = model.rowCount()
-        except Exception:
+        except RuntimeError:
             return
         if row_count <= 0:
             if self._visible_range is not None:
@@ -484,7 +488,7 @@ class AssetGrid(QListView):
         try:
             first = self._row_near_viewport_edge(viewport_rect, top=True)
             last = self._row_near_viewport_edge(viewport_rect, top=False)
-        except Exception:
+        except RuntimeError:
             return
 
         if first == -1 and last == -1:
