@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QThreadPool, QTimer
 
 from iPhoto.application.dtos import AssetDTO
 from iPhoto.domain.models.query import AssetQuery
@@ -86,6 +86,10 @@ class GalleryCollectionStore:
         self.window_changed = Signal()
         self.count_changed = Signal()
         self.row_changed = Signal()
+        # Absolute row range that was just loaded. Row numbers are absolute, so a new
+        # window only fills rows that already exist: the view needs `dataChanged` for
+        # that range instead of a model reset.
+        self.rows_loaded = Signal()
 
         self._asset_query_service = asset_query_service
         self._library_root = library_root or getattr(asset_query_service, "library_root", None)
@@ -101,6 +105,16 @@ class GalleryCollectionStore:
         # the query object, so any filter/sort change misses it automatically.
         self._cached_count: int | None = None
         self._cached_count_key: str | None = None
+        self._row_mapping_key: str | None = None
+        # Range actually requested from the worker; used to report exactly what was
+        # loaded (never min..max of the cache, which can span unloaded holes).
+        self._load_window_range: tuple[int, int] | None = None
+        # Single-flight: while a load is running, newer range requests are collapsed
+        # into this one. Cancelling the running load only put zombies on the 2-thread
+        # pool, so fast scrolling finished nothing until the pointer stopped.
+        self._queued_visible: tuple[int, int] | None = None
+        self._queued_emit = True
+        self._emit_signals_on_load = True
         # Timing: end-to-end latency of a window load and how many requests were
         # superseded before one finished (diag-only).
         self._load_requested_at: float | None = None
@@ -922,11 +936,12 @@ class GalleryCollectionStore:
                 self._pending_load_range = (first, last)
             return
 
-        # Cancel any in-flight load.
+        # Single-flight: keep the running load, remember only the newest request.
         if self._load_worker is not None:
-            self._load_worker.cancel()
-            self._load_worker = None
+            self._queued_visible = (first, last)
+            self._queued_emit = emit_signals
             self._load_superseded += 1
+            return
 
         self._load_generation += 1
         gen = self._load_generation
@@ -958,9 +973,20 @@ class GalleryCollectionStore:
             known_total=self._cached_total(),
         )
         self._load_worker = worker
+        self._load_window_range = (load_first, load_last)
         self._load_requested_at = time.monotonic()
         self._emit_signals_on_load = emit_signals
         _GALLERY_LOAD_POOL.start(worker)
+
+    def _start_queued_load(self) -> None:
+        """Start the newest request that arrived while a load was running."""
+
+        queued, self._queued_visible = self._queued_visible, None
+        if queued is None:
+            return
+        self._reload_window_for_visible_range(
+            queued[0], queued[1], emit_signals=self._queued_emit
+        )
 
     def set_apply_throttle(self, seconds: float) -> None:
         """Limit how often a finished load is applied (0 disables the limit)."""
@@ -1009,8 +1035,27 @@ class GalleryCollectionStore:
             )
             return  # stale result, discard
         self._load_worker = None
+        if self._queued_visible is not None:
+            QTimer.singleShot(0, self._start_queued_load)
 
         old_total = self._total_count
+        mapping_key = self._count_cache_key()
+        window = self._load_window_range
+        if (
+            self._row_mapping_key == mapping_key
+            and total == old_total
+            and self._row_cache
+            and row_cache
+            and window is not None
+        ):
+            # Same query and same count: fold the window in and notify only that range.
+            # No reset, no size-hint invalidation, no notification for unloaded holes.
+            self._row_cache.update(row_cache)
+            self._store_total(total)
+            self.rows_loaded.emit(window[0], window[1])
+            return
+
+        self._row_mapping_key = mapping_key
         self._row_cache = row_cache
         self._total_count = total
         self._store_total(total)
