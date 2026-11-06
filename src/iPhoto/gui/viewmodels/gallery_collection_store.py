@@ -54,6 +54,14 @@ class GalleryAssetQuerySurface(Protocol):
         """Yield rows matching *query*, scoped to *root*."""
 
 
+#: Dedicated pool for gallery window loads. Thumbnail decoding, previews and file
+#: operations all use `QThreadPool.globalInstance()`; sharing it meant a window load
+#: could sit behind a burst of thumbnail jobs for seconds even though the query itself
+#: takes ~40 ms. Two threads are enough: loads are small and the newest request wins.
+_GALLERY_LOAD_POOL = QThreadPool()
+_GALLERY_LOAD_POOL.setMaxThreadCount(2)
+
+
 class GalleryCollectionStore:
     """Pure Python gallery data store with viewport-aware caching."""
 
@@ -939,7 +947,7 @@ class GalleryCollectionStore:
         self._load_worker = worker
         self._load_requested_at = time.monotonic()
         self._emit_signals_on_load = emit_signals
-        QThreadPool.globalInstance().start(worker)
+        _GALLERY_LOAD_POOL.start(worker)
 
     def _on_load_finished(self, generation: int, row_cache: dict, total: int) -> None:
         """Handle async load completion on the main thread."""
