@@ -367,3 +367,24 @@ def is_file_busy_error(exc: BaseException) -> bool:
         return True
     errno_value = getattr(exc, "errno", None)
     return errno_value in {errno.EACCES, errno.EBUSY, errno.EPERM}
+
+
+def paths_equal(left: Path | str | None, right: Path | str | None) -> bool:
+    """Return whether *left* and *right* refer to the same file system location.
+
+    Fifteen modules used to carry their own copy of this comparison, and they
+    disagreed when `resolve()` raised (8.3 short names, symlinks, trailing
+    separators): some returned `False`, others compared the raw paths. One
+    implementation keeps move/delete/dedupe decisions consistent.
+    """
+
+    if left is None or right is None:
+        return False
+    first = Path(left)
+    second = Path(right)
+    if first == second:
+        return True
+    try:
+        return first.resolve() == second.resolve()
+    except OSError:
+        return first == second
