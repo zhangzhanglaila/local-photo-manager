@@ -1,12 +1,13 @@
-"""Metadata freshness of the incremental index.
+"""Metadata freshness of the incremental index, tracked per file.
 
 The incremental scan reuses an existing row when the file's size and mtime are
-unchanged. That keeps startup fast, but it also means a row written by an older
-extractor (for example one that could not parse GPS) is never repaired by simply
-restarting or rescanning. These tests pin the two escape hatches:
+unchanged. Rows produced by an older extractor (for example one that could not
+parse GPS) must still be repaired, so the extractor version is recorded per
+library-relative path rather than as one stamp for the whole library:
 
-* an index stamped with an older extractor version is re-extracted once, and
-* an explicit rescan always re-extracts, ignoring the cache.
+* a row whose recorded version is older is dropped from the cache and re-read;
+* a row with the current version keeps the fast path;
+* refreshing one album re-stamps only that album's rows.
 """
 
 from __future__ import annotations
@@ -22,20 +23,27 @@ from iPhoto.config import SCANNER_METADATA_VERSION
 
 
 class _FakeRepository:
-    def __init__(self, version: int) -> None:
-        self.version = version
-        self.merged: list[dict[str, Any]] = []
+    def __init__(self, versions: dict[str, int] | None = None) -> None:
+        self.versions: dict[str, int] = dict(versions or {})
+        self.stamped: dict[str, int] = {}
 
-    def metadata_version(self) -> int:
-        return self.version
+    def rels_needing_extraction(self, rels, version: int) -> set[str]:
+        return {rel for rel in rels if self.versions.get(rel, 0) < int(version)}
 
-    def set_metadata_version(self, version: int) -> None:
-        self.version = version
+    def stamp_extraction_versions(self, rels, version: int) -> None:
+        for rel in rels:
+            if rel:
+                self.stamped[rel] = int(version)
+                self.versions[rel] = int(version)
+
+    def read_album_assets(self, album_path, **_kwargs):
+        return []
+
+    def read_all(self, **_kwargs):
+        return []
 
     def merge_scan_rows(self, rows):  # pragma: no cover - not used by these tests
-        materialized = list(rows)
-        self.merged.extend(materialized)
-        return materialized
+        return list(rows)
 
 
 class _FakeScanner:
@@ -61,9 +69,11 @@ class _FakeScanner:
         }
 
 
-def _service(tmp_path: Path, version: int) -> tuple[LibraryScanService, _FakeScanner, _FakeRepository]:
+def _service(
+    tmp_path: Path, versions: dict[str, int] | None = None
+) -> tuple[LibraryScanService, _FakeScanner, _FakeRepository]:
     scanner = _FakeScanner()
-    repository = _FakeRepository(version)
+    repository = _FakeRepository(versions)
     service = LibraryScanService(
         tmp_path,
         scanner=scanner,
@@ -86,28 +96,34 @@ def cache_calls(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     return calls
 
 
-def test_stale_index_version_forces_re_extraction(
+def test_row_from_an_older_extractor_is_re_read(
     tmp_path: Path,
     cache_calls: list[Path],
 ) -> None:
-    service, _scanner, repository = _service(tmp_path, version=SCANNER_METADATA_VERSION - 1)
+    service, scanner, repository = _service(
+        tmp_path, versions={"album/photo.jpg": SCANNER_METADATA_VERSION - 1}
+    )
 
     service.scan_album(tmp_path, reuse_existing_index=True)
 
-    assert cache_calls == [], "a stale index must not be reused"
-    assert repository.version == SCANNER_METADATA_VERSION, "the refresh must be stamped"
+    assert len(cache_calls) == 1, "the cache is still consulted"
+    assert scanner.existing_indexes == [{}], "the stale row is dropped before scanning"
+    assert repository.stamped["album/photo.jpg"] == SCANNER_METADATA_VERSION
 
 
-def test_current_index_version_still_reuses_cached_rows(
+def test_current_rows_keep_the_fast_path(
     tmp_path: Path,
     cache_calls: list[Path],
 ) -> None:
-    service, _scanner, repository = _service(tmp_path, version=SCANNER_METADATA_VERSION)
+    service, scanner, _repository = _service(
+        tmp_path, versions={"album/photo.jpg": SCANNER_METADATA_VERSION}
+    )
 
     service.scan_album(tmp_path, reuse_existing_index=True)
 
-    assert len(cache_calls) == 1, "an up-to-date index keeps the fast path"
-    assert repository.version == SCANNER_METADATA_VERSION
+    assert scanner.existing_indexes == [
+        {"album/photo.jpg": {"rel": "album/photo.jpg", "bytes": 1, "ts": 1}}
+    ], "an up-to-date row is reused as-is"
 
 
 def test_rescan_always_bypasses_the_cache(
@@ -115,7 +131,7 @@ def test_rescan_always_bypasses_the_cache(
     cache_calls: list[Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    service, _scanner, _repository = _service(tmp_path, version=SCANNER_METADATA_VERSION)
+    service, _scanner, _repository = _service(tmp_path)
     captured: dict[str, Any] = {}
 
     def _scan_album(*args, **kwargs):
@@ -132,37 +148,33 @@ def test_rescan_always_bypasses_the_cache(
     assert captured["reuse_existing_index"] is False
 
 
-def test_album_scoped_refresh_does_not_stamp_the_library(
-    tmp_path: Path,
-    cache_calls: list[Path],
-) -> None:
+def test_refreshing_one_album_stamps_only_its_rows(tmp_path: Path) -> None:
     library_root = tmp_path / "library"
     album_root = library_root / "album"
     album_root.mkdir(parents=True)
-    service, _scanner, repository = _service(library_root, version=SCANNER_METADATA_VERSION - 1)
+    service, _scanner, repository = _service(library_root, versions={})
 
     service.scan_album(album_root, reuse_existing_index=True)
 
-    # The album was refreshed, but the rest of the library was not, so the index
-    # must keep advertising itself as stale.
-    assert repository.version == SCANNER_METADATA_VERSION - 1
+    # This hook receives already library-relative rows.
+    assert repository.stamped == {"album/album/photo.jpg": SCANNER_METADATA_VERSION}
 
 
-def test_scan_finished_hook_stamps_the_library_root(
+def test_scan_finished_hook_stamps_the_scanned_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The Qt scanner worker finishes through ``finalize_scan_result``.
 
     Its ``scan_album`` return path can already be flagged as cancelled by the time
-    the scan is done, so the stamp must not depend on that path.
+    the scan is done, so the version must not depend on that path.
     """
 
     from iPhoto.bootstrap.library_asset_lifecycle_service import (
         LibraryAssetLifecycleService,
     )
 
-    service, _scanner, repository = _service(tmp_path, version=SCANNER_METADATA_VERSION - 1)
+    service, _scanner, repository = _service(tmp_path)
     monkeypatch.setattr(service, "finalize_scan", lambda *a, **k: None)
     monkeypatch.setattr(service, "pair_album", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -171,6 +183,7 @@ def test_scan_finished_hook_stamps_the_library_root(
         lambda *a, **k: 0,
     )
 
-    service.finalize_scan_result(tmp_path, rows=[])
+    service.finalize_scan_result(tmp_path, rows=[{"rel": "album/photo.jpg"}])
 
-    assert repository.version == SCANNER_METADATA_VERSION
+    # This hook receives already library-relative rows.
+    assert repository.stamped == {"album/photo.jpg": SCANNER_METADATA_VERSION}

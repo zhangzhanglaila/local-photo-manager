@@ -458,25 +458,54 @@ class AssetRepository:
             if should_close:
                 conn.close()
 
-    def metadata_version(self) -> int:
-        """Return the extraction version stamped into this index (0 when unset)."""
+    def rels_needing_extraction(
+        self, rels: Iterable[str], version: int
+    ) -> set[str]:
+        """Return the subset of *rels* extracted by an older extractor version.
 
+        Per-file tracking replaces the previous library-wide `PRAGMA user_version`
+        stamp: upgrading the extractor re-reads only the stale rows, and refreshing
+        a single album no longer claims the whole library is current.
+        """
+
+        wanted = {str(rel): str(rel) for rel in rels if rel}
+        if not wanted:
+            return set()
         conn = self._db_manager.get_connection()
         should_close = (conn != self._db_manager._conn)
         try:
-            row = conn.execute("PRAGMA user_version").fetchone()
-            return int(row[0]) if row else 0
+            stale: set[str] = set()
+            items = list(wanted)
+            for start in range(0, len(items), 500):
+                chunk = items[start : start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"SELECT rel, version FROM extraction_versions WHERE rel IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                known = {str(row[0]): int(row[1] or 0) for row in rows}
+                for rel in chunk:
+                    if known.get(rel, 0) < int(version):
+                        stale.add(rel)
+            return stale
         finally:
             if should_close:
                 conn.close()
 
-    def set_metadata_version(self, version: int) -> None:
-        """Stamp this index with the extraction version that produced its rows."""
+    def stamp_extraction_versions(self, rels: Iterable[str], version: int) -> None:
+        """Record that *rels* were produced by extractor *version*."""
 
+        items = [(str(rel), int(version)) for rel in rels if rel]
+        if not items:
+            return
         conn = self._db_manager.get_connection()
         should_close = (conn != self._db_manager._conn)
         try:
-            conn.execute(f"PRAGMA user_version = {int(version)}")
+            conn.executemany(
+                "INSERT INTO extraction_versions(rel, version) VALUES(?, ?) "
+                "ON CONFLICT(rel) DO UPDATE SET version = excluded.version",
+                items,
+            )
             conn.commit()
         finally:
             if should_close:

@@ -214,21 +214,28 @@ class LibraryScanService:
             exclude=exclude,
         )
         repository = self._repository()
-        reuse = reuse_existing_index and self._index_metadata_is_current(repository)
-        if reuse_existing_index and not reuse:
-            LOGGER.info(
-                "Index metadata version is stale for %s; re-extracting metadata once",
-                self.library_root,
-            )
         existing_index = (
             load_incremental_index_cache(
                 scan_root,
                 library_root=self.library_root,
                 repository=repository,
             )
-            if reuse
+            if reuse_existing_index
             else {}
         )
+        if existing_index:
+            # Per-file extractor version: only rows produced by an older extractor
+            # need re-reading, so an upgrade no longer forces a whole-library pass.
+            stale = repository.rels_needing_extraction(
+                existing_index.keys(), SCANNER_METADATA_VERSION
+            )
+            if stale:
+                LOGGER.info(
+                    "%s rows were extracted by an older extractor; re-reading them",
+                    len(stale),
+                )
+                for rel in stale:
+                    existing_index.pop(rel, None)
 
         use_case = ScanLibraryUseCase(
             scanner=self._scanner,
@@ -249,46 +256,11 @@ class LibraryScanService:
                 persist_chunks=persist_chunks,
             )
         )
-        if not reuse:
-            self._stamp_if_library_root(scan_root, repository)
+        repository.stamp_extraction_versions(
+            (row.get("rel") for row in result.rows if isinstance(row, dict)),
+            SCANNER_METADATA_VERSION,
+        )
         return result
-
-    def _stamp_if_library_root(self, scan_root: Path, repository: object) -> None:
-        """Record that *scan_root* is now fully extracted at the current version.
-
-        Only a full-library pass may claim the whole index is current; refreshing a
-        single album leaves the rest of the library untouched.
-        """
-
-        if self._is_library_root(scan_root):
-            self._stamp_metadata_version(repository)
-
-    def _is_library_root(self, scan_root: Path) -> bool:
-        try:
-            return scan_root.resolve() == Path(self.library_root).resolve()
-        except OSError:
-            return scan_root == Path(self.library_root)
-
-    def _index_metadata_is_current(self, repository: object) -> bool:
-        """Return whether the index was produced by the current extractor."""
-
-        getter = getattr(repository, "metadata_version", None)
-        if not callable(getter):
-            return True
-        try:
-            return int(getter() or 0) >= SCANNER_METADATA_VERSION
-        except Exception:
-            LOGGER.debug("Could not read index metadata version", exc_info=True)
-            return False
-
-    def _stamp_metadata_version(self, repository: object) -> None:
-        setter = getattr(repository, "set_metadata_version", None)
-        if not callable(setter):
-            return
-        try:
-            setter(SCANNER_METADATA_VERSION)
-        except Exception:
-            LOGGER.warning("Could not stamp index metadata version", exc_info=True)
 
     def rescan_album(
         self,
@@ -383,10 +355,12 @@ class LibraryScanService:
             materialized_rows,
             exclude_globs=resolved_exclude,
         )
-        # Stamping here as well keeps the version honest for scans that are driven
-        # by the Qt scanner worker: that worker reports the scan as finished only
-        # after this hook runs, and its own return path may already be cancelled.
-        self._stamp_if_library_root(scan_root, self._repository())
+        # Stamping here as well keeps the version honest for scans driven by the Qt
+        # scanner worker: it reports completion only after this hook runs.
+        self._repository().stamp_extraction_versions(
+            (row.get("rel") for row in materialized_rows if isinstance(row, dict)),
+            SCANNER_METADATA_VERSION,
+        )
         if pair_live:
             self.pair_album(scan_root)
         return materialized_rows
