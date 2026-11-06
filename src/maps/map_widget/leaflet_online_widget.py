@@ -7,7 +7,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from PySide6.QtCore import QByteArray, QPointF, QStandardPaths, Qt, QUrl, Signal
+from PySide6.QtCore import (
+    QByteArray,
+    QObject,
+    QPointF,
+    QRunnable,
+    QStandardPaths,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QCloseEvent,
@@ -39,6 +50,9 @@ from .map_renderer import CityAnnotation
 TILE_SIZE = 256
 MERCATOR_LAT_BOUND = 85.05112878
 _MAP_OPAQUE_BACKGROUND = "#d9e4ea"
+#: Cap on concurrent tile requests. The host allows only a few parallel
+#: connections, so queueing more than this just delays the tiles on screen.
+MAX_INFLIGHT_TILES = 12
 _ATTRIBUTION_BG = QColor(255, 255, 255, 220)
 _ATTRIBUTION_FG = QColor(55, 65, 75)
 _DEFAULT_ONLINE_CENTER_LON = 104.1954
@@ -99,6 +113,41 @@ LEAFLET_TILE_SOURCES: dict[str, LeafletTileSource] = {
         ),
     ),
 }
+
+
+class _TileDecoder(QObject):
+    """Hands decoded tile images back to the GUI thread."""
+
+    decoded = Signal(object, object)  # tile key, QImage | None
+
+
+class _DecodeTask(QRunnable):
+    """Decode one PNG tile off the GUI thread.
+
+    Decoding used to happen inside the network reply handler, so a burst of tile
+    arrivals (zoom changes) blocked the UI for tens of milliseconds per frame.
+    """
+
+    def __init__(self, key, data: bytes, sink: _TileDecoder) -> None:
+        super().__init__()
+        self._key = key
+        self._data = data
+        self._sink = sink
+
+    def run(self) -> None:  # pragma: no cover - executed on a worker thread
+        image = QImage()
+        ok = image.loadFromData(self._data)
+        self._sink.decoded.emit(self._key, image if ok else None)
+
+
+_SHARED_DECODER: _TileDecoder | None = None
+
+
+def _shared_tile_decoder() -> _TileDecoder:
+    global _SHARED_DECODER
+    if _SHARED_DECODER is None:
+        _SHARED_DECODER = _TileDecoder()
+    return _SHARED_DECODER
 
 
 def lonlat_to_normalized(lon: float, lat: float) -> tuple[float, float] | None:
@@ -197,6 +246,20 @@ class LeafletOnlineMapWidget(QWidget):
         self._tile_success_count = 0
         self._network_unavailable_emitted = False
         self._tile_device_pixel_ratio = self._preferred_tile_device_pixel_ratio()
+
+        # Requests in flight, keyed by tile. Panning or zooming used to leave the
+        # old requests queued on the host's limited connections, so the tiles the
+        # user was actually looking at waited behind stale ones and large areas
+        # stayed blank. Keeping the handles lets us abort them.
+        self._inflight: dict[tuple[int, int, int], QNetworkReply] = {}
+        # One coalesced repaint instead of one per arriving tile.
+        self._repaint_timer = QTimer(self)
+        self._repaint_timer.setSingleShot(True)
+        self._repaint_timer.setInterval(16)
+        self._repaint_timer.timeout.connect(self.update)
+
+        self._decoder = _shared_tile_decoder()
+        self._decoder.decoded.connect(self._on_tile_decoded)
 
         self._network = QNetworkAccessManager(self)
         self._network.finished.connect(self._handle_tile_reply)
@@ -443,6 +506,14 @@ class LeafletOnlineMapWidget(QWidget):
         start_y = max(0, math.floor(top / TILE_SIZE))
         end_y = min(tile_count - 1, math.floor(bottom / TILE_SIZE))
 
+        visible_keys = {
+            (z, raw_x % tile_count, y)
+            for y in range(start_y, end_y + 1)
+            for raw_x in range(start_x, end_x + 1)
+        }
+        if self._inflight:
+            self._cancel_stale_requests(visible_keys)
+
         for y in range(start_y, end_y + 1):
             for raw_x in range(start_x, end_x + 1):
                 x = raw_x % tile_count
@@ -497,7 +568,10 @@ class LeafletOnlineMapWidget(QWidget):
         painter.drawText(rect.adjusted(3, 1, -3, -1), Qt.AlignmentFlag.AlignCenter, text)
 
     def _request_tile(self, key: tuple[int, int, int]) -> None:
-        if key in self._tiles:
+        if key in self._tiles or key in self._inflight:
+            return
+        if len(self._inflight) >= MAX_INFLIGHT_TILES:
+            # The next repaint retries; queueing more only delays visible tiles.
             return
         z, x, y = key
         self._tiles[key] = None
@@ -506,30 +580,63 @@ class LeafletOnlineMapWidget(QWidget):
         request.setRawHeader(QByteArray(b"User-Agent"), QByteArray(b"iPhotron/online-map"))
         reply = self._network.get(request)
         reply.setProperty("tile_key", key)
+        self._inflight[key] = reply
+
+    def _cancel_stale_requests(self, keep: set[tuple[int, int, int]]) -> None:
+        """Abort in-flight tiles that are no longer on screen."""
+
+        for key in [key for key in self._inflight if key not in keep]:
+            reply = self._inflight.pop(key, None)
+            self._tiles.pop(key, None)
+            if reply is not None:
+                reply.abort()
+                reply.deleteLater()
+
+    def _schedule_repaint(self) -> None:
+        """Coalesce tile arrivals into a single repaint per frame."""
+
+        if not self._repaint_timer.isActive():
+            self._repaint_timer.start()
 
     def _handle_tile_reply(self, reply) -> None:
         key = reply.property("tile_key")
         if not isinstance(key, tuple) or len(key) != 3:
             reply.deleteLater()
             return
+        self._inflight.pop(key, None)
         if reply.error() != QNetworkReply.NetworkError.NoError:
             self._tiles.pop(key, None)
             self._record_tile_failure()
             reply.deleteLater()
-            self.update()
+            self._schedule_repaint()
             return
         data = bytes(reply.readAll())
-        image = QImage()
-        if image.loadFromData(data):
-            pixmap = QPixmap.fromImage(image)
-            pixmap.setDevicePixelRatio(self._tile_device_pixel_ratio)
-            self._tiles[key] = pixmap
-            self._record_tile_success()
+        reply.deleteLater()
+        if data:
+            QThreadPool.globalInstance().start(_DecodeTask(key, data, self._decoder))
         else:
             self._tiles.pop(key, None)
             self._record_tile_failure()
-        reply.deleteLater()
-        self.update()
+            self._schedule_repaint()
+
+    def _on_tile_decoded(self, key, image) -> None:
+        """Receive a decoded tile from the worker thread."""
+
+        if image is None:
+            self._tiles.pop(key, None)
+            self._record_tile_failure()
+            self._schedule_repaint()
+            return
+        pixmap = QPixmap.fromImage(image)
+        if pixmap.isNull():
+            self._tiles.pop(key, None)
+            self._record_tile_failure()
+            self._schedule_repaint()
+            return
+        pixmap.setDevicePixelRatio(self._tile_device_pixel_ratio)
+        self._tiles[key] = pixmap
+        self._record_tile_success()
+        self._schedule_repaint()
 
     def _record_tile_success(self) -> None:
         self._tile_success_count += 1
