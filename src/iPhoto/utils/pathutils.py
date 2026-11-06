@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno
+
 import fnmatch
 import functools
 import hashlib
@@ -350,3 +352,18 @@ def resolve_asset_path(root: Path, rel: object) -> Path:
             parts = PurePosixPath(path.as_posix()).parts
             return trash_dir.joinpath(*parts[1:])
     return Path(root) / path
+
+
+def is_file_busy_error(exc: BaseException) -> bool:
+    """Return whether *exc* means another process still holds the file open.
+
+    Windows reports a locked file as `PermissionError` with `winerror` 32;
+    POSIX uses `EBUSY`/`EACCES`. File operations use this to decide whether a
+    single retry is worthwhile after releasing background handles.
+    """
+
+    winerror = getattr(exc, "winerror", None)
+    if winerror in {32, 33}:
+        return True
+    errno_value = getattr(exc, "errno", None)
+    return errno_value in {errno.EACCES, errno.EBUSY, errno.EPERM}

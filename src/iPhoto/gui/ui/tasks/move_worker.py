@@ -10,7 +10,9 @@ from PySide6.QtCore import QObject, QRunnable, Signal
 
 from ....bootstrap.library_asset_lifecycle_service import LibraryAssetLifecycleService
 from ....io import sidecar
+from ....utils.exiftool import release_metadata_handles
 from ....utils.logging import get_logger
+from ....utils.pathutils import is_file_busy_error
 
 LOGGER = get_logger()
 
@@ -224,9 +226,20 @@ class MoveWorker(QRunnable):
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
             moved_path = shutil.move(str(source), str(target))
-        except OSError:
-            self._cleanup_partial_target(source, target)
-            raise
+        except OSError as exc:
+            if not is_file_busy_error(exc):
+                self._cleanup_partial_target(source, target)
+                raise
+            # A background metadata read can still hold the file open — the
+            # persistent ExifTool session keeps a process alive between reads.
+            # Release it and retry once; the next read restarts the session.
+            LOGGER.info("File busy while moving %s, releasing metadata handles", source)
+            release_metadata_handles()
+            try:
+                moved_path = shutil.move(str(source), str(target))
+            except OSError:
+                self._cleanup_partial_target(source, target)
+                raise
         return self._resolve_path(Path(moved_path))
 
     def _cleanup_partial_target(self, source: Path, target: Path) -> None:

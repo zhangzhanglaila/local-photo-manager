@@ -205,6 +205,10 @@ _STAY_OPEN_ENV = "IPHOTO_EXIFTOOL_STAY_OPEN"
 _SESSION_ARGS = ("-n", "-g1", "-json", "-charset", "filename=utf8")
 _READY_MARKER = "{ready}"
 _SESSION_MIN_TIMEOUT_S = 5.0
+#: Seconds allowed per requested file on top of the base timeout. HEIC and video
+#: files cost several times more than JPEGs; the previous fixed budget timed out
+#: on healthy 200-file batches and paid a needless session restart.
+_SESSION_TIMEOUT_PER_FILE_S = 0.15
 _STDERR_LINES = 50
 
 _session: "_ExifToolSession | None" = None
@@ -336,6 +340,17 @@ class _ExifToolSession:
             thread.join(timeout=2)
 
 
+def release_metadata_handles() -> None:
+    """Close the persistent session so Windows releases any open file handles.
+
+    File operations call this when a move/delete fails with "file in use": a
+    background metadata read may still hold the file open. The next read restarts
+    the session, so the cost is one start-up (~0.5 s) on a rare path.
+    """
+
+    _close_session()
+
+
 def _stay_open_enabled() -> bool:
     raw = os.environ.get(_STAY_OPEN_ENV, "").strip().lower()
     return raw not in {"0", "false", "no", "off"}
@@ -396,9 +411,9 @@ def _read_metadata_persistent(
         session = _session_for(executable)
         if session is None:
             return None
-        # Batches are dominated by per-file parsing (~20 ms each); the margin here
-        # only guards against a hung process.
-        timeout = _SESSION_MIN_TIMEOUT_S + 0.02 * len(paths)
+        # Budget from batch size: healthy batches finish well inside this, while a
+        # genuinely hung process is still detected in reasonable time.
+        timeout = _SESSION_MIN_TIMEOUT_S + _SESSION_TIMEOUT_PER_FILE_S * len(paths)
         try:
             payload = session.read(paths, timeout)
         except ExternalToolError as exc:
@@ -504,4 +519,4 @@ def write_gps_metadata(
 atexit.register(_close_session)
 
 
-__all__ = ["get_metadata_batch", "write_gps_metadata"]
+__all__ = ["get_metadata_batch", "release_metadata_handles", "write_gps_metadata"]
