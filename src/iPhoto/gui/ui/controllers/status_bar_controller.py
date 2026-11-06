@@ -90,7 +90,15 @@ class StatusBarController(QObject):
         else:
             self._progress_bar.setRange(0, total)
             self._progress_bar.setValue(max(0, min(current, total)))
-            self.show_message(tr("status.scanning_progress", current=current, total=total))
+            percent = int(max(0, min(current, total)) * 100 // total) if total else 0
+            self.show_message(
+                tr(
+                    "status.scanning_progress",
+                    percent=percent,
+                    current=current,
+                    total=total,
+                )
+            )
         self._progress_bar.setVisible(True)
 
     def handle_scan_finished(self, _root: Path, success: bool) -> None:

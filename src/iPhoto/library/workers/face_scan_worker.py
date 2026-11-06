@@ -62,6 +62,11 @@ class FaceScanWorker(QThread):
         # ⭐ 动态批处理间隔和暂停机制
         self._base_batch_idle_ms = 1000  # ⭐ 默认1秒
         self._current_batch_idle_ms = 1000
+        # Progress reporting: processed rows vs. the rows this scan expects to handle.
+        # The expected total can grow while the file scan feeds more rows in, so the
+        # percentage is recomputed rather than fixed up front.
+        self._scan_processed = 0
+        self._scan_expected = 0
         self._paused_for_video = False  # 视频播放时暂停标志
 
     def enqueue_rows(self, rows: Iterable[dict]) -> None:
@@ -211,6 +216,16 @@ class FaceScanWorker(QThread):
                 self.statusChanged.emit(f"Face scanning paused: {reason}")
                 if self._input_closed:
                     return
+
+    def _progress_message(self) -> str | None:
+        """Return a percentage status line, or None when the total is unknown."""
+
+        total = self._scan_expected
+        done = self._scan_processed
+        if total <= 0 or done > total:
+            return None
+        percent = min(100, done * 100 // total)
+        return f"正在扫描人脸... {percent}% ({done}/{total})"
 
     def _prime_pending_rows(self) -> None:
         self._top_up_pending_rows()
