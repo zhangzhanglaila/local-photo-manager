@@ -37,6 +37,7 @@ from .widgets import (
 )
 from .widgets.albums_dashboard import AlbumsDashboard
 from .widgets.gl_image_viewer import GLImageViewer
+from ...utils.env import env_flag
 
 
 def _configure_opaque_widget_background(widget: QWidget, background: str | None = None) -> None:
@@ -66,8 +67,7 @@ def _configure_main_view_stack(view_stack: QStackedWidget, map_view: object) -> 
         and hasattr(map_view, "uses_native_osmand_widget")
         and map_view.uses_native_osmand_widget()
         and sys.platform != "darwin"
-        and os.environ.get("IPHOTO_KEEP_NATIVE_MAP_PAGE_ALIVE", "").strip().lower()
-        in {"1", "true", "yes", "on"}
+        and env_flag("IPHOTO_KEEP_NATIVE_MAP_PAGE_ALIVE")
     ):
         # Keeping the native map page visible underneath the active page
         # avoids Qt tearing down the packaged QOpenGLWidget context every

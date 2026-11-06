@@ -38,6 +38,7 @@ from iPhoto.library.runtime_controller import LibraryRuntimeController
 from iPhoto.people.repository import AssetFaceAnnotation
 from iPhoto.people.service import PeopleService
 from maps.osmand_search import OsmAndSearchService, SearchSuggestion
+from ...utils.env import is_truthy
 
 if TYPE_CHECKING:
     from ...bootstrap.library_session import LibrarySession
@@ -313,11 +314,7 @@ class PlaybackCoordinator(QObject):
         self._zoom_handler.connect_controls()
 
     def _restore_filmstrip_preference(self) -> None:
-        stored = self._settings.get("ui.show_filmstrip", True)
-        if isinstance(stored, str):
-            show = stored.strip().lower() in {"1", "true", "yes", "on"}
-        else:
-            show = bool(stored)
+        show = is_truthy(self._settings.get("ui.show_filmstrip", True))
         self._filmstrip_view.setVisible(show)
         self._toggle_filmstrip_action.setChecked(show)
 

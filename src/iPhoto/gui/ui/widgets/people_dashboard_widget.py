@@ -37,6 +37,7 @@ from .people_dashboard_shared import (
 )
 from ..menus.core import MenuActionSpec, MenuContext, populate_menu
 from ..menus.style import apply_menu_style
+from ....utils.env import is_truthy
 
 
 class _PeopleDashboardLoaderSignals(QObject):
@@ -850,10 +851,7 @@ class PeopleDashboardWidget(QWidget):
         settings = getattr(context, "settings", None)
         if settings is None or not hasattr(settings, "get"):
             return False
-        stored = settings.get("ui.show_hidden_people", False)
-        if isinstance(stored, str):
-            return stored.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(stored)
+        return is_truthy(settings.get("ui.show_hidden_people", False))
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)

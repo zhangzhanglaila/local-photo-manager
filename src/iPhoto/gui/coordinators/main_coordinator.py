@@ -56,6 +56,7 @@ from iPhoto.gui.viewmodels.gallery_list_model_adapter import GalleryListModelAda
 from iPhoto.gui.viewmodels.gallery_viewmodel import GalleryViewModel
 from iPhoto.people.service import PeopleService
 from maps.map_sources import supports_map_extension_download
+from ...utils.env import is_truthy
 
 if TYPE_CHECKING:
     from iPhoto.gui.ui.main_window import MainWindow
@@ -1951,7 +1952,7 @@ class MainCoordinator(QObject):
 
         stored_face_names = settings.get("ui.show_face_names_in_detail", False)
         if isinstance(stored_face_names, str):
-            show_face_names = stored_face_names.strip().lower() in {"1", "true", "yes", "on"}
+            show_face_names = is_truthy(stored_face_names)
         else:
             show_face_names = bool(stored_face_names)
         ui.toggle_face_names_action.setChecked(show_face_names)
@@ -1959,7 +1960,7 @@ class MainCoordinator(QObject):
 
         stored_hidden_people = settings.get("ui.show_hidden_people", False)
         if isinstance(stored_hidden_people, str):
-            show_hidden_people = stored_hidden_people.strip().lower() in {"1", "true", "yes", "on"}
+            show_hidden_people = is_truthy(stored_hidden_people)
         else:
             show_hidden_people = bool(stored_hidden_people)
         ui.toggle_hidden_people_action.setChecked(show_hidden_people)
@@ -1967,7 +1968,7 @@ class MainCoordinator(QObject):
         # 3. Semantic Search
         stored_semantic_search = settings.get("agent.semantic_search_enabled", False)
         if isinstance(stored_semantic_search, str):
-            semantic_search_enabled = stored_semantic_search.strip().lower() in {"1", "true", "yes", "on"}
+            semantic_search_enabled = is_truthy(stored_semantic_search)
         else:
             semantic_search_enabled = bool(stored_semantic_search)
         ui.main_header.toggle_semantic_search_action.setChecked(semantic_search_enabled)
@@ -1983,7 +1984,7 @@ class MainCoordinator(QObject):
 
         stored_muted = settings.get("ui.is_muted", False)
         if isinstance(stored_muted, str):
-            initial_muted = stored_muted.strip().lower() in {"1", "true", "yes", "on"}
+            initial_muted = is_truthy(stored_muted)
         else:
             initial_muted = bool(stored_muted)
 

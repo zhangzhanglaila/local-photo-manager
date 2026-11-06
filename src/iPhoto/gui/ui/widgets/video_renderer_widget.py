@@ -56,6 +56,7 @@ except (ModuleNotFoundError, ImportError):  # pragma: no cover
     QVideoSink = None  # type: ignore[assignment, misc]
 
 from .render_backend import qrhi_api_name, select_qrhi_widget_api
+from ....utils.env import env_flag
 
 _log = logging.getLogger(__name__)
 
@@ -155,8 +156,7 @@ def _should_assume_180_prerotated(container_hint: bool) -> bool:
             return False
         return True
 
-    forced = os.environ.get("IPHOTRON_ASSUME_LINUX_180_PREROTATED", "")
-    return forced.strip().lower() in {"1", "true", "yes", "on"}
+    return env_flag("IPHOTRON_ASSUME_LINUX_180_PREROTATED")
 
 
 def _rotation_value_to_degrees(rotation: object) -> int:
