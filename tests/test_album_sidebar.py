@@ -41,6 +41,34 @@ def qapp() -> QApplication:
     yield app
 
 
+@pytest.fixture(autouse=True)
+def _qt_cleanup():
+    """Destroy widgets created by each test.
+
+    These tests build a sidebar plus a runtime controller per case and never tore
+    them down. Leaked Qt objects are destroyed in arbitrary order at interpreter
+    exit, which intermittently aborted the whole test session with an access
+    violation. Closing and deleting them per test keeps the session stable.
+    """
+
+    yield
+    import gc
+
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in list(app.topLevelWidgets()):
+        try:
+            widget.close()
+            widget.deleteLater()
+        except RuntimeError:
+            continue
+    app.processEvents()
+    gc.collect()
+
+
 def _write_manifest(path: Path, title: str) -> None:
     payload = {"schema": "iPhoto/album@1", "title": title, "filters": {}}
     (path / ".iphoto.album.json").write_text(json.dumps(payload), encoding="utf-8")
