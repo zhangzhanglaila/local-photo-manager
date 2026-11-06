@@ -13,6 +13,7 @@ from ....i18n import tr
 
 from PySide6.QtCore import QDateTime, QEvent, QLocale, QObject, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap, QShowEvent
+from ..theme_mode import is_dark
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -146,27 +147,9 @@ def _style_popup_input_dialog(dialog: QInputDialog, parent: QWidget | None) -> N
 
 
 def _uses_dark_theme(widget: QWidget | None) -> bool:
-    host = widget.window() if widget is not None and widget.window() is not None else widget
-    coordinator = getattr(host, "coordinator", None)
-    context = getattr(coordinator, "_context", None)
-    theme_manager = getattr(context, "theme", None)
-    if theme_manager is not None and hasattr(theme_manager, "get_effective_theme_mode"):
-        return theme_manager.get_effective_theme_mode() == "dark"
+    """Return whether the panel should render dark."""
 
-    settings = getattr(context, "settings", None)
-    if settings is not None and hasattr(settings, "get"):
-        theme_setting = settings.get("ui.theme", "system")
-        if theme_setting == "dark":
-            return True
-        if theme_setting == "light":
-            return False
-
-    app = QGuiApplication.instance()
-    if app is not None and app.styleHints().colorScheme() == Qt.ColorScheme.Dark:
-        return True
-
-    palette_source = host.palette() if host is not None else QPalette()
-    return palette_source.color(QPalette.ColorRole.Window).lightness() < 128
+    return is_dark(widget)
 
 
 class _FaceAvatarWidget(QLabel):

@@ -7,6 +7,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QPalette
+from ..theme_mode import is_dark
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
 
 from ..theme_manager import DARK_THEME, LIGHT_THEME, ThemeColors
@@ -69,30 +70,9 @@ def _resolve_popup_palette_source(parent: Optional[QWidget]) -> QPalette:
 
 
 def _resolve_popup_theme_colors(parent: Optional[QWidget]) -> ThemeColors | None:
-    """Resolve theme colors from the hosting window context when available."""
+    """Resolve theme colors using the shared theme-mode decision."""
 
-    widget = parent.window() if parent is not None and parent.window() is not None else parent
-    coordinator = getattr(widget, "coordinator", None)
-    context = getattr(coordinator, "_context", None)
-    theme_manager = getattr(context, "theme", None)
-    if theme_manager is not None and hasattr(theme_manager, "get_effective_theme_mode"):
-        return DARK_THEME if theme_manager.get_effective_theme_mode() == "dark" else LIGHT_THEME
-
-    settings = getattr(context, "settings", None)
-    if settings is not None and hasattr(settings, "get"):
-        theme_setting = settings.get("ui.theme", "system")
-        if theme_setting == "dark":
-            return DARK_THEME
-        if theme_setting == "light":
-            return LIGHT_THEME
-
-    app = QGuiApplication.instance()
-    if app is not None and app.styleHints().colorScheme() == Qt.ColorScheme.Dark:
-        return DARK_THEME
-    if app is not None:
-        window_color = QApplication.palette().color(QPalette.ColorRole.Window)
-        return DARK_THEME if window_color.lightness() < 128 else LIGHT_THEME
-    return None
+    return DARK_THEME if is_dark(parent) else LIGHT_THEME
 
 
 def show_error(parent: QWidget, message: str, *, title: str = "iPhoto") -> None:

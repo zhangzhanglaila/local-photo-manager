@@ -116,6 +116,10 @@ class ThemeManager(QObject):
             self._current_colors = LIGHT_THEME
 
         self._apply_palette(self._current_colors)
+        # Publish the resolved mode so widgets stop re-deriving it themselves.
+        from .theme_mode import set_current_mode
+
+        set_current_mode("dark" if is_dark else "light")
         self.themeChanged.emit(is_dark)
 
     def set_force_dark(self, enabled: bool) -> None:

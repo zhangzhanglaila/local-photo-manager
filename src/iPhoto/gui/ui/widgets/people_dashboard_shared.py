@@ -9,6 +9,7 @@ from typing import Iterable
 
 from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainterPath, QPalette, QPixmap
+from ..theme_mode import is_dark
 from PySide6.QtWidgets import QFrame, QWidget
 
 from iPhoto.config import WORK_DIR_NAME
@@ -139,9 +140,7 @@ def qimage_from_cover_image(image, size: tuple[int, int]) -> QImage:
 
 
 def _widget_uses_dark_theme(widget: QWidget | None) -> bool:
-    if widget is None:
-        return False
-    return widget.palette().color(QPalette.ColorRole.Window).lightness() < 128
+    return is_dark(widget)
 
 
 def _button_distance(first: QWidget, second: QWidget) -> float:
