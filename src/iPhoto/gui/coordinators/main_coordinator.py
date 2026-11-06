@@ -525,6 +525,11 @@ class MainCoordinator(QObject):
         self._view_router.detailViewShown.connect(self._enter_foreground_viewing)
         self._view_router.galleryViewShown.connect(self._leave_foreground_viewing)
         self._view_router.mapViewShown.connect(self._leave_foreground_viewing)
+        map_view = self._view_router.map_view()
+        if map_view is not None:
+            signal = getattr(map_view, "userInteracting", None)
+            if signal is not None:
+                signal.connect(self._touch_foreground_viewing)
         self._view_router.peopleViewShown.connect(self._leave_foreground_viewing)
         self._scroll_idle_timer = QTimer(self)
         self._scroll_idle_timer.setSingleShot(True)
@@ -1152,6 +1157,21 @@ class MainCoordinator(QObject):
         if library_manager is not None:
             library_manager.unregister_foreground_viewing()
 
+    def _touch_foreground_viewing(self) -> None:
+        """Register brief foreground viewing: background scans yield for a moment.
+
+        Used by every surface the user actively manipulates (grid scrolling, map
+        panning/zooming): the scans resume shortly after the interaction stops, so
+        they still make progress in the background without competing with the UI.
+        """
+
+        if not self._scroll_viewing_registered:
+            self._scroll_viewing_registered = True
+            library_manager = self._foreground_library()
+            if library_manager is not None:
+                library_manager.register_foreground_viewing()
+        self._scroll_idle_timer.start()
+
     def _on_gallery_scrolled(self, first: int, last: int) -> None:
         """滚动期间短暂让路，滚动停下后自动恢复。
 
@@ -1159,12 +1179,7 @@ class MainCoordinator(QObject):
         读取就会被拖慢。登记一小段时间既能保住手感，也不会让扫描长期停摆。
         """
         del first, last
-        if not self._scroll_viewing_registered:
-            self._scroll_viewing_registered = True
-            library_manager = self._foreground_library()
-            if library_manager is not None:
-                library_manager.register_foreground_viewing()
-        self._scroll_idle_timer.start()
+        self._touch_foreground_viewing()
 
     def _on_scroll_idle(self) -> None:
         """滚动停止：释放滚动期间的登记。"""

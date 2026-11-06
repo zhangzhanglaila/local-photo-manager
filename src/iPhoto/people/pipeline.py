@@ -274,6 +274,13 @@ class FaceClusterPipeline:
                 original_download_file = None
 
         try:
+            from ..utils.thread_limits import apply_library_thread_limits
+
+            # InsightFace leans on OpenCV for alignment/cropping. OpenCV ignores
+            # the BLAS environment variables and keeps a full-width pool of its
+            # own, which is what made a single scan saturate every core.
+            apply_library_thread_limits()
+
             app = FaceAnalysis(
                 name=self._model_pack,
                 root=str(insightface_root),
@@ -282,6 +289,7 @@ class FaceClusterPipeline:
                 sess_options=_face_session_options(),
             )
             app.prepare(ctx_id=ctx_id, det_size=(640, 640))
+
         except Exception as exc:
             raise _build_face_analysis_init_error(
                 feature_name="Face scanning",

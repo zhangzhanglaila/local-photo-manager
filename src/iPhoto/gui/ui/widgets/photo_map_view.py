@@ -343,6 +343,9 @@ class PhotoMapView(QWidget):
     showAllRequested = Signal()
     """Signal emitted when focused map mode should return to all map assets."""
 
+    userInteracting = Signal()
+    """Emitted while the user pans or zooms, so background scans can yield."""
+
     def __init__(
         self,
         parent: Optional[QWidget] = None,
@@ -975,6 +978,10 @@ class PhotoMapView(QWidget):
         # repaint on every view change so the trail tracks the new
         # projection.  The GL post-render path handles this implicitly.
         self._map_widget.viewChanged.connect(self._on_view_changed_repaint_trail)
+        # Panning/zooming is exactly when the map needs CPU for tiles, so tell the
+        # host that the user is interacting with the interface.
+        self._map_widget.viewChanged.connect(self.userInteracting.emit)
+        self._map_widget.panned.connect(self.userInteracting.emit)
         self._thumbnail_loader.ready.connect(self._marker_controller.handle_thumbnail_ready)
         self._marker_controller.clustersUpdated.connect(self._handle_clusters_updated)
         self._marker_controller.citiesUpdated.connect(self._handle_city_annotations)

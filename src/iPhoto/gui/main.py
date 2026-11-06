@@ -25,6 +25,13 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QColor, QPalette, QSurfaceFormat
 from PySide6.QtWidgets import QApplication
 
+# Cap BLAS/OpenMP pools before NumPy, OpenCV or onnxruntime are imported: those
+# runtimes read their thread limits once, at import time. Without this the face
+# scan still burned ~22 of 24 cores even though onnxruntime itself was bounded.
+from iPhoto.utils.thread_limits import apply_early_thread_limits
+
+apply_early_thread_limits()
+
 from iPhoto.bootstrap.qt_shader_cache import configure_shader_cache_environment
 from iPhoto.gui.render_backend import should_configure_global_desktop_opengl
 from iPhoto.i18n import tr

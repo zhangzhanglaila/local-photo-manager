@@ -45,6 +45,12 @@ class OCREngine:
 
                 bound_rapidocr_threads()
 
+                # RapidOCR also goes through OpenCV; cap its pool with the same
+                # budget so a scan cannot saturate every core.
+                from ...utils.thread_limits import apply_library_thread_limits
+
+                apply_library_thread_limits()
+
                 _LOGGER.info("Loading RapidOCR model (first use, ~10s)...")
                 self._engine = RapidOCR()
                 self._loaded = True
