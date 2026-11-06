@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import atexit
+import collections
 import json
+import logging
 import os
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from typing import Any
-import logging
 
 from ..errors import ExternalToolError
 
@@ -185,12 +190,231 @@ def _format_iso6709(latitude: float, longitude: float) -> str:
     return f"{latitude:+.6f}{longitude:+.6f}/"
 
 
-def get_metadata_batch(paths: list[Path]) -> list[dict[str, Any]]:
-    """Return metadata for *paths* by launching a single ``exiftool`` process."""
+# ---------------------------------------------------------------------------
+# Persistent ExifTool session
+#
+# ExifTool costs ~410 ms per launch (Perl start-up plus module loading), and it
+# was launched once per batch — and once per info-panel open. ``-stay_open`` keeps
+# the interpreter alive and turns subsequent requests into ~20 ms.
+#
+# The session is an optimisation only: every failure falls back to the one-shot
+# path so behaviour never depends on it.
+# ---------------------------------------------------------------------------
 
-    executable = _resolve_exiftool_executable()
-    if not paths:
+_STAY_OPEN_ENV = "IPHOTO_EXIFTOOL_STAY_OPEN"
+_SESSION_ARGS = ("-n", "-g1", "-json", "-charset", "filename=utf8")
+_READY_MARKER = "{ready}"
+_SESSION_MIN_TIMEOUT_S = 5.0
+_STDERR_LINES = 50
+
+_session: "_ExifToolSession | None" = None
+_session_executable: str | None = None
+_session_lock = threading.Lock()
+
+
+class _ExifToolSession:
+    """A long-lived ``exiftool -stay_open True`` process.
+
+    Wire protocol: arguments and paths are written to stdin, terminated by
+    ``-execute``; ExifTool answers with the JSON payload followed by ``{ready}``.
+    A reader thread feeds a queue so the caller can wait with a timeout — pipes
+    on Windows do not support ``select``.
+    """
+
+    def __init__(self, executable: str) -> None:
+        startupinfo, creationflags = _startup_options()
+        self._process = subprocess.Popen(
+            [executable, "-stay_open", "True", "-@", "-"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+        self._lines: "queue.Queue[str | None]" = queue.Queue()
+        self._stderr: collections.deque[str] = collections.deque(maxlen=_STDERR_LINES)
+        self._closed = False
+        self._stdout_thread = threading.Thread(
+            target=self._drain_stdout, name="exiftool-stdout", daemon=True
+        )
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr, name="exiftool-stderr", daemon=True
+        )
+        self._stdout_thread.start()
+        self._stderr_thread.start()
+
+    # -- readers ---------------------------------------------------------
+    def _drain_stdout(self) -> None:
+        stream = self._process.stdout
+        if stream is None:  # pragma: no cover - defensive
+            return
+        try:
+            for line in stream:
+                self._lines.put(line)
+        except (OSError, ValueError):  # pragma: no cover - process teardown
+            pass
+        finally:
+            self._lines.put(None)
+
+    def _drain_stderr(self) -> None:
+        stream = self._process.stderr
+        if stream is None:  # pragma: no cover - defensive
+            return
+        try:
+            for line in stream:
+                self._stderr.append(line.rstrip())
+        except (OSError, ValueError):  # pragma: no cover - process teardown
+            pass
+
+    # -- requests --------------------------------------------------------
+    def read(self, paths: list[Path], timeout: float) -> str:
+        """Run one ``-execute`` cycle and return the raw stdout payload."""
+
+        if self._closed:
+            raise ExternalToolError("ExifTool session is closed")
+        stdin = self._process.stdin
+        if stdin is None:  # pragma: no cover - defensive
+            raise ExternalToolError("ExifTool session has no stdin")
+
+        arguments = list(_SESSION_ARGS)
+        for path in paths:
+            arguments.append(_safe_exiftool_path(path))
+        arguments.append("-execute")
+
+        try:
+            stdin.write("\n".join(arguments) + "\n")
+            stdin.flush()
+        except (OSError, ValueError) as exc:
+            raise ExternalToolError(f"Failed to talk to ExifTool session: {exc}") from exc
+
+        deadline = time.monotonic() + timeout
+        collected: list[str] = []
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ExternalToolError(
+                    f"ExifTool session timed out after {timeout:.0f}s"
+                )
+            try:
+                line = self._lines.get(timeout=remaining)
+            except queue.Empty as exc:
+                raise ExternalToolError(
+                    f"ExifTool session timed out after {timeout:.0f}s"
+                ) from exc
+            if line is None:
+                detail = "; ".join(self._stderr) or "no stderr output"
+                raise ExternalToolError(f"ExifTool session exited unexpectedly: {detail}")
+            if line.strip() == _READY_MARKER:
+                return "".join(collected)
+            collected.append(line)
+
+    # -- lifecycle -------------------------------------------------------
+    def is_alive(self) -> bool:
+        return not self._closed and self._process.poll() is None
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            stdin = self._process.stdin
+            if stdin is not None:
+                stdin.write("-stay_open\nFalse\n")
+                stdin.flush()
+                stdin.close()
+        except (OSError, ValueError):
+            pass
+        try:
+            self._process.wait(timeout=5)
+        except subprocess.TimeoutExpired:  # pragma: no cover - stuck process
+            self._process.kill()
+        for thread in (self._stdout_thread, self._stderr_thread):
+            thread.join(timeout=2)
+
+
+def _stay_open_enabled() -> bool:
+    raw = os.environ.get(_STAY_OPEN_ENV, "").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _session_for(executable: str) -> _ExifToolSession | None:
+    """Return the shared session, starting it on first use.
+
+    Returns ``None`` when the session cannot be used, so callers fall back to the
+    one-shot path instead of failing.
+    """
+
+    global _session, _session_executable
+
+    if not _stay_open_enabled():
+        return None
+    if _session is not None and _session_executable == executable and _session.is_alive():
+        return _session
+    if _session is not None:
+        _session.close()
+        _session = None
+        _session_executable = None
+    try:
+        _session = _ExifToolSession(executable)
+    except (OSError, ValueError) as exc:
+        LOGGER.warning("Could not start persistent ExifTool session: %s", exc)
+        _session = None
+        return None
+    _session_executable = executable
+    LOGGER.debug("Started persistent ExifTool session")
+    return _session
+
+
+def _close_session_locked() -> None:
+    """Close the shared session; the caller must hold `_session_lock`."""
+
+    global _session, _session_executable
+
+    if _session is not None:
+        _session.close()
+    _session = None
+    _session_executable = None
+
+
+def _close_session() -> None:
+    """Shut the shared session down (used by tests and interpreter exit)."""
+
+    with _session_lock:
+        _close_session_locked()
+
+
+def _read_metadata_persistent(
+    paths: list[Path], executable: str
+) -> list[dict[str, Any]] | None:
+    """Read metadata through the shared session, or ``None`` to fall back."""
+
+    with _session_lock:
+        session = _session_for(executable)
+        if session is None:
+            return None
+        # Batches are dominated by per-file parsing (~20 ms each); the margin here
+        # only guards against a hung process.
+        timeout = _SESSION_MIN_TIMEOUT_S + 0.02 * len(paths)
+        try:
+            payload = session.read(paths, timeout)
+        except ExternalToolError as exc:
+            LOGGER.warning("Persistent ExifTool session failed, retrying one-shot: %s", exc)
+            _close_session_locked()
+            return None
+    if not payload.strip():
         return []
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise ExternalToolError(f"Failed to parse JSON output from ExifTool: {exc}") from exc
+
+
+def _read_metadata_one_shot(paths: list[Path], executable: str) -> list[dict[str, Any]]:
+    """Read metadata by launching one ``exiftool`` process (original path)."""
 
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as tmp_arg_file:
         for path in paths:
@@ -204,11 +428,7 @@ def get_metadata_batch(paths: list[Path]) -> list[dict[str, Any]]:
     try:
         cmd = [
             executable,
-            "-n",
-            "-g1",
-            "-json",
-            "-charset",
-            "filename=utf8",
+            *_SESSION_ARGS,
             "-@",
             tmp_arg_path,
         ]
@@ -227,6 +447,25 @@ def get_metadata_batch(paths: list[Path]) -> list[dict[str, Any]]:
             os.remove(tmp_arg_path)
         except OSError:
             pass
+
+
+def get_metadata_batch(paths: list[Path]) -> list[dict[str, Any]]:
+    """Return metadata for *paths*, reusing a persistent ExifTool process.
+
+    ExifTool's start-up cost dominates small requests, so the process is kept
+    alive between calls; the original one-shot implementation is still used as a
+    fallback whenever the persistent session is unavailable or fails.
+    """
+
+    executable = _resolve_exiftool_executable()
+    if not paths:
+        return []
+
+    persistent = _read_metadata_persistent(paths, executable)
+    if persistent is not None:
+        return persistent
+    return _read_metadata_one_shot(paths, executable)
+
 
 
 def write_gps_metadata(
@@ -260,6 +499,9 @@ def write_gps_metadata(
         )
     cmd.append(safe_path)
     _run_exiftool_command(cmd)
+
+
+atexit.register(_close_session)
 
 
 __all__ = ["get_metadata_batch", "write_gps_metadata"]
