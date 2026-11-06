@@ -71,6 +71,11 @@ class _FakeLibrary:
         )
         self._root = root
 
+    def bind_path_from_session(self, root: Path) -> None:
+        """LibraryRuntimeController binds the path without a headless session."""
+
+        self.bind_path(root)
+
     def root(self) -> Path | None:
         return self._root
 
