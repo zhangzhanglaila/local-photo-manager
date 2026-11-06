@@ -15,7 +15,17 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 
 from iPhoto.domain.models.query import AssetQuery
-from iPhoto.gui.viewmodels.gallery_collection_store import GalleryCollectionStore
+from iPhoto.gui.viewmodels.gallery_collection_store import (
+    GALLERY_SINGLE_FLIGHT_ENV,
+    GalleryCollectionStore,
+)
+
+
+@pytest.fixture(autouse=True)
+def _enable_single_flight(monkeypatch: pytest.MonkeyPatch):
+    """The strategy is opt-in; these tests exercise the opt-in path."""
+
+    monkeypatch.setenv(GALLERY_SINGLE_FLIGHT_ENV, "1")
 
 
 class _Service:

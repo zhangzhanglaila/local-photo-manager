@@ -58,6 +58,20 @@ class GalleryAssetQuerySurface(Protocol):
 #: operations all use `QThreadPool.globalInstance()`; sharing it meant a window load
 #: could sit behind a burst of thumbnail jobs for seconds even though the query itself
 #: takes ~40 ms. Two threads are enough: loads are small and the newest request wins.
+#: Opt-in switches for the two window-loading strategies. Both default to off so the
+#: shipped behaviour stays the one measured to feel acceptable; set them to "1" to
+#: compare. (They are guarded here rather than deleted because the comparison needs to
+#: be possible without rebuilding.)
+GALLERY_MERGE_ENV = "IPHOTO_GALLERY_MERGE"
+GALLERY_SINGLE_FLIGHT_ENV = "IPHOTO_GALLERY_SINGLE_FLIGHT"
+
+
+def _env_on(name: str) -> bool:
+    import os
+
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 _GALLERY_LOAD_POOL = QThreadPool()
 _GALLERY_LOAD_POOL.setMaxThreadCount(2)
 
@@ -938,10 +952,14 @@ class GalleryCollectionStore:
 
         # Single-flight: keep the running load, remember only the newest request.
         if self._load_worker is not None:
-            self._queued_visible = (first, last)
-            self._queued_emit = emit_signals
+            if _env_on(GALLERY_SINGLE_FLIGHT_ENV):
+                self._queued_visible = (first, last)
+                self._queued_emit = emit_signals
+                self._load_superseded += 1
+                return
+            self._load_worker.cancel()
+            self._load_worker = None
             self._load_superseded += 1
-            return
 
         self._load_generation += 1
         gen = self._load_generation
@@ -1042,7 +1060,8 @@ class GalleryCollectionStore:
         mapping_key = self._count_cache_key()
         window = self._load_window_range
         if (
-            self._row_mapping_key == mapping_key
+            _env_on(GALLERY_MERGE_ENV)
+            and self._row_mapping_key == mapping_key
             and total == old_total
             and self._row_cache
             and row_cache
