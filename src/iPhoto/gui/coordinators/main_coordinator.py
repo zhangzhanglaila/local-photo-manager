@@ -60,6 +60,12 @@ if TYPE_CHECKING:
     from iPhoto.gui.ui.main_window import MainWindow
 
 
+#: The map widget is created lazily after the Location page is first shown, so
+#: focusing waits for it. Values are policy, not implementation detail.
+MAP_FOCUS_MAX_RETRIES = 10
+MAP_FOCUS_RETRY_INTERVAL_MS = 400
+
+
 class MainCoordinator(QObject):
     """High-level coordinator for the main window.
     Acts as the entry point and glue code for the application, initializing
@@ -897,35 +903,6 @@ class MainCoordinator(QObject):
         if hasattr(self._window.ui, "map_view"):
             self._window.ui.map_view.set_focused_asset_mode(False)
 
-    _FOCUS_MAP_MAX_RETRIES = 30
-
-    def _try_focus_map(self, lat: float, lon: float, attempt: int) -> None:
-        """Center the Location map on the given coordinates at high zoom."""
-        ui = self._window.ui
-        if not hasattr(ui, "map_view") or ui.map_view is None:
-            self._retry_focus(lat, lon, attempt)
-            return
-        try:
-            map_widget = ui.map_view.map_widget()
-        except RuntimeError:
-            self._retry_focus(lat, lon, attempt)
-            return
-        if map_widget is None:
-            self._retry_focus(lat, lon, attempt)
-            return
-        try:
-            map_widget.set_zoom(17.0)
-            map_widget.center_on(lon, lat)
-        except Exception:
-            self._retry_focus(lat, lon, attempt)
-
-    def _retry_focus(self, lat: float, lon: float, attempt: int) -> None:
-        if attempt < self._FOCUS_MAP_MAX_RETRIES:
-            QTimer.singleShot(
-                100,
-                lambda: self._try_focus_map(lat, lon, attempt + 1),
-            )
-
     def _add_header_back_button(self) -> None:
         """Add a back button to the main header bar."""
         ui = self._window.ui
@@ -960,8 +937,6 @@ class MainCoordinator(QObject):
         else:
             self._navigation.open_all_photos()
 
-    _FOCUS_MAP_MAX_RETRIES = 10
-
     def _try_focus_map(self, lat: float, lon: float, attempt: int) -> None:
         """Center the Location map on the given coordinates at high zoom."""
         ui = self._window.ui
@@ -979,12 +954,15 @@ class MainCoordinator(QObject):
             map_widget.set_zoom(17.0)
             map_widget.center_on(lon, lat)
         except Exception:
+            logging.getLogger(__name__).debug(
+                "Could not focus the map yet (attempt %s)", attempt, exc_info=True
+            )
             self._retry_focus(lat, lon, attempt)
 
     def _retry_focus(self, lat: float, lon: float, attempt: int) -> None:
-        if attempt < self._FOCUS_MAP_MAX_RETRIES:
+        if attempt < MAP_FOCUS_MAX_RETRIES:
             QTimer.singleShot(
-                400,
+                MAP_FOCUS_RETRY_INTERVAL_MS,
                 lambda: self._try_focus_map(lat, lon, attempt + 1),
             )
 

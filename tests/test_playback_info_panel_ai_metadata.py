@@ -79,10 +79,15 @@ def qapp() -> QApplication:
     return QApplication.instance() or QApplication([])
 
 
-def _refresh(panel: _FakePanel, enabled: bool, session: Any) -> PlaybackCoordinator:
-    """Run the refresh against a real coordinator instance (no Qt widgets needed)."""
+def _refresh(panel: _FakePanel, enabled: bool, session: Any) -> SimpleNamespace:
+    """Run the refresh against a stub.
 
-    coordinator = PlaybackCoordinator.__new__(PlaybackCoordinator)
+    `PlaybackCoordinator.__new__` would create an uninitialised QObject; letting
+    that be garbage collected can crash the interpreter, so the tests call the
+    unbound methods on a plain namespace instead.
+    """
+
+    coordinator = SimpleNamespace()
     coordinator._info_panel = panel
     coordinator._settings = _FakeSettings({"agent.semantic_search_enabled": enabled})
     coordinator._library_session_getter = lambda: session
