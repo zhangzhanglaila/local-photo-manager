@@ -38,16 +38,6 @@ class SchemaMigrator:
 
         conn.execute("PRAGMA synchronous=NORMAL;")
 
-        # Records which extractor version produced each row. Per-file tracking lets
-        # an upgrade re-extract only the rows that are stale, instead of the whole
-        # library (the previous PRAGMA user_version stamp was all-or-nothing).
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS extraction_versions (
-                rel TEXT PRIMARY KEY,
-                version INTEGER NOT NULL
-            )
-            """)
-
         # Create the assets table with support for global library indexing.
         # Key columns:
         # - rel: Library-relative path (primary key, e.g., "2023/Trip/img.jpg")
