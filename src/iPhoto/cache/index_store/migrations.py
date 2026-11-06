@@ -38,6 +38,18 @@ class SchemaMigrator:
 
         conn.execute("PRAGMA synchronous=NORMAL;")
 
+        # Per-directory evidence used to skip unchanged folders on startup. Counting
+        # names in a directory needs a scandir but no per-file stat, which is the
+        # expensive part of a full scan.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scan_snapshots (
+                album_rel TEXT PRIMARY KEY,
+                file_count INTEGER NOT NULL,
+                dir_mtime REAL NOT NULL,
+                swept_at TEXT NOT NULL
+            )
+            """)
+
         # Create the assets table with support for global library indexing.
         # Key columns:
         # - rel: Library-relative path (primary key, e.g., "2023/Trip/img.jpg")
