@@ -55,6 +55,7 @@ from ..menus.style import apply_menu_style
 from ..theme_manager import DARK_THEME
 from . import dialogs
 from .flow_layout import FlowLayout
+from ....utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
     from ....library.runtime_controller import LibraryRuntimeController
@@ -782,13 +783,10 @@ class AlbumsDashboard(QWidget):
                 return existing
         return None
 
-    def _paths_equal(self, first: Path, second: Path) -> bool:
-        if first == second:
-            return True
-        try:
-            return first.resolve() == second.resolve()
-        except OSError:
-            return False
+    def _paths_equal(self,first,second) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(first,second)
 
     def _apply_theme(self) -> None:
         app = QGuiApplication.instance()

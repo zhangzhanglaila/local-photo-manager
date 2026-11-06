@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QProgressBar
 from ....application.contracts.runtime_entry_contract import RuntimeEntryContract
 from ....config import RECENTLY_DELETED_DIR_NAME
 from ....i18n import tr
+from ....utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
     from ..widgets.chrome_status_bar import ChromeStatusBar
@@ -261,15 +262,7 @@ class StatusBarController(QObject):
             # progress updates does not linger in the bar.
             self._status_bar.clearMessage()
 
-    def _paths_equal(self, first: Path, second: Path) -> bool:
-        """Return ``True`` when *first* and *second* refer to the same location."""
+    def _paths_equal(self,first,second) -> bool:
+        """Delegate to the single shared comparison."""
 
-        try:
-            first_resolved = first.resolve()
-        except OSError:
-            first_resolved = first
-        try:
-            second_resolved = second.resolve()
-        except OSError:
-            second_resolved = second
-        return first_resolved == second_resolved
+        return paths_equal(first,second)

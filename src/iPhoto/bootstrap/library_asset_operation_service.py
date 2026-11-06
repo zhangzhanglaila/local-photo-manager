@@ -12,6 +12,7 @@ from ..config import ALBUM_MANIFEST_NAMES
 from ..media_classifier import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from ..utils.jsonio import read_json
 from .library_asset_lifecycle_service import LibraryAssetLifecycleService
+from ..utils.pathutils import paths_equal
 
 MetadataLookup = Callable[[Path], dict[str, Any] | None]
 RestoreToRootPrompt = Callable[[str], bool]
@@ -746,10 +747,10 @@ class LibraryAssetOperationService:
         return cls._normalize_path(Path(path)) if path is not None else None
 
     @classmethod
-    def _paths_equal(cls, left: Path | None, right: Path | None) -> bool:
-        if left is None or right is None:
-            return False
-        return cls._normalize_path(Path(left)) == cls._normalize_path(Path(right))
+    def _paths_equal(cls,left,right) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(left,right)
 
     @staticmethod
     def _is_safe_relative_path(value: str) -> bool:

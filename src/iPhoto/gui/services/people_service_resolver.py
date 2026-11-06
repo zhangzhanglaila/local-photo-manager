@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from iPhoto.people.service import PeopleService
+from ...utils.pathutils import paths_equal as _paths_equal
 
 if TYPE_CHECKING:  # pragma: no cover
     from ...library.runtime_controller import LibraryRuntimeController
@@ -62,11 +63,6 @@ def _is_unconfigured_mock(candidate: object) -> bool:
     return candidate.__class__.__module__.startswith("unittest.mock")
 
 
-def _paths_equal(left: Path, right: Path) -> bool:
-    try:
-        return Path(left).resolve() == Path(right).resolve()
-    except OSError:
-        return Path(left) == Path(right)
 
 
 __all__ = [

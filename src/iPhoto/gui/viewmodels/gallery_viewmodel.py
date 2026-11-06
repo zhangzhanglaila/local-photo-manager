@@ -28,6 +28,7 @@ from iPhoto.gui.services.people_service_resolver import resolve_people_service
 from .base import BaseViewModel
 from .gallery_collection_store import GalleryCollectionStore
 from .signal import ObservableProperty, Signal
+from ...utils.pathutils import paths_equal
 
 
 class GalleryViewModel(BaseViewModel):
@@ -857,13 +858,10 @@ class GalleryViewModel(BaseViewModel):
                     return True
         return False
 
-    def _paths_equal(self, first: Path, second: Path) -> bool:
-        if first == second:
-            return True
-        try:
-            return first.resolve() == second.resolve()
-        except OSError:
-            return False
+    def _paths_equal(self,first,second) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(first,second)
 
     def _retarget_renamed_path(
         self,

@@ -10,6 +10,7 @@ from ...bootstrap.library_scan_service import LibraryScanService
 from ..background_task_manager import BackgroundTaskManager
 from ...library.workers.rescan_worker import RescanSignals, RescanWorker
 from ...library.workers.scanner_worker import ScannerSignals, ScannerWorker
+from ...utils.pathutils import paths_equal
 
 
 @dataclass(frozen=True)
@@ -210,9 +211,8 @@ class LibraryUpdateTaskRunner:
         self._scan_pending = False
 
     @staticmethod
-    def _paths_equal(left: Path, right: Path) -> bool:
-        try:
-            return Path(left).resolve() == Path(right).resolve()
-        except OSError:
-            return Path(left) == Path(right)
+    def _paths_equal(left,right) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(left,right)
 

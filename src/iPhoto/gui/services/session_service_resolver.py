@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from ...utils.pathutils import paths_equal as _paths_equal
 
 if TYPE_CHECKING:  # pragma: no cover
     from ...bootstrap.library_album_metadata_service import LibraryAlbumMetadataService
@@ -125,11 +126,6 @@ def _service_library_root(candidate: object) -> Path | None:
 
 
 
-def _paths_equal(left: Path, right: Path) -> bool:
-    try:
-        return Path(left).resolve() == Path(right).resolve()
-    except OSError:
-        return Path(left) == Path(right)
 
 
 __all__ = [

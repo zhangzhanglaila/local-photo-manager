@@ -19,6 +19,7 @@ from .session_service_resolver import (
     bound_asset_lifecycle_service,
     bound_scan_service,
 )
+from ...utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
     from ...library.runtime_controller import LibraryRuntimeController
@@ -709,10 +710,10 @@ class LibraryUpdateService(QObject):
         except OSError:
             return path
 
-    def _paths_equal(self, left: Path, right: Path) -> bool:
-        if left == right:
-            return True
-        return self._normalise_path(left) == self._normalise_path(right)
+    def _paths_equal(self,left,right) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(left,right)
 
     def _path_is_descendant(self, candidate: Path, ancestor: Path) -> bool:
         try:

@@ -1,4 +1,5 @@
 """Coordinator that wires the main window to application logic.
+from ...utils.pathutils import paths_equal
 
 This replaces the legacy MainController as the top-level orchestrator.
 """
@@ -1021,18 +1022,10 @@ class MainCoordinator(QObject):
             or destination.name == RECENTLY_DELETED_DIR_NAME
         )
 
-    def _paths_equal(self, first: Path, second: Path) -> bool:
-        """Return ``True`` when *first* and *second* refer to the same location."""
+    def _paths_equal(self,first,second) -> bool:
+        """Delegate to the single shared comparison."""
 
-        try:
-            first_resolved = first.resolve()
-        except OSError:
-            first_resolved = first
-        try:
-            second_resolved = second.resolve()
-        except OSError:
-            second_resolved = second
-        return first_resolved == second_resolved
+        return paths_equal(first,second)
 
     def _handle_media_load_failed(self, path: Path, message: str) -> None:
         path_key = str(path)

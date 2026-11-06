@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from ...bootstrap.library_album_metadata_service import LibraryAlbumMetadataService
 from .session_service_resolver import bound_album_metadata_service
+from ...utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
     from ...library.runtime_controller import LibraryRuntimeController
@@ -147,11 +148,10 @@ class AlbumMetadataService(QObject):
         return candidate.__class__.__module__.startswith("unittest.mock")
 
     @staticmethod
-    def _paths_equal(left: Path, right: Path) -> bool:
-        try:
-            return Path(left).resolve() == Path(right).resolve()
-        except OSError:
-            return Path(left) == Path(right)
+    def _paths_equal(left,right) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(left,right)
 
 
 __all__ = ["AlbumMetadataService"]

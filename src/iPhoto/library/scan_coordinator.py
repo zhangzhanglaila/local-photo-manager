@@ -11,6 +11,7 @@ from ..bootstrap.library_scan_service import LibraryScanService
 from ..utils.logging import get_logger
 from .workers.face_scan_worker import FaceScanWorker
 from .workers.scanner_worker import ScannerSignals, ScannerWorker
+from ..utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
     pass
@@ -467,11 +468,10 @@ class ScanCoordinatorMixin:
         """Propagate partial failure notifications to the UI."""
         self.scanBatchFailed.emit(root, count)
 
-    def _paths_equal(self, p1: Path, p2: Path) -> bool:
-        try:
-            return p1.resolve() == p2.resolve()
-        except OSError:
-            return p1 == p2
+    def _paths_equal(self,p1,p2) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(p1,p2)
 
     def _on_face_scan_status_changed(self, message: str) -> None:
         self._face_scan_status_message = message or None

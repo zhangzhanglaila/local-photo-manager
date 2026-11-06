@@ -14,6 +14,7 @@ from ..infrastructure.repositories.library_state_repository import (
     IndexStoreLibraryStateRepository,
 )
 from ..utils.pathutils import is_descendant_path
+from ..utils.pathutils import paths_equal
 
 
 @dataclass(frozen=True)
@@ -222,10 +223,9 @@ class LibraryAlbumMetadataService:
             return Path(path).expanduser()
 
     @staticmethod
-    def _paths_equal(left: Path, right: Path) -> bool:
-        try:
-            return Path(left).resolve() == Path(right).resolve()
-        except OSError:
-            return Path(left) == Path(right)
+    def _paths_equal(left,right) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(left,right)
 
 __all__ = ["AlbumFeaturedToggleResult", "LibraryAlbumMetadataService"]

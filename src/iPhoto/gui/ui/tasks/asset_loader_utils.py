@@ -18,6 +18,7 @@ from ....media_classifier import classify_media
 from ....utils.geocoding import resolve_location_name
 from ....utils.pathutils import ensure_work_dir, resolve_asset_path
 from ....utils.image_loader import qimage_from_bytes
+from ....utils.pathutils import paths_equal as _paths_equal
 
 LOGGER = logging.getLogger(__name__)
 
@@ -516,8 +517,3 @@ def _safe_signal_emit(signal_func: Callable, *args) -> bool:
         return False
 
 
-def _paths_equal(first: Path, second: Path) -> bool:
-    try:
-        return Path(first).resolve() == Path(second).resolve()
-    except OSError:
-        return Path(first) == Path(second)

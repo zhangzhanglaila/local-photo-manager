@@ -29,6 +29,7 @@ from ..utils.pathutils import (
     resolve_work_dir,
 )
 from .library_scan_service import LibraryScanService
+from ..utils.pathutils import paths_equal
 
 LOGGER = get_logger()
 
@@ -754,12 +755,10 @@ class LibraryAssetLifecycleService:
         except OSError:
             return str(path)
 
-    def _paths_equal(self, left: Path | None, right: Path | None) -> bool:
-        if left is None or right is None:
-            return False
-        if left == right:
-            return True
-        return self._normalised_string(left) == self._normalised_string(right)
+    def _paths_equal(self,left,right) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(left,right)
 
 
 __all__ = ["AssetLifecycleResult", "LibraryAssetLifecycleService"]

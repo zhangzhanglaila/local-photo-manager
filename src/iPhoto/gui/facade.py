@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from ..library.runtime_controller import LibraryRuntimeController
 
 import logging
+from ..utils.pathutils import paths_equal
 logger = logging.getLogger(__name__)
 
 class AppFacade(QObject):
@@ -407,13 +408,10 @@ class AppFacade(QObject):
             return None
         return self._current_album.root
 
-    def _paths_equal(self, first: Path, second: Path) -> bool:
-        if first == second:
-            return True
-        try:
-            return first.resolve() == second.resolve()
-        except OSError:
-            return False
+    def _paths_equal(self,first,second) -> bool:
+        """Delegate to the single shared comparison."""
+
+        return paths_equal(first,second)
 
     def _get_library_manager(self) -> Optional["LibraryRuntimeController"]:
         return self._library_manager
