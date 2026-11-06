@@ -13,6 +13,7 @@ from iPhoto.domain.models.query import AssetQuery
 class _Repository:
     def __init__(self) -> None:
         self.count_calls: list[dict[str, Any]] = []
+        self.page_calls: list[dict[str, Any]] = []
         self.geometry_calls: list[dict[str, Any]] = []
         self.album_read_calls: list[dict[str, Any]] = []
         self.location_updates: list[tuple[str, str]] = []
@@ -43,6 +44,12 @@ class _Repository:
     def read_all(self, **_kwargs):
         return list(self.all_rows)
 
+    def get_assets_page(self, **kwargs):
+        self.page_calls.append(dict(kwargs))
+        rows = list(self.album_rows) if kwargs.get("album_path") else list(self.all_rows)
+        offset = int(kwargs.get("offset") or 0)
+        limit = int(kwargs.get("limit") or 0)
+        return rows[offset : offset + limit] if limit else rows[offset:]
     def read_geotagged(self):
         return list(self.geotagged_rows)
 
@@ -172,15 +179,18 @@ def test_read_query_asset_rows_scopes_album_rows_and_applies_paging(tmp_path: Pa
     rows = list(service.read_query_asset_rows(album_root, query))
 
     assert rows == [{"rel": "b.jpg", "id": "b", "live_role": 0}]
-    assert repo.album_read_calls == [
+    # With AssetRepositoryPort complete, a paged query uses get_assets_page instead
+    # of materialising every row and slicing it in Python.
+    assert repo.page_calls == [
         {
+            "limit": 1,
+            "album_path": "Trip",
             "include_subalbums": True,
-            "sort_by_date": True,
             "filter_hidden": True,
             "filter_params": {
                 "exclude_path_prefix": RECENTLY_DELETED_DIR_NAME,
             },
-            "album_path": "Trip",
+            "offset": 1,
         }
     ]
 

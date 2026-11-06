@@ -94,6 +94,34 @@ class AssetRepositoryPort(Protocol):
     ) -> None:
         """Write still_image_time for still-image rows identified by rel."""
 
+    def read_geometry_only(
+        self,
+        filter_params: dict[str, Any] | None = None,
+        sort_by_date: bool = True,
+        album_path: str | None = None,
+        include_subalbums: bool = True,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield lightweight rows (id, rel, gps) without decoding full metadata."""
+
+    def count_by_year_month(
+        self,
+        *,
+        album_path: str | None = None,
+        include_subalbums: bool = True,
+        filter_hidden: bool = True,
+        filter_params: dict[str, Any] | None = None,
+    ) -> list[tuple[int, int, int]]:
+        """Return ``(year, month, count)`` buckets for the current scope."""
+
+    def read_geotagged(self) -> Iterator[dict[str, Any]]:
+        """Yield only rows that contain GPS metadata."""
+
+    def get_rows_by_ids(self, asset_ids: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """Return a mapping of asset id to its stored row."""
+
+    def update_location(self, rel: str, location: str) -> None:
+        """Persist the user-visible location label for one asset."""
+
 
 class AlbumRepositoryPort(Protocol):
     """Read and write album manifests without exposing legacy shims upstream."""

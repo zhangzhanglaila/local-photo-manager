@@ -76,27 +76,14 @@ class LibraryAssetQueryService:
 
         album_path = self.album_path_for(root)
         repository = self._repository()
-        read_geometry_only = getattr(repository, "read_geometry_only", None)
-        if callable(read_geometry_only):
-            rows = read_geometry_only(
-                filter_params=filter_params,
-                sort_by_date=sort_by_date,
-                album_path=album_path,
-                include_subalbums=True,
-            )
-        elif album_path:
-            rows = repository.read_album_assets(
-                album_path,
-                include_subalbums=True,
-                sort_by_date=sort_by_date,
-                filter_hidden=True,
-                filter_params=filter_params,
-            )
-        else:
-            rows = repository.read_all(
-                sort_by_date=sort_by_date,
-                filter_hidden=True,
-            )
+        # `read_geometry_only` is part of AssetRepositoryPort; the old fallback
+        # ladder silently loaded the whole library instead when the probe failed.
+        rows = repository.read_geometry_only(
+            filter_params=filter_params,
+            sort_by_date=sort_by_date,
+            album_path=album_path,
+            include_subalbums=True,
+        )
         yield from self._scoped_rows(rows, album_path, limit=limit)
 
     def read_asset_rows(
@@ -160,12 +147,9 @@ class LibraryAssetQueryService:
 
         filter_params = self._filter_params_for_query(bucket_query)
         repository = self._repository()
-        counter = getattr(repository, "count_by_year_month", None)
-        if not callable(counter):
-            return self._buckets_from_rows(bucket_query)
         try:
             return list(
-                counter(
+                repository.count_by_year_month(
                     filter_hidden=True,
                     filter_params=filter_params,
                     album_path=bucket_query.album_path,
@@ -232,16 +216,9 @@ class LibraryAssetQueryService:
     def read_geotagged_rows(self) -> Iterator[dict[str, Any]]:
         """Yield library-relative rows that contain GPS metadata."""
 
-        repository = self._repository()
-        read_geotagged = getattr(repository, "read_geotagged", None)
-        if callable(read_geotagged):
-            rows = read_geotagged()
-        else:
-            rows = (
-                row
-                for row in repository.read_all(filter_hidden=True)
-                if isinstance(row, dict) and isinstance(row.get("gps"), dict)
-            )
+        # `read_geotagged` is part of AssetRepositoryPort; the old fallback walked
+        # the entire library to filter GPS rows in Python.
+        rows = self._repository().read_geotagged()
         for row in rows:
             if isinstance(row, dict):
                 yield dict(row)
@@ -269,9 +246,9 @@ class LibraryAssetQueryService:
     def update_location(self, rel: str, location: str) -> None:
         """Persist a best-effort cached location for a library-relative row."""
 
-        update_location = getattr(self._repository(), "update_location", None)
-        if callable(update_location):
-            update_location(rel, location)
+        # Declared on AssetRepositoryPort; the old probe silently dropped the
+        # user's location edits whenever the attribute lookup failed.
+        self._repository().update_location(rel, location)
 
     def album_path_for(self, root: Path) -> str | None:
         """Return the album path used for index filtering."""
@@ -284,11 +261,7 @@ class LibraryAssetQueryService:
     def _filtered_query_rows(self, query: AssetQuery) -> Iterator[dict[str, Any]]:
         repository = self._repository()
         if query.asset_ids:
-            get_rows_by_ids = getattr(repository, "get_rows_by_ids", None)
-            if callable(get_rows_by_ids):
-                rows = get_rows_by_ids(query.asset_ids).values()
-            else:
-                rows = repository.read_all(sort_by_date=False, filter_hidden=False)
+            rows = repository.get_rows_by_ids(query.asset_ids).values()
         elif query.album_path:
             rows = repository.read_album_assets(
                 query.album_path,
@@ -323,13 +296,8 @@ class LibraryAssetQueryService:
         repository = self._repository()
         page_offset = max(0, int(query.offset or 0))
         page_limit = None if query.limit is None else max(0, int(query.limit))
-        get_assets_page = getattr(repository, "get_assets_page", None)
-        if (
-            callable(get_assets_page)
-            and page_limit is not None
-            and self._sort_by_date(query)
-        ):
-            rows = get_assets_page(
+        if page_limit is not None and self._sort_by_date(query):
+            rows = repository.get_assets_page(
                 limit=page_limit,
                 album_path=query.album_path,
                 include_subalbums=query.include_subalbums,
