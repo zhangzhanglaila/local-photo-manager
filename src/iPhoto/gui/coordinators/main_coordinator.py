@@ -647,6 +647,12 @@ class MainCoordinator(QObject):
         self._facade.scanBatchFailed.connect(self._status_bar.handle_scan_batch_failed)
         self._facade.scanProgress.connect(self._status_bar.handle_scan_progress)
         self._facade.scanFinished.connect(self._status_bar.handle_scan_finished)
+        # Semantic search needs a CLIP index; without it every search fails with
+        # "no index found". Generation is expensive, so it runs once per session and
+        # only when the repository reports missing embeddings.
+        self._facade.scanFinished.connect(
+            lambda *_: self._ensure_embedding_index()
+        )
 
         self._facade.loadStarted.connect(self._status_bar.handle_load_started)
         self._facade.loadProgress.connect(self._status_bar.handle_load_progress)
@@ -1404,6 +1410,17 @@ class MainCoordinator(QObject):
             self._status_bar.show_message(
                 tr("agent.disabled", default="Semantic search disabled")
             )
+
+    def _ensure_embedding_index(self) -> None:
+        """Start semantic-index generation once, if it is missing."""
+
+        if getattr(self, "_embedding_bootstrap_started", False):
+            return
+        self._embedding_bootstrap_started = True
+        try:
+            self._start_embedding_generation_silent()
+        except Exception:
+            self._logger.debug("Embedding bootstrap failed", exc_info=True)
 
     def _start_embedding_generation_silent(self) -> None:
         """Start embedding generation silently in background with status bar updates."""
