@@ -39,6 +39,15 @@ class PersonCoverRecord:
     is_custom: bool
 
 
+#: Schema generation for the People state database. Bump it when a migration runs so
+#: the next open can tell whether the file is already up to date.
+import logging
+
+LOGGER = logging.getLogger(__name__)
+
+PEOPLE_SCHEMA_VERSION = 1
+
+
 class FaceStateRepository:
     def __init__(self, db_path: Path) -> None:
         self._db_path = Path(db_path)
@@ -51,6 +60,10 @@ class FaceStateRepository:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn:
             self._create_schema(conn)
+            current = int(conn.execute("PRAGMA user_version").fetchone()[0] or 0)
+            if current < PEOPLE_SCHEMA_VERSION:
+                conn.execute(f"PRAGMA user_version = {PEOPLE_SCHEMA_VERSION}")
+                conn.commit()
 
     def get_profiles(self) -> list[PersonProfile]:
         self.initialize()
@@ -1865,7 +1878,17 @@ class FaceStateRepository:
             "is_manual",
         }
         if columns & legacy or not expected.issubset(columns):
-            conn.execute("DROP TABLE manual_faces")
+            # Never drop user data: move the incompatible table aside so manual
+            # face annotations remain recoverable, then let the caller recreate an
+            # empty table with the current schema.
+            from datetime import datetime, timezone
+
+            suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+            backup = f"manual_faces_legacy_{suffix}"
+            conn.execute(f'ALTER TABLE manual_faces RENAME TO "{backup}"')
+            LOGGER.warning(
+                "manual_faces used an older schema; preserved as %s", backup
+            )
 
     @staticmethod
     def _ensure_column(
