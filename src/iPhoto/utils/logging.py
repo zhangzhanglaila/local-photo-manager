@@ -51,3 +51,31 @@ def _default_log_path() -> Path | None:
 
 
 logger = get_logger()
+
+
+#: Development-only diagnostics are off unless this is set (or DEBUG is enabled).
+DIAG_ENV = "IPHOTO_DIAG"
+
+
+def diag_enabled() -> bool:
+    """Return whether temporary diagnostics should be emitted."""
+
+    raw = os.environ.get(DIAG_ENV, "").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    logger = get_logger()
+    return logger.isEnabledFor(logging.DEBUG)
+
+
+def diag(message: str, *args: object, level: int = logging.INFO) -> None:
+    """Log *message* only while diagnostics are enabled.
+
+    Debug instrumentation used to be written unconditionally at INFO (and, for the
+    video trim path, at WARNING), so a normal session filled the log with internal
+    step markers and buried real warnings. Routing it through this helper keeps the
+    instrumentation available while making it opt-in.
+    """
+
+    if not diag_enabled():
+        return
+    get_logger().log(level, message, *args)

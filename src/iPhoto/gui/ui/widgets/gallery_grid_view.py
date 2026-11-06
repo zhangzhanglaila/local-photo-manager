@@ -27,6 +27,7 @@ from .date_pill import DatePill
 from .timeline_scrubber import TimelineScrubber
 from ....i18n import tr
 from ..models.roles import Roles
+from ....utils.logging import diag
 
 
 class GalleryGridView(AssetGrid):
@@ -741,7 +742,7 @@ class GalleryGridView(AssetGrid):
         import logging
         model = self.model()
         rows = model.rowCount() if model is not None else 0
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] _on_model_reset: rows=%s empty_mode=%s query_loading=%s scan_completed=%s",
             rows, self._empty_mode, self._query_loading, self._scan_completed,
         )
@@ -879,7 +880,7 @@ class GalleryGridView(AssetGrid):
         self._scanning_label.setGeometry(self.viewport().rect())
 
         import logging
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] _do_update_empty_state: is_empty=%s query_loading=%s scan_completed=%s is_scanning=%s",
             is_empty, self._query_loading, self._scan_completed, self._is_scanning,
         )

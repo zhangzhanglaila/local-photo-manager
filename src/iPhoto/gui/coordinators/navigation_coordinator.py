@@ -18,6 +18,7 @@ from iPhoto.gui.facade import AppFacade
 from iPhoto.gui.ui.widgets import dialogs
 from iPhoto.gui.ui.widgets.album_sidebar import AlbumSidebar
 from iPhoto.gui.viewmodels.gallery_viewmodel import GalleryViewModel
+from ...utils.logging import diag
 
 if TYPE_CHECKING:
     from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
@@ -185,7 +186,7 @@ class NavigationCoordinator(QObject):
 
     def open_all_photos(self) -> None:
         import logging
-        logging.getLogger(__name__).info("[DIAG] navigation_coordinator.open_all_photos called")
+        diag("[DIAG] navigation_coordinator.open_all_photos called")
         self._reset_playback()
         self._gallery_vm.open_all_photos()
         self._set_grid_empty_mode(None)

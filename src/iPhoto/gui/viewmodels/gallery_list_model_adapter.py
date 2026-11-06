@@ -17,6 +17,7 @@ from iPhoto.infrastructure.services.thumbnail_cache_service import ThumbnailCach
 from iPhoto.utils.geocoding import resolve_location_name
 
 from .gallery_collection_store import GalleryCollectionStore
+from ...utils.logging import diag
 
 
 class GalleryListModelAdapter(QAbstractListModel):
@@ -352,12 +353,12 @@ class GalleryListModelAdapter(QAbstractListModel):
         generation = self._store.generation
         current_snapshot = (count, generation)
         import logging
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] _on_source_changed: count=%s gen=%s last_snapshot=%s",
             count, generation, self._last_snapshot,
         )
         if self._last_snapshot == current_snapshot:
-            logging.getLogger(__name__).info(
+            diag(
                 "[DIAG] _on_source_changed: snapshot unchanged, skipping"
             )
             return

@@ -62,6 +62,7 @@ from ..palette import (
     SIDEBAR_TREE_MIN_WIDTH,
     SIDEBAR_TREE_STYLESHEET,
 )
+from ....utils.logging import diag
 
 _logger = logging.getLogger(__name__)
 
@@ -754,7 +755,7 @@ class AlbumSidebar(QWidget):
                 title, self._model.rowCount(), self._model.rowCount(self._model.index(0, 0)),
             )
             return
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] select_static_node: '%s' found, emit_signal=%s", title, emit_signal,
         )
 

@@ -278,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     # creates a child logger.  ``get_logger()`` lazily attaches a StreamHandler
     # to the ``iPhoto`` logger so all ``iPhoto.*`` loggers propagate output to
     # stderr at INFO level by default.
-    from iPhoto.utils.logging import get_logger as _init_logging
+    from iPhoto.utils.logging import diag, get_logger as _init_logging
     _init_logging()
 
     arguments = list(sys.argv if argv is None else argv)
@@ -658,9 +658,9 @@ def main(argv: list[str] | None = None) -> int:
                 coordinator.open_album_from_path(valid_path_arg)
             else:
                 _logger.info("startup step 5: selecting All Photos")
-                _logger.info("[DIAG] _step5: library_root=%s", library_root)
-                _logger.info("[DIAG] _step5: store.count before open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
-                _logger.info("[DIAG] _step5: asset_query_service=%s", coordinator._asset_query_service() if hasattr(coordinator, "_asset_query_service") else "no_method")
+                diag("[DIAG] _step5: library_root=%s", library_root)
+                diag("[DIAG] _step5: store.count before open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
+                diag("[DIAG] _step5: asset_query_service=%s", coordinator._asset_query_service() if hasattr(coordinator, "_asset_query_service") else "no_method")
                 # ⭐ 关键修复：直接调用 navigation_coordinator.open_all_photos()
                 # 而不是通过 sidebar 信号链（sidebar signal chain 可能在 sidebar model 还没 refresh 时失效）
                 coordinator._navigation.open_all_photos()
@@ -669,7 +669,7 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     sidebar_model = window.ui.sidebar._model
                     if sidebar_model is not None:
-                        _logger.info("[DIAG] _step5: forcing sidebar model refresh before select_all_photos")
+                        diag("[DIAG] _step5: forcing sidebar model refresh before select_all_photos")
                         sidebar_model.refresh()
                 except Exception:
                     _logger.debug("sidebar model refresh failed", exc_info=True)
@@ -678,7 +678,7 @@ def main(argv: list[str] | None = None) -> int:
                     window.ui.sidebar.select_all_photos(emit_signal=False)
                 except Exception:
                     _logger.debug("sidebar select_all_photos failed (non-critical)", exc_info=True)
-                _logger.info("[DIAG] _step5: store.count after open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
+                diag("[DIAG] _step5: store.count after open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
 
             coordinator.finish_startup()
 

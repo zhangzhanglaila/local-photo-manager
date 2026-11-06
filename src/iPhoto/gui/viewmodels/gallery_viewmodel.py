@@ -29,6 +29,7 @@ from .base import BaseViewModel
 from .gallery_collection_store import GalleryCollectionStore
 from .signal import ObservableProperty, Signal
 from ...utils.pathutils import paths_equal
+from ...utils.logging import diag
 
 
 class GalleryViewModel(BaseViewModel):
@@ -166,13 +167,13 @@ class GalleryViewModel(BaseViewModel):
 
     def open_all_photos(self) -> None:
         import logging
-        logging.getLogger(__name__).info("[DIAG] GalleryViewModel.open_all_photos called")
+        diag("[DIAG] GalleryViewModel.open_all_photos called")
         root = self._context.library.root()
         if root is None:
             logging.getLogger(__name__).warning("[DIAG] open_all_photos: library root is None!")
             self.bind_library_requested.emit()
             return
-        logging.getLogger(__name__).info("[DIAG] open_all_photos: root=%s", root)
+        diag("[DIAG] open_all_photos: root=%s", root)
         self._clear_cluster_gallery_context()
         query = AssetQuery()
         # Only use album_paths filter when a proper subset is checked.
@@ -735,7 +736,7 @@ class GalleryViewModel(BaseViewModel):
         query: AssetQuery,
     ) -> None:
         import logging
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] GalleryViewModel._load_query: section=%s root=%s store_count_before=%s",
             section, root, self._store.count(),
         )
@@ -751,7 +752,7 @@ class GalleryViewModel(BaseViewModel):
         self._store.load_selection(root, query=query)
         self.cluster_gallery_mode_changed.emit(False)
         self.route_requested.emit("gallery")
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] GalleryViewModel._load_query: after load_selection store_count=%s",
             self._store.count(),
         )

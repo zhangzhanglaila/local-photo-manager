@@ -35,6 +35,7 @@ from iPhoto.gui.viewmodels.pending_move_buffer import (
     _PendingMove,
     should_include_pending as _should_include_pending_fn,
 )
+from ...utils.logging import diag
 
 
 class GalleryAssetQuerySurface(Protocol):
@@ -251,7 +252,7 @@ class GalleryCollectionStore:
         self._selection_library_root = self._library_root
         self._current_query = self._clone_query(query)
         self._direct_mode = False
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] _load_query: active_root=%s library_root=%s service=%s query=%s",
             self._active_root, self._library_root,
             self._asset_query_service is not None, query,
@@ -907,7 +908,7 @@ class GalleryCollectionStore:
         load_first, load_last = self._window_bounds_to_load(first, last)
         self._pending_load_range = (load_first, load_last)
         import logging
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] _reload_window_for_visible_range: starting worker gen=%s visible=(%s,%s) load=(%s,%s) total=%s active_root=%s service=%s",
             gen, first, last, load_first, load_last, self._total_count, self._active_root,
             self._asset_query_service is not None,
@@ -937,13 +938,13 @@ class GalleryCollectionStore:
     def _on_load_finished(self, generation: int, row_cache: dict, total: int) -> None:
         """Handle async load completion on the main thread."""
         import logging
-        logging.getLogger(__name__).info(
+        diag(
             "[DIAG] _on_load_finished: gen=%s (expected=%s) row_cache=%d total=%d active_root=%s library_root=%s has_query=%s",
             generation, self._load_generation, len(row_cache), total,
             self._active_root, self._library_root, self._current_query is not None,
         )
         if generation != self._load_generation:
-            logging.getLogger(__name__).info(
+            diag(
                 "[DIAG] _on_load_finished: STALE (gen mismatch), discarding"
             )
             return  # stale result, discard
