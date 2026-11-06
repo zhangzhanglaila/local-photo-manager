@@ -18,6 +18,7 @@ from .input_handler import InputHandler
 from .layer import LayerPlan
 from .map_renderer import CityAnnotation, MapRenderer
 from .tile_manager import TileManager
+from .geometry import lonlat_to_normalized, normalized_to_lonlat
 
 
 class SupportsMapViewport(Protocol):
@@ -592,32 +593,25 @@ class MapWidgetController:
         except (TypeError, ValueError):
             return None
 
+        normalized = lonlat_to_normalized(lon, lat)
+        if normalized is None:
+            return None
         world_size = self._world_size()
-        x = (lon + 180.0) / 360.0 * world_size
-        sin_lat = math.sin(math.radians(lat))
-        y = (0.5 - math.log((1 + sin_lat) / (1 - sin_lat)) / (4 * math.pi)) * world_size
-        return x, y
+        return normalized[0] * world_size, normalized[1] * world_size
 
     # ------------------------------------------------------------------
     @staticmethod
     def _normalized_to_lonlat(center_x: float, center_y: float) -> tuple[float, float]:
         """Convert normalized Web Mercator coordinates back into lon/lat."""
 
-        wrapped_x = float(center_x) % 1.0
-        clamped_y = min(max(float(center_y), 0.0), 1.0)
-        lon = wrapped_x * 360.0 - 180.0
-        lat = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * clamped_y))))
-        return lon, lat
+        return normalized_to_lonlat(center_x, center_y)
 
     @staticmethod
     def _lonlat_to_normalized(lon: float, lat: float) -> tuple[float, float]:
         """Convert lon/lat into normalized Web Mercator coordinates."""
 
-        lat = max(min(float(lat), 85.05112878), -85.05112878)
-        x = (float(lon) + 180.0) / 360.0
-        sin_lat = math.sin(math.radians(lat))
-        y = 0.5 - math.log((1 + sin_lat) / (1 - sin_lat)) / (4 * math.pi)
-        return x, y
+        normalized = lonlat_to_normalized(lon, lat)
+        return normalized if normalized is not None else (0.0, 0.0)
 
 
 __all__ = ["MapWidgetBase", "MapWidgetController", "SupportsMapViewport"]

@@ -206,3 +206,40 @@ __all__ = [
     "normalize_polygons",
     "sequence_depth",
 ]
+
+#: Web Mercator latitude limit; every backend must clamp identically.
+MERCATOR_LAT_BOUND = 85.05112878
+
+
+def lonlat_to_normalized(
+    lon: float, lat: float
+) -> tuple[float, float] | None:
+    """Convert lon/lat into normalised Web Mercator coordinates.
+
+    Four map backends carried their own copy of this projection; the constants and
+    the clamping had already started to drift, which moves markers by tens of
+    metres between backends.
+    """
+
+    try:
+        lon = float(lon)
+        lat = float(lat)
+    except (TypeError, ValueError):
+        return None
+
+    lat = max(min(lat, MERCATOR_LAT_BOUND), -MERCATOR_LAT_BOUND)
+    x = (lon + 180.0) / 360.0
+    sin_lat = math.sin(math.radians(lat))
+    y = 0.5 - math.log((1.0 + sin_lat) / (1.0 - sin_lat)) / (4.0 * math.pi)
+    return x, y
+
+
+def normalized_to_lonlat(x: float, y: float) -> tuple[float, float]:
+    """Convert normalised Web Mercator coordinates back to lon/lat."""
+
+    x = float(x) % 1.0
+    y = min(max(float(y), 0.0), 1.0)
+    lon = x * 360.0 - 180.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * y))))
+    return lon, lat
+

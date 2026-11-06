@@ -17,6 +17,7 @@ from maps.map_sources import MapBackendMetadata, MapSourceSpec
 
 from .drag_cursor import DragCursorManager
 from .map_renderer import CityAnnotation
+from .geometry import MERCATOR_LAT_BOUND, lonlat_to_normalized, normalized_to_lonlat
 
 try:  # pragma: no cover - availability depends on the user's PySide6 package.
     from PySide6.QtWebChannel import QWebChannel
@@ -28,23 +29,7 @@ except Exception:  # noqa: BLE001 - handled as a graceful runtime fallback.
 
 MAPKIT_TOKEN_ENV = "IPHOTO_MAPKIT_JS_TOKEN"
 TILE_SIZE = 256
-MERCATOR_LAT_BOUND = 85.05112878
 
-
-def lonlat_to_normalized(lon: float, lat: float) -> tuple[float, float] | None:
-    """Convert longitude/latitude into normalised Web Mercator coordinates."""
-
-    try:
-        lon = float(lon)
-        lat = float(lat)
-    except (TypeError, ValueError):
-        return None
-
-    lat = max(min(lat, MERCATOR_LAT_BOUND), -MERCATOR_LAT_BOUND)
-    x = (lon + 180.0) / 360.0
-    sin_lat = math.sin(math.radians(lat))
-    y = 0.5 - math.log((1.0 + sin_lat) / (1.0 - sin_lat)) / (4.0 * math.pi)
-    return x, y
 
 
 def normalized_to_lonlat(x: float, y: float) -> tuple[float, float]:
