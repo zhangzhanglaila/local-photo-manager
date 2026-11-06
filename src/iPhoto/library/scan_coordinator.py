@@ -433,6 +433,12 @@ class ScanCoordinatorMixin:
         # main thread while downstream listeners start refreshing.
         self._scan_thread_pool.start(_PairingWorker(root, scan_service))
 
+        # Load the semantic-search model before the face scan starts. It used to be
+        # loaded lazily on the first search, so the user waited ~10 s staring at a
+        # progress panel; loading it here means search is ready by the time the scan
+        # finishes, and the (CPU heavy) face scan runs afterwards.
+        self._preload_search_model()
+
         # --- Start deferred AI workers after file scan completes ---
         # Face and OCR scanning were deferred to avoid resource contention
         # with the filesystem walk.  Now that the file scan is done, start
@@ -451,6 +457,34 @@ class ScanCoordinatorMixin:
         ):
             self._ocr_scan_pending_start = False
             self._scan_thread_pool.start(ocr_scanner)
+
+    def _preload_search_model(self) -> None:
+        """Warm the semantic-search model in the background, once per session.
+
+        Failures are logged and ignored: search keeps its own lazy load as a fallback.
+        """
+
+        if getattr(self, "_search_model_preload_started", False):
+            return
+        self._search_model_preload_started = True
+        session = getattr(self, "_library_session", None)
+        if session is None:
+            return
+
+        def _load() -> None:
+            try:
+                service = session.get_embedding_service()
+                if service is not None:
+                    service.is_loaded()
+                    LOGGER.info("Semantic search model preloaded")
+            except Exception:
+                LOGGER.debug("Semantic search model preload failed", exc_info=True)
+
+        import threading
+
+        threading.Thread(
+            target=_load, name="search-model-preload", daemon=True
+        ).start()
 
     def _on_scan_error(self, root: Path, message: str) -> None:
         locker = QMutexLocker(self._scan_buffer_lock)
