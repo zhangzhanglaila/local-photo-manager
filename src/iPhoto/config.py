@@ -90,3 +90,11 @@ PLAYER_FADE_OUT_MS: Final[int] = 300
 # window and controller layers to reference a shared constant instead of hard-coding their
 # own step size.
 VOLUME_SHORTCUT_STEP: Final[int] = 5
+
+# Seconds a SQLite connection waits for a lock held by another writer. Connections to
+# the same database used to pass 2 s, 10 s or 30 s depending on which module opened
+# them, so whether "database is locked" surfaced depended on the code path.
+SQLITE_BUSY_TIMEOUT_S: Final[float] = 10.0
+
+# People writes can be long (a batch insert of face crops), so they wait longer.
+SQLITE_LONG_BUSY_TIMEOUT_S: Final[float] = 30.0

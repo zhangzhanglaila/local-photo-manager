@@ -42,6 +42,7 @@ class PersonCoverRecord:
 #: Schema generation for the People state database. Bump it when a migration runs so
 #: the next open can tell whether the file is already up to date.
 import logging
+from ..config import SQLITE_LONG_BUSY_TIMEOUT_S
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1667,7 +1668,7 @@ class FaceStateRepository:
         )
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=30.0)
+        conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=SQLITE_LONG_BUSY_TIMEOUT_S)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA journal_mode=WAL")

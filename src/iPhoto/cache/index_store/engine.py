@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from ...utils.logging import get_logger
+from ...config import SQLITE_BUSY_TIMEOUT_S
 
 logger = get_logger()
 
@@ -55,7 +56,7 @@ class DatabaseManager:
 
     def _create_connection(self) -> sqlite3.Connection:
         """Create a new database connection with optimised PRAGMA settings."""
-        conn = sqlite3.connect(self.db_path, timeout=2.0)
+        conn = sqlite3.connect(self.db_path, timeout=SQLITE_BUSY_TIMEOUT_S)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA cache_size=-8000")  # 8 MB cache

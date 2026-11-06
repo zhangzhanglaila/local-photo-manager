@@ -32,6 +32,7 @@ from .queries import QueryBuilder
 from .recovery import RecoveryService
 from .row_mapper import db_row_to_dict, insert_rows, row_to_db_params
 from .scan_merge import merge_scan_rows as merge_scan_rows_payload
+from ...config import SQLITE_BUSY_TIMEOUT_S
 
 logger = get_logger()
 
@@ -168,7 +169,7 @@ class AssetRepository:
             # so every initialisation leaked a connection and kept the database
             # file locked (Windows then refused to replace or delete it with
             # WinError 32).
-            with closing(sqlite3.connect(self.path, timeout=10.0)) as conn:
+            with closing(sqlite3.connect(self.path, timeout=SQLITE_BUSY_TIMEOUT_S)) as conn:
                 with conn:
                     SchemaMigrator.initialize_schema(conn)
         except sqlite3.DatabaseError as exc:

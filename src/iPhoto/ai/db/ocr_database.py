@@ -9,6 +9,7 @@ from pathlib import Path
 from ...utils.logging import get_logger
 from ...utils.pathutils import ensure_work_dir
 from ..config import OCR_DB_NAME
+from ...config import SQLITE_BUSY_TIMEOUT_S
 
 _LOGGER = get_logger()
 
@@ -53,7 +54,7 @@ class OCRRepository:
     def _get_conn(self) -> sqlite3.Connection:
         """Get or create a thread-local database connection."""
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            conn = sqlite3.connect(str(self.path), timeout=10.0)
+            conn = sqlite3.connect(str(self.path), timeout=SQLITE_BUSY_TIMEOUT_S)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")

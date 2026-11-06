@@ -11,6 +11,7 @@ import numpy as np
 
 from ...utils.logging import get_logger
 from ...utils.pathutils import ensure_work_dir
+from ...config import SQLITE_BUSY_TIMEOUT_S
 
 logger = get_logger()
 
@@ -51,7 +52,7 @@ class EmbeddingRepository:
     def _get_conn(self) -> sqlite3.Connection:
         """Get or create a thread-local database connection."""
         if not hasattr(self._local, 'conn') or self._local.conn is None:
-            self._local.conn = sqlite3.connect(str(self.path), timeout=10.0)
+            self._local.conn = sqlite3.connect(str(self.path), timeout=SQLITE_BUSY_TIMEOUT_S)
             self._local.conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn.execute("PRAGMA synchronous=NORMAL")
         return self._local.conn
