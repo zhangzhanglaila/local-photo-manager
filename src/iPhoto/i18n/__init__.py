@@ -84,12 +84,12 @@ _ZH: dict[str, str] = {
     "startup.loading_photos": "正在加载照片…",
 
     # -- Status bar: Scan --
-    "status.scanning": "扫描中…",
-    "status.scan_started": "开始扫描…",
-    "status.scanning_counting": "扫描中…（正在统计文件）",
-    "status.scanning_no_files": "扫描中…（未找到文件）",
-    "status.scanning_progress": "扫描中… {percent}%（{current}/{total}）",
-    "status.scan_complete": "扫描完成。",
+    "status.scanning": "正在扫描文件…",
+    "status.scan_started": "正在开始扫描文件…",
+    "status.scanning_counting": "正在扫描文件…（统计文件数）",
+    "status.scanning_no_files": "正在扫描文件…（未找到文件）",
+    "status.scanning_progress": "正在扫描文件… {percent}%（{current}/{total}）",
+    "status.scan_complete": "文件扫描完成。",
     "status.scan_failed": "扫描失败。",
     "status.scan_batch_failed": "有 {count} 个项目保存到数据库失败",
 
@@ -360,12 +360,12 @@ _EN: dict[str, str] = {
     "startup.loading_photos": "Loading photos…",
 
     # -- Status bar: Scan --
-    "status.scanning": "Scanning…",
-    "status.scan_started": "Starting scan…",
-    "status.scanning_counting": "Scanning… (counting files)",
-    "status.scanning_no_files": "Scanning… (no files found)",
-    "status.scanning_progress": "Scanning… {percent}% ({current}/{total})",
-    "status.scan_complete": "Scan complete.",
+    "status.scanning": "Scanning files…",
+    "status.scan_started": "Starting file scan…",
+    "status.scanning_counting": "Scanning files… (counting)",
+    "status.scanning_no_files": "Scanning files… (none found)",
+    "status.scanning_progress": "Scanning files… {percent}% ({current}/{total})",
+    "status.scan_complete": "File scan complete.",
     "status.scan_failed": "Scan failed.",
     "status.scan_batch_failed": "{count} items failed to save to database",
 
