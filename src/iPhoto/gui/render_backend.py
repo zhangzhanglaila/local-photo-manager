@@ -7,6 +7,7 @@ import os
 import sys
 
 from PySide6.QtWidgets import QRhiWidget
+from ..utils.env import env_flag
 
 _LOGGER = logging.getLogger(__name__)
 _VALID_BACKENDS = {"auto", "metal", "opengl"}

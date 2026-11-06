@@ -1,5 +1,4 @@
 """Coordinator that wires the main window to application logic.
-from ...utils.pathutils import paths_equal
 
 This replaces the legacy MainController as the top-level orchestrator.
 """
@@ -57,6 +56,7 @@ from iPhoto.gui.viewmodels.gallery_viewmodel import GalleryViewModel
 from iPhoto.people.service import PeopleService
 from maps.map_sources import supports_map_extension_download
 from ...utils.env import is_truthy
+from ...utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
     from iPhoto.gui.ui.main_window import MainWindow

@@ -51,6 +51,7 @@ from iPhoto.core.adjustment_mapping import (
 from iPhoto.core.curve_resolver import DEFAULT_CURVE_POINTS
 from iPhoto.core.levels_resolver import DEFAULT_LEVELS_HANDLES
 from iPhoto.core.selective_color_resolver import DEFAULT_SELECTIVE_COLOR_RANGES
+from ...utils.logging import diag
 
 if TYPE_CHECKING:
     from iPhoto.gui.viewmodels.gallery_list_model_adapter import GalleryListModelAdapter
