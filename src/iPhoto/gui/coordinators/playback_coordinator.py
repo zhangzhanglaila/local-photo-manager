@@ -200,7 +200,7 @@ class PlaybackCoordinator(QObject):
         panel.locationConfirmRequested.connect(self._handle_location_confirm_requested)
 
     def set_people_library_root(self, library_root: Path | None) -> None:
-        people_service = getattr(self, "_people_service", None)
+        people_service = self._people_service
         service_matches_root = (
             isinstance(people_service, PeopleService)
             and people_service.library_root() == library_root
@@ -405,7 +405,7 @@ class PlaybackCoordinator(QObject):
         self._play_debounce.start()
 
     def _clear_play_profile(self, row: int | None = None) -> None:
-        if row is not None and getattr(self, "_play_profile_row", None) != row:
+        if row is not None and self._play_profile_row != row:
             return
         self._play_profile_started_at = None
         self._play_profile_row = None
@@ -413,14 +413,14 @@ class PlaybackCoordinator(QObject):
     def _clear_play_request_state(self) -> None:
         self._pending_play_row = None
         self._clear_play_profile()
-        play_debounce = getattr(self, "_play_debounce", None)
+        play_debounce = self._play_debounce
         if play_debounce is not None:
             play_debounce.stop()
 
     def _dispatch_play_row(self, row: int, *, reason: str) -> None:
         if (
-            getattr(self, "_play_profile_started_at", None) is not None
-            and getattr(self, "_play_profile_row", None) == row
+            self._play_profile_started_at is not None
+            and self._play_profile_row == row
         ):
             elapsed_ms = (time.perf_counter() - self._play_profile_started_at) * 1000.0
             log_detail_profile(
@@ -457,8 +457,8 @@ class PlaybackCoordinator(QObject):
 
     def _handle_presentation_changed_impl(self, presentation: DetailPresentation) -> None:
         if (
-            getattr(self, "_play_profile_started_at", None) is not None
-            and getattr(self, "_play_profile_row", None) == presentation.row
+            self._play_profile_started_at is not None
+            and self._play_profile_row == presentation.row
         ):
             elapsed_ms = (time.perf_counter() - self._play_profile_started_at) * 1000.0
             log_detail_profile(
@@ -749,7 +749,7 @@ class PlaybackCoordinator(QObject):
         self._refresh_face_name_overlay_for_current_presentation()
 
     def _hide_face_name_overlay(self, *, clear_annotations: bool) -> None:
-        overlay = getattr(self, "_face_name_overlay", None)
+        overlay = self._face_name_overlay
         if overlay is None:
             return
         if clear_annotations:
@@ -758,12 +758,12 @@ class PlaybackCoordinator(QObject):
 
     def _refresh_face_name_overlay_for_current_presentation(self) -> None:
         self._refresh_face_name_overlay_for_presentation(
-            getattr(self, "_current_presentation", None)
+            self._current_presentation
         )
 
     @Slot(object)
     def handle_people_snapshot_committed(self, event: object) -> None:
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is None or not presentation.asset_id:
             return
         # Skip the refresh if the snapshot doesn't touch the current asset.
@@ -779,7 +779,7 @@ class PlaybackCoordinator(QObject):
         self,
         presentation: DetailPresentation | None,
     ) -> None:
-        overlay = getattr(self, "_face_name_overlay", None)
+        overlay = self._face_name_overlay
         if overlay is None:
             return
         if not self._should_show_face_name_overlay(presentation):
@@ -787,7 +787,7 @@ class PlaybackCoordinator(QObject):
             return
         annotations = self._load_face_name_annotations(presentation.asset_id)
         try:
-            people_service = getattr(self, "_people_service", None)
+            people_service = self._people_service
             if people_service is not None:
                 overlay.set_name_suggestions(people_service.list_person_name_suggestions())
         except (sqlite3.Error, OSError):
@@ -801,11 +801,11 @@ class PlaybackCoordinator(QObject):
     ) -> bool:
         if presentation is None or presentation.is_video or not presentation.asset_id:
             return False
-        if not bool(getattr(self, "_show_face_names", False)):
+        if not bool(self._show_face_names):
             return False
-        if getattr(self, "_active_live_motion", None) is not None:
+        if self._active_live_motion is not None:
             return False
-        player_view = getattr(self, "_player_view", None)
+        player_view = self._player_view
         video_area = getattr(player_view, "video_area", None)
         is_edit_mode_active = getattr(video_area, "is_edit_mode_active", None)
         if callable(is_edit_mode_active) and is_edit_mode_active():
@@ -813,7 +813,7 @@ class PlaybackCoordinator(QObject):
         return True
 
     def _load_face_name_annotations(self, asset_id: str) -> list:
-        people_service = getattr(self, "_people_service", None)
+        people_service = self._people_service
         if people_service is None or not asset_id:
             return []
         try:
@@ -830,7 +830,7 @@ class PlaybackCoordinator(QObject):
     ) -> None:
         if not person_id:
             return
-        people_service = getattr(self, "_people_service", None)
+        people_service = self._people_service
         if people_service is None:
             return
         name = new_name.strip() if isinstance(new_name, str) else None
@@ -840,10 +840,10 @@ class PlaybackCoordinator(QObject):
             LOGGER.exception("Failed to rename person %s", person_id)
             return
         self._refresh_face_name_overlay_for_current_presentation()
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is not None and presentation.asset_id:
             self._refresh_info_panel_faces(presentation.asset_id)
-        refresh_callback = getattr(self, "_people_dashboard_refresh_callback", None)
+        refresh_callback = self._people_dashboard_refresh_callback
         if callable(refresh_callback):
             refresh_callback()
 
@@ -851,7 +851,7 @@ class PlaybackCoordinator(QObject):
     def _handle_info_panel_face_delete_requested(self, annotation: object) -> None:
         if not isinstance(annotation, AssetFaceAnnotation):
             return
-        people_service = getattr(self, "_people_service", None)
+        people_service = self._people_service
         if people_service is None:
             return
         try:
@@ -862,10 +862,10 @@ class PlaybackCoordinator(QObject):
         if not changed:
             return
         self._refresh_face_name_overlay_for_current_presentation()
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is not None and presentation.asset_id:
             self._refresh_info_panel_faces(presentation.asset_id)
-        refresh_callback = getattr(self, "_people_dashboard_refresh_callback", None)
+        refresh_callback = self._people_dashboard_refresh_callback
         if callable(refresh_callback):
             refresh_callback()
 
@@ -877,7 +877,7 @@ class PlaybackCoordinator(QObject):
     ) -> None:
         if not isinstance(annotation, AssetFaceAnnotation) or not target_person_id:
             return
-        people_service = getattr(self, "_people_service", None)
+        people_service = self._people_service
         if people_service is None:
             return
         try:
@@ -892,10 +892,10 @@ class PlaybackCoordinator(QObject):
         if not changed:
             return
         self._refresh_face_name_overlay_for_current_presentation()
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is not None and presentation.asset_id:
             self._refresh_info_panel_faces(presentation.asset_id)
-        refresh_callback = getattr(self, "_people_dashboard_refresh_callback", None)
+        refresh_callback = self._people_dashboard_refresh_callback
         if callable(refresh_callback):
             refresh_callback()
 
@@ -907,7 +907,7 @@ class PlaybackCoordinator(QObject):
     ) -> None:
         if not isinstance(annotation, AssetFaceAnnotation):
             return
-        people_service = getattr(self, "_people_service", None)
+        people_service = self._people_service
         if people_service is None:
             return
         try:
@@ -918,10 +918,10 @@ class PlaybackCoordinator(QObject):
         if not created_person_id:
             return
         self._refresh_face_name_overlay_for_current_presentation()
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is not None and presentation.asset_id:
             self._refresh_info_panel_faces(presentation.asset_id)
-        refresh_callback = getattr(self, "_people_dashboard_refresh_callback", None)
+        refresh_callback = self._people_dashboard_refresh_callback
         if callable(refresh_callback):
             refresh_callback()
 
@@ -982,12 +982,12 @@ class PlaybackCoordinator(QObject):
 
     def reset_for_gallery(self) -> None:
         self._clear_play_request_state()
-        location_timer = getattr(self, "_location_search_timer", None)
+        location_timer = self._location_search_timer
         if location_timer is not None:
             location_timer.stop()
         self._pending_location_query = ""
         self._location_search_target_path = None
-        location_service = getattr(self, "_location_search_service", None)
+        location_service = self._location_search_service
         if location_service is not None:
             location_service.shutdown()
             self._location_search_service = None
@@ -1031,7 +1031,7 @@ class PlaybackCoordinator(QObject):
         self._header_controller.update_from_values(presentation.location, presentation.timestamp)
 
     def _edit_service(self) -> EditServicePort | None:
-        library_manager = getattr(self, "_library_manager", None)
+        library_manager = self._library_manager
         if library_manager is None:
             return None
         return getattr(library_manager, "edit_service", None)
@@ -1088,8 +1088,8 @@ class PlaybackCoordinator(QObject):
             if cached:
                 local_info = self._merge_info_panel_metadata(local_info, cached)
         current_path = Path(path_key) if path_key is not None else None
-        location_preview_path = getattr(self, "_location_preview_path", None)
-        location_preview_metadata = getattr(self, "_location_preview_metadata", None)
+        location_preview_path = self._location_preview_path
+        location_preview_metadata = self._location_preview_metadata
         if (
             current_path is not None
             and location_preview_path is not None
@@ -1117,13 +1117,13 @@ class PlaybackCoordinator(QObject):
         else:
             local_info.pop("_metadata_loading", None)
         self._info_panel.set_asset_metadata(local_info)
-        location_assign_path = getattr(self, "_location_assign_path", None)
+        location_assign_path = self._location_assign_path
         self._info_panel.set_location_busy(
-            bool(getattr(self, "_location_assign_inflight", False))
+            bool(self._location_assign_inflight)
             and location_assign_path is not None
             and current_path == location_assign_path
         )
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         self._refresh_info_panel_faces(presentation.asset_id if presentation is not None else None)
         if should_queue_enrichment:
             self._queue_info_panel_metadata_enrichment(
@@ -1135,7 +1135,7 @@ class PlaybackCoordinator(QObject):
 
     def _refresh_info_panel_ai_metadata(self, asset_id: str | None) -> None:
         """Refresh AI-generated metadata (caption and tags) in the info panel."""
-        info_panel = getattr(self, "_info_panel", None)
+        info_panel = self._info_panel
         if info_panel is None or asset_id is None:
             return
 
@@ -1216,7 +1216,7 @@ class PlaybackCoordinator(QObject):
             self._reset_location_search_service()
             return False
 
-        if getattr(self, "_location_search_service", None) is not None:
+        if self._location_search_service is not None:
             return True
 
         try:
@@ -1266,10 +1266,10 @@ class PlaybackCoordinator(QObject):
         return None
 
     def _ensure_map_runtime(self) -> MapRuntimePort | None:
-        map_runtime = getattr(self, "_map_runtime", None)
+        map_runtime = self._map_runtime
         if map_runtime is not None:
             return map_runtime
-        library_manager = getattr(self, "_library_manager", None)
+        library_manager = self._library_manager
         library_runtime = getattr(library_manager, "map_runtime", None)
         if library_runtime is not None:
             self._map_runtime = library_runtime
@@ -1283,15 +1283,15 @@ class PlaybackCoordinator(QObject):
         return fallback_runtime
 
     def _reset_location_search_service(self) -> None:
-        location_timer = getattr(self, "_location_search_timer", None)
+        location_timer = self._location_search_timer
         if location_timer is not None:
             location_timer.stop()
         self._pending_location_query = ""
         self._location_search_target_path = None
-        location_cache = getattr(self, "_location_search_cache", None)
+        location_cache = self._location_search_cache
         if location_cache is not None:
             location_cache.clear()
-        location_service = getattr(self, "_location_search_service", None)
+        location_service = self._location_search_service
         if location_service is not None:
             location_service.shutdown()
             self._location_search_service = None
@@ -1345,7 +1345,7 @@ class PlaybackCoordinator(QObject):
 
     @Slot(str)
     def _handle_location_query_changed(self, query: str) -> None:
-        info_panel = getattr(self, "_info_panel", None)
+        info_panel = self._info_panel
         if info_panel is None:
             return
 
@@ -1373,7 +1373,7 @@ class PlaybackCoordinator(QObject):
         else:
             info_panel.set_location_suggestions([])
 
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is None:
             return
         self._pending_location_query = query.strip()
@@ -1382,8 +1382,8 @@ class PlaybackCoordinator(QObject):
 
     @Slot()
     def _perform_location_search(self) -> None:
-        info_panel = getattr(self, "_info_panel", None)
-        presentation = getattr(self, "_current_presentation", None)
+        info_panel = self._info_panel
+        presentation = self._current_presentation
         query = self._pending_location_query.strip()
         target_path = self._location_search_target_path
         self._pending_location_query = ""
@@ -1421,7 +1421,7 @@ class PlaybackCoordinator(QObject):
             oldest_key = next(iter(self._location_search_cache))
             self._location_search_cache.pop(oldest_key, None)
 
-        current_presentation = getattr(self, "_current_presentation", None)
+        current_presentation = self._current_presentation
         if (
             current_presentation is None
             or current_presentation.path != target_path
@@ -1436,7 +1436,7 @@ class PlaybackCoordinator(QObject):
             return
         if not isinstance(suggestion_obj, SearchSuggestion):
             return
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is None:
             return
 
@@ -1445,7 +1445,7 @@ class PlaybackCoordinator(QObject):
             return
 
         library_root = None
-        library_manager = getattr(self, "_library_manager", None)
+        library_manager = self._library_manager
         if library_manager is not None:
             library_root = library_manager.root()
         if library_root is None:
@@ -1542,14 +1542,14 @@ class PlaybackCoordinator(QObject):
 
         self._detail_vm.refresh_current()
 
-        library_manager = getattr(self, "_library_manager", None)
+        library_manager = self._library_manager
         invalidate = getattr(library_manager, "invalidate_geotagged_assets_cache", None)
         if callable(invalidate):
             try:
                 invalidate(emit_tree_updated=False)
             except Exception:  # noqa: BLE001
                 LOGGER.warning("Failed to refresh geotagged asset caches", exc_info=True)
-        invalidate_location_session = getattr(self, "_location_session_invalidator", None)
+        invalidate_location_session = self._location_session_invalidator
         if callable(invalidate_location_session):
             try:
                 invalidate_location_session()
@@ -1569,7 +1569,7 @@ class PlaybackCoordinator(QObject):
         QTimer.singleShot(0, lambda: self._show_location_file_write_warning(message))
 
     def _location_warning_parent(self) -> QWidget | None:
-        info_panel = getattr(self, "_info_panel", None)
+        info_panel = self._info_panel
         if info_panel is None:
             return None
         parent_widget = info_panel.parentWidget()
@@ -1601,8 +1601,8 @@ class PlaybackCoordinator(QObject):
         if self._location_preview_path == self._location_assign_path:
             self._location_preview_path = None
             self._location_preview_metadata = None
-        info_panel = getattr(self, "_info_panel", None)
-        presentation = getattr(self, "_current_presentation", None)
+        info_panel = self._info_panel
+        presentation = self._current_presentation
         if (
             info_panel is not None
             and presentation is not None
@@ -1618,8 +1618,8 @@ class PlaybackCoordinator(QObject):
     def _handle_location_assignment_finished(self) -> None:
         self._location_assign_inflight = False
         self._location_assign_path = None
-        info_panel = getattr(self, "_info_panel", None)
-        presentation = getattr(self, "_current_presentation", None)
+        info_panel = self._info_panel
+        presentation = self._current_presentation
         if info_panel is None:
             return
         if presentation is not None and info_panel.isVisible():
@@ -1628,10 +1628,10 @@ class PlaybackCoordinator(QObject):
         info_panel.set_location_busy(False)
 
     def _refresh_info_panel_faces(self, asset_id: str | None) -> None:
-        info_panel = getattr(self, "_info_panel", None)
+        info_panel = self._info_panel
         if info_panel is None:
             return
-        people_service = getattr(self, "_people_service", None)
+        people_service = self._people_service
         if people_service is not None:
             try:
                 info_panel.set_face_action_candidates(
@@ -1647,7 +1647,7 @@ class PlaybackCoordinator(QObject):
 
     def _compose_info_panel_faces(self, asset_id: str) -> list[AssetFaceAnnotation]:
         annotations = list(self._load_face_name_annotations(asset_id))
-        pending = getattr(self, "_pending_manual_face_annotations", {}).get(asset_id, [])
+        pending = self._pending_manual_face_annotations.get(asset_id, [])
         if pending:
             annotations.extend(pending)
         return annotations
@@ -1665,11 +1665,11 @@ class PlaybackCoordinator(QObject):
             or not all(isinstance(value, int) for value in requested_box)
         ):
             return
-        pending_faces = getattr(self, "_pending_manual_face_annotations", None)
+        pending_faces = self._pending_manual_face_annotations
         if not isinstance(pending_faces, dict):
             pending_faces = {}
             self._pending_manual_face_annotations = pending_faces
-        sequence = int(getattr(self, "_pending_manual_face_sequence", 0)) + 1
+        sequence = int(self._pending_manual_face_sequence) + 1
         self._pending_manual_face_sequence = sequence
         name = payload.get("name")
         person_id = payload.get("person_id")
@@ -1693,7 +1693,7 @@ class PlaybackCoordinator(QObject):
     def _clear_pending_manual_faces(self, asset_id: str | None) -> None:
         if not asset_id:
             return
-        pending_faces = getattr(self, "_pending_manual_face_annotations", None)
+        pending_faces = self._pending_manual_face_annotations
         if isinstance(pending_faces, dict):
             pending_faces.pop(asset_id, None)
 
@@ -1798,8 +1798,8 @@ class PlaybackCoordinator(QObject):
 
     @Slot()
     def _handle_manual_face_add_requested(self) -> None:
-        presentation = getattr(self, "_current_presentation", None)
-        overlay = getattr(self, "_face_name_overlay", None)
+        presentation = self._current_presentation
+        overlay = self._face_name_overlay
         if overlay is None or presentation is None or presentation.is_video or not presentation.asset_id:
             return
         try:
@@ -1814,8 +1814,8 @@ class PlaybackCoordinator(QObject):
     def _handle_manual_face_submitted(self, payload: object) -> None:
         if self._manual_face_add_inflight:
             return
-        presentation = getattr(self, "_current_presentation", None)
-        overlay = getattr(self, "_face_name_overlay", None)
+        presentation = self._current_presentation
+        overlay = self._face_name_overlay
         library_root = self._people_service.library_root()
         if (
             presentation is None
@@ -1856,30 +1856,30 @@ class PlaybackCoordinator(QObject):
         submitted_asset_id = self._manual_face_inflight_asset_id
         if submitted_asset_id:
             self._clear_pending_manual_faces(submitted_asset_id)
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if presentation is not None and presentation.asset_id == submitted_asset_id:
             self._refresh_face_name_overlay_for_current_presentation()
             self._refresh_info_panel_faces(presentation.asset_id)
-        refresh_callback = getattr(self, "_people_dashboard_refresh_callback", None)
+        refresh_callback = self._people_dashboard_refresh_callback
         if callable(refresh_callback):
             refresh_callback()
 
     @Slot(str)
     def _handle_manual_face_error(self, message: str) -> None:
-        submitted_asset_id = getattr(self, "_manual_face_inflight_asset_id", None)
+        submitted_asset_id = self._manual_face_inflight_asset_id
         if not submitted_asset_id:
-            presentation = getattr(self, "_current_presentation", None)
+            presentation = self._current_presentation
             submitted_asset_id = presentation.asset_id if presentation is not None else None
         if submitted_asset_id:
             self._clear_pending_manual_faces(submitted_asset_id)
-        presentation = getattr(self, "_current_presentation", None)
+        presentation = self._current_presentation
         if (
             submitted_asset_id
             and presentation is not None
             and presentation.asset_id == submitted_asset_id
         ):
             self._refresh_info_panel_faces(submitted_asset_id)
-        overlay = getattr(self, "_face_name_overlay", None)
+        overlay = self._face_name_overlay
         if overlay is not None:
             overlay.set_manual_face_busy(False)
             overlay.show_manual_error(message)
@@ -1888,6 +1888,6 @@ class PlaybackCoordinator(QObject):
     def _handle_manual_face_finished(self) -> None:
         self._manual_face_add_inflight = False
         self._manual_face_inflight_asset_id = None
-        overlay = getattr(self, "_face_name_overlay", None)
+        overlay = self._face_name_overlay
         if overlay is not None:
             overlay.set_manual_face_busy(False)
