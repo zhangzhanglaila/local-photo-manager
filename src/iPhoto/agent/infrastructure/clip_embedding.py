@@ -153,6 +153,15 @@ class CLIPEmbeddingService:
         """Compute cosine similarity between two embeddings."""
         return float(np.dot(embedding1, embedding2))
 
+    def load(self) -> bool:
+        """Load the model now (public wrapper around the lazy load).
+
+        `is_loaded` only reports state; callers that want to warm the model — for
+        example the preload that runs before the face scan — need this.
+        """
+
+        return bool(self._ensure_loaded())
+
     def is_loaded(self) -> bool:
         """Check if the model is loaded."""
         return self._loaded

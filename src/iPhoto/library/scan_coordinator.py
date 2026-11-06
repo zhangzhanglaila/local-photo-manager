@@ -473,10 +473,24 @@ class ScanCoordinatorMixin:
 
         def _load() -> None:
             try:
+                # Only warm an already downloaded model: `get_embedding_service`
+                # opens a download dialog when files are missing, and that must not
+                # happen on a background thread.
+                from iPhoto.agent.infrastructure.clip_downloader import (
+                    get_model_dir,
+                    is_model_available,
+                )
+
+                if not is_model_available(get_model_dir(session.library_root)):
+                    LOGGER.info("CLIP model not downloaded; skipping preload")
+                    return
+
                 service = session.get_embedding_service()
-                if service is not None:
-                    service.is_loaded()
-                    LOGGER.info("Semantic search model preloaded")
+                loader = getattr(service, "load", None) if service is not None else None
+                if callable(loader):
+                    # `is_loaded()` only reports state; `load()` actually warms it.
+                    if loader():
+                        LOGGER.info("Semantic search model preloaded")
             except Exception:
                 LOGGER.debug("Semantic search model preload failed", exc_info=True)
 
