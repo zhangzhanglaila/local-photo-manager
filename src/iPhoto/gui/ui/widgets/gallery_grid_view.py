@@ -920,7 +920,7 @@ class GalleryGridView(AssetGrid):
             # 正在扫描 - 显示扫描中提示
             self._empty_label.hide()
             self._loading_label.hide()
-            self._scanning_label.show()
+            self._scanning_label.hide()
         elif is_empty and self._query_loading:
             # 正在加载查询
             self._empty_label.hide()
