@@ -54,3 +54,84 @@ def test_render_thumbnail_skips_color_stats_without_sidecar(tmp_path: Path) -> N
     assert rendered is not None
     edit_service.describe_adjustments.assert_not_called()
     compute_stats.assert_not_called()
+
+
+class _InlinePool:
+    """Run queued QRunnables synchronously so cache hits complete in the test."""
+
+    def start(self, worker) -> None:
+        worker.run()
+
+
+def _cached_thumbnail_file(service: ThumbnailCacheService, photo: Path, size: QSize) -> Path:
+    return service._disk_cache_path / f"{service._cache_key(photo, size)}.jpg"
+
+
+def test_disk_cache_hit_is_not_reencoded_or_rewritten(tmp_path: Path) -> None:
+    """Loading a cached thumbnail must not re-encode and overwrite it.
+
+    The disk-load path used to share the generation handler, so every cache hit
+    decoded the JPEG, re-encoded it and wrote it back on the GUI thread.
+    """
+
+    service = ThumbnailCacheService(tmp_path / "thumbs")
+    service._thread_pool = _InlinePool()  # type: ignore[assignment]
+    size = QSize(256, 256)
+    photo = tmp_path / "photo.jpg"
+    cache_file = _cached_thumbnail_file(service, photo, size)
+
+    image = QImage(16, 16, QImage.Format.Format_RGB32)
+    image.fill(0xFF336699)
+    assert image.save(str(cache_file), "JPEG", 95)
+    before_bytes = cache_file.read_bytes()
+    before_mtime = cache_file.stat().st_mtime_ns
+
+    ready: list[Path] = []
+    service.thumbnailReady.connect(ready.append)
+
+    assert service.get_thumbnail(photo, size) is None  # filled asynchronously
+    assert ready == [photo]
+    assert cache_file.read_bytes() == before_bytes
+    assert cache_file.stat().st_mtime_ns == before_mtime
+
+
+def test_generated_thumbnail_is_written_to_disk(tmp_path: Path) -> None:
+    service = ThumbnailCacheService(tmp_path / "thumbs")
+    service._thread_pool = _InlinePool()  # type: ignore[assignment]
+    size = QSize(64, 64)
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"image")
+    image = QImage(8, 8, QImage.Format.Format_RGB32)
+    image.fill(0)
+    service._render_thumbnail = lambda *_a, **_k: image  # type: ignore[method-assign]
+
+    service.get_thumbnail(photo, size)
+
+    assert _cached_thumbnail_file(service, photo, size).exists()
+
+
+def test_corrupt_disk_cache_entry_is_regenerated(tmp_path: Path) -> None:
+    service = ThumbnailCacheService(tmp_path / "thumbs")
+    service._thread_pool = _InlinePool()  # type: ignore[assignment]
+    size = QSize(64, 64)
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"image")
+    cache_file = _cached_thumbnail_file(service, photo, size)
+    cache_file.write_bytes(b"not a jpeg")
+
+    rendered: list[Path] = []
+    image = QImage(8, 8, QImage.Format.Format_RGB32)
+    image.fill(0)
+
+    def _render(path: Path, _size: QSize) -> QImage:
+        rendered.append(path)
+        return image
+
+    service._render_thumbnail = _render  # type: ignore[method-assign]
+
+    service.get_thumbnail(photo, size)
+
+    assert rendered == [photo]
+    assert cache_file.exists()
+    assert cache_file.read_bytes() != b"not a jpeg"
+

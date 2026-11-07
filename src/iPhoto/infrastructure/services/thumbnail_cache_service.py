@@ -66,12 +66,13 @@ class ThumbnailDiskLoadTask(QRunnable):
         self._signals = signals
 
     def run(self):
+        # Emit even when decoding failed: the service uses that signal to drop the
+        # unreadable cache entry and regenerate instead of leaving the key pending.
         try:
             qimg = QImage(str(self._disk_file))
-            if not qimg.isNull():
-                self._signals.result.emit(self._path, self._size, qimg)
         except Exception:
-            pass
+            qimg = QImage()
+        self._signals.result.emit(self._path, self._size, qimg)
 
 class ThumbnailCacheService(QObject):
     """
@@ -154,7 +155,7 @@ class ThumbnailCacheService(QObject):
 
     def _start_disk_load(self, disk_file: Path, path: Path, size: QSize):
         worker_signals = ThumbnailWorkerSignals()
-        worker_signals.result.connect(self._handle_generation_result)
+        worker_signals.result.connect(self._handle_disk_load_result)
         worker = ThumbnailDiskLoadTask(disk_file, path, size, worker_signals)
         self._thread_pool.start(worker)
 
@@ -164,7 +165,8 @@ class ThumbnailCacheService(QObject):
             key = self._cache_key(path, size)
             pixmap = QPixmap.fromImage(image)
 
-            # Save to disk
+            # Only a freshly rendered thumbnail is written: it is the one that was
+            # missing from the cache.
             disk_file = self._disk_cache_path / f"{key}.jpg"
             pixmap.save(str(disk_file), "JPEG")
 
@@ -172,6 +174,32 @@ class ThumbnailCacheService(QObject):
             self._pending_tasks.discard(key)
 
             self.thumbnailReady.emit(path)
+
+    def _handle_disk_load_result(self, path: Path, size: QSize, image: QImage):
+        """Adopt a thumbnail that was read from the disk cache.
+
+        Writing it back here used to re-encode and overwrite the file on every
+        cache hit: a decode + JPEG encode + disk write on the GUI thread for data
+        that was already correct, with generation loss on each pass.
+        """
+
+        key = self._cache_key(path, size)
+        if image.isNull():
+            # Unreadable cache entry (truncated / bad format): drop it and rebuild
+            # from the source instead of leaving the key pending forever.
+            try:
+                (self._disk_cache_path / f"{key}.jpg").unlink(missing_ok=True)
+            except OSError:
+                pass
+            self._pending_tasks.discard(key)
+            if not self._is_shutting_down:
+                self._pending_tasks.add(key)
+                self._start_generation(path, size)
+            return
+
+        self._add_to_memory(key, QPixmap.fromImage(image))
+        self._pending_tasks.discard(key)
+        self.thumbnailReady.emit(path)
 
     def invalidate(self, path: Path, *, size: QSize | None = None):
         """Removes the thumbnail from cache to force regeneration."""
