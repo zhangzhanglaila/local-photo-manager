@@ -346,6 +346,11 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         is_hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
         depth = self._depth_for_index(index)
         indentation = depth * SIDEBAR_INDENT_PER_LEVEL
+        if node_type == NodeType.SUBALBUM:
+            # An album lives *inside* a bound library. One extra step makes that
+            # obvious next to the library row's expand arrow, which otherwise eats
+            # most of the indent and leaves the two rows looking level.
+            indentation += SIDEBAR_INDENT_PER_LEVEL
 
         return _PaintState(
             index=index,
