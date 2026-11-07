@@ -68,6 +68,36 @@ MAP_FOCUS_MAX_RETRIES = 10
 MAP_FOCUS_RETRY_INTERVAL_MS = 400
 
 
+#: Cache of stored embeddings per library, keyed by the DB mtime. Reading ~10k rows
+#: takes a few hundred milliseconds and used to happen on every single search.
+_SEARCH_EMBEDDINGS_CACHE: dict[str, tuple[float, list]] = {}
+
+
+def _load_search_embeddings(library_root: Path) -> list:
+    """Return embeddings for *library_root*, reloading only when the DB changed."""
+
+    try:
+        from iPhoto.utils.pathutils import resolve_work_dir
+
+        work_dir = resolve_work_dir(library_root)
+        db_path = work_dir / "embeddings.db" if work_dir is not None else None
+        mtime = db_path.stat().st_mtime if db_path is not None and db_path.exists() else 0.0
+    except Exception:
+        mtime = 0.0
+
+    key = str(library_root)
+    cached = _SEARCH_EMBEDDINGS_CACHE.get(key)
+    if cached is not None and cached[0] == mtime and mtime:
+        return cached[1]
+
+    from iPhoto.bootstrap.embedding_index import load_stored_embeddings
+
+    embeddings = load_stored_embeddings(library_root)
+    if mtime:
+        _SEARCH_EMBEDDINGS_CACHE[key] = (mtime, embeddings)
+    return embeddings
+
+
 class MainCoordinator(QObject):
     """High-level coordinator for the main window.
     Acts as the entry point and glue code for the application, initializing
@@ -1238,7 +1268,21 @@ class MainCoordinator(QObject):
                     import time
 
                     # 1. Load model
-                    self.progress.emit("正在加载 AI 模型...", 0, 0)
+                    already_loaded = False
+                    if library_session is not None:
+                        try:
+                            probe_service = library_session.get_embedding_service()
+                            probe = (
+                                getattr(probe_service, "is_loaded", None)
+                                if probe_service is not None
+                                else None
+                            )
+                            already_loaded = bool(probe()) if callable(probe) else False
+                        except Exception:
+                            already_loaded = False
+                    self.progress.emit(
+                        "正在搜索..." if already_loaded else "正在加载 AI 模型...", 0, 0
+                    )
                     service = None
                     if library_session is not None:
                         try:
@@ -1260,7 +1304,7 @@ class MainCoordinator(QObject):
                     self.progress.emit("AI 模型加载完成，正在加载索引...", 1, 3)
 
                     # 2. Load embeddings
-                    all_embeddings = load_stored_embeddings(self._library_root)
+                    all_embeddings = _load_search_embeddings(self._library_root)
 
                     if not all_embeddings:
                         self.finished.emit(None, "没有找到照片索引，请先生成索引")
