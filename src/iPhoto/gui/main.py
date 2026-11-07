@@ -417,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
             if _scan_finished:
                 return  # signal may fire from multiple sources
             _scan_finished = True
+            _set_startup_placeholder(False)
             _logger.info("startup: scan finished, success=%s", success)
             # 扫描完成后继续下一步
             QTimer.singleShot(0, _step5_select_photos)
@@ -688,7 +689,10 @@ def main(argv: list[str] | None = None) -> int:
             # 显式调用 dismiss_loading_state 立即清除这些图层。
             gallery_page = getattr(window.ui, "gallery_page", None)
             if gallery_page:
-                _set_startup_placeholder(False)
+                # Keep the gallery's own placeholder suppressed: releasing it here
+                # produced a second, differently-styled loading box right after the
+                # overlay disappeared. It is released when the scan finishes.
+                pass
                 grid_view = getattr(gallery_page, "grid_view", None)
                 if grid_view and hasattr(grid_view, "dismiss_loading_state"):
                     grid_view.dismiss_loading_state()
@@ -701,7 +705,32 @@ def main(argv: list[str] | None = None) -> int:
             # 这可以显著改善首次浏览时的流畅度
             QTimer.singleShot(500, _warm_up_thumbnail_cache)
 
-            overlay.dismiss()
+            # Keep the overlay as the *only* startup loader until the grid actually
+            # has photos. Dismissing it here showed an empty content area, and
+            # releasing the grid placeholder instead produced a second loading box in
+            # a different style. Fall back to a timeout so startup can never hang.
+            def _finish_startup_feedback(*_args) -> None:
+                # Only the overlay hands over: the grid's own scanning placeholder
+                # stays suppressed until the scan finishes, otherwise it appears as a
+                # second, differently-styled loader right after the overlay.
+                try:
+                    overlay.dismiss()
+                except RuntimeError:
+                    pass
+
+            grid_store = getattr(coordinator, "_gallery_store", None)
+            data_signal = getattr(grid_store, "data_changed", None)
+            connected = False
+            connect = getattr(data_signal, "connect", None)
+            if callable(connect):
+                try:
+                    connect(_finish_startup_feedback)
+                    connected = True
+                except Exception:
+                    connected = False
+            if not connected:
+                _finish_startup_feedback()
+            QTimer.singleShot(8000, _finish_startup_feedback)
             _logger.info("startup complete")
         except Exception:
             _logger.exception("startup step 5: unhandled error")
