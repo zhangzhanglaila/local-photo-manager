@@ -65,8 +65,43 @@ def get_custom_workspace_dir(library_root: Path) -> Path | None:
         return None
 
     library_name = _generate_library_name(library_root)
-    workspace_dir = base / library_name / WORK_DIR_NAME
+    # The workspace is a *separate* directory tree from the photos, so the extra
+    # `.iPhoto` level was redundant: `<workspace>/<library>/.iPhoto/<db|thumbs|...>`
+    # nested one level too deep. Work files now live directly under
+    # `<workspace>/<library>/`.
+    workspace_dir = base / library_name
+    _migrate_nested_work_dir(workspace_dir)
     return workspace_dir
+
+
+def _migrate_nested_work_dir(workspace_dir: Path) -> None:
+    """Move `<workspace>/<library>/.iPhoto/*` up into `<workspace>/<library>/`.
+
+    Older layouts nested the work directory one level deeper. The move is
+    best-effort: an existing target wins, and a non-empty `.iPhoto` is left in
+    place so nothing is ever deleted by accident.
+    """
+
+    nested = workspace_dir / WORK_DIR_NAME
+    if not nested.is_dir():
+        return
+    try:
+        entries = list(nested.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        target = workspace_dir / entry.name
+        if target.exists():
+            continue
+        try:
+            entry.rename(target)
+        except OSError:
+            LOGGER.warning("Could not move %s up to %s", entry, target, exc_info=True)
+            return
+    try:
+        nested.rmdir()
+    except OSError:
+        pass  # never delete data; an emptied directory is fine to leave behind
 
 
 def _expand(pattern: str) -> Iterator[str]:

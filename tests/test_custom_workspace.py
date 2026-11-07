@@ -69,8 +69,10 @@ class TestCustomWorkspace(TestCase):
         set_custom_workspace_base(custom_base)
         workspace_dir = get_custom_workspace_dir(library_root)
         self.assertIsNotNone(workspace_dir)
-        self.assertEqual(workspace_dir.parent.name, "Photos")
-        self.assertEqual(workspace_dir.name, WORK_DIR_NAME)
+        self.assertEqual(workspace_dir.parent.name, "workspace")
+        # The work directory is <workspace>/<library> — one level, not two.
+        self.assertEqual(workspace_dir.name, "Photos")
+        self.assertEqual(workspace_dir.name, "Photos")
 
     def test_ensure_work_dir_with_custom_workspace(self):
         """测试使用自定义工作目录的 ensure_work_dir。"""
@@ -86,7 +88,7 @@ class TestCustomWorkspace(TestCase):
         set_custom_workspace_base(custom_base)
         custom_work_dir = ensure_work_dir(library_root)
         self.assertTrue(custom_work_dir.is_relative_to(custom_base))
-        self.assertEqual(custom_work_dir.name, WORK_DIR_NAME)
+        self.assertEqual(custom_work_dir.name, "Photos")
         self.assertTrue(custom_work_dir.exists())
 
     def test_resolve_work_dir_with_existing_custom_dir(self):
@@ -141,8 +143,8 @@ class TestCustomWorkspace(TestCase):
 
         # 验证它们是不同的目录
         self.assertNotEqual(workspace1, workspace2)
-        self.assertEqual(workspace1.parent.name, "Photos1")
-        self.assertEqual(workspace2.parent.name, "Photos2")
+        self.assertEqual(workspace1.name, "Photos1")
+        self.assertEqual(workspace2.name, "Photos2")
 
 
 if __name__ == "__main__":

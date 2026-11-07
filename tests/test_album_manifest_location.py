@@ -58,7 +58,7 @@ def test_manifest_moves_into_a_configured_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "Workspace"
     set_custom_workspace_base(workspace)
 
-    expected = workspace / "APPLE" / ".iPhoto" / "manifest.json"
+    expected = workspace / "APPLE" / "manifest.json"
     assert album_manifest_path(library) == expected
 
 
@@ -69,7 +69,7 @@ def test_writing_the_manifest_keeps_the_library_clean(tmp_path: Path) -> None:
 
     _save_manifest(library, _manifest())
 
-    workspace_manifest = workspace / "APPLE" / ".iPhoto" / "manifest.json"
+    workspace_manifest = workspace / "APPLE" / "manifest.json"
     assert workspace_manifest.exists(), "the manifest belongs in the workspace"
     assert json.loads(workspace_manifest.read_text(encoding="utf-8"))["id"] == "album-1"
 
@@ -88,7 +88,7 @@ def test_existing_manifest_is_migrated_into_the_workspace(tmp_path: Path) -> Non
     resolved = find_album_manifest(library)
 
     assert resolved is not None
-    assert resolved == workspace / "APPLE" / ".iPhoto" / "manifest.json"
+    assert resolved == workspace / "APPLE" / "manifest.json"
     assert resolved.exists()
     assert json.loads(resolved.read_text(encoding="utf-8"))["id"] == "legacy-id"
     assert not legacy.exists(), "the legacy manifest must not stay in the photo folder"

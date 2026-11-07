@@ -47,7 +47,7 @@ def test_shader_cache_uses_the_configured_workspace(tmp_path: Path) -> None:
     # Nothing installed the workspace base yet: this is the startup situation.
     work_root = resolve_managed_work_root(settings)
 
-    assert work_root == workspace / "APPLE" / ".iPhoto"
+    assert work_root == workspace / "APPLE"
     assert not (library / ".iPhoto").exists(), (
         "the photo folder must not receive a work directory when a workspace is configured"
     )
@@ -81,6 +81,6 @@ def test_shader_cache_root_lives_under_the_workspace(tmp_path: Path) -> None:
 
     cache_root = resolve_shader_cache_root(settings)
 
-    assert cache_root == workspace / "APPLE" / ".iPhoto" / "cache" / "shaders"
+    assert cache_root == workspace / "APPLE" / "cache" / "shaders"
     assert cache_root.exists()
     assert not (library / ".iPhoto").exists()
