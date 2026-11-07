@@ -145,10 +145,33 @@ class LibraryRuntimeController(
             raise LibraryUnavailableError(f"Library path does not exist: {path}")
         if normalized in self._roots:
             return
+        # A folder inside an existing root is one of that library's albums, not a
+        # library of its own. Registering it separately put every album in the sidebar
+        # on the same level as the library root (the "APPLE 层级不对" report).
+        if any(self._is_within(normalized, root) for root in self._roots):
+            LOGGER.info(
+                "add_root: %s is inside an existing library root; treating it as an album",
+                normalized,
+            )
+            return
+        # Conversely, a new parent root subsumes roots nested inside it.
+        self._roots = [root for root in self._roots if not self._is_within(root, normalized)]
         self._roots.append(normalized)
         self._refresh_tree()
         self._rebuild_watches()
         self.treeUpdated.emit()
+
+    @staticmethod
+    def _is_within(path: Path, parent: Path) -> bool:
+        """Return True when *path* is inside *parent* (and not equal to it)."""
+
+        if path == parent:
+            return False
+        try:
+            path.relative_to(parent)
+        except ValueError:
+            return False
+        return True
 
     def remove_root(self, path: Path) -> None:
         """Remove a library root. If it was the primary root, promote the next one."""
