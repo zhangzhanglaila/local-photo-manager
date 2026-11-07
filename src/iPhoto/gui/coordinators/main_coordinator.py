@@ -1275,10 +1275,22 @@ class MainCoordinator(QObject):
                         self.finished.emit(None, "搜索编码失败")
                         return
 
+                    # 0.2 sat at the median similarity of the whole library (measured:
+                    # median 0.195 for "cake"), so it admitted ~35% of all photos.
+                    # 0.24 keeps the head of the distribution; the cap keeps the result
+                    # list usable even for a very broad query.
+                    import os as _os
+
+                    try:
+                        min_similarity = float(_os.environ.get("IPHOTO_SEARCH_MIN_SIM", "0.24"))
+                    except ValueError:
+                        min_similarity = 0.24
+                    max_results = 300
+
                     results = []
                     for i, item in enumerate(all_embeddings):
                         similarity = service.compute_similarity(query_embedding, item["embedding"])
-                        if similarity > 0.2:
+                        if similarity >= min_similarity:
                             results.append({
                                 "asset_id": item["asset_id"],
                                 "score": float(similarity),
@@ -1304,7 +1316,11 @@ class MainCoordinator(QObject):
                     except Exception:
                         pass
 
-                    # Return all results (UI will handle pagination)
+                    # Keep the list bounded: a very broad query can still match
+                    # thousands of photos, and the UI paginates anyway.
+                    if len(results) > max_results:
+                        results = results[:max_results]
+
                     self.finished.emit(results, "")
 
                 except Exception as e:
