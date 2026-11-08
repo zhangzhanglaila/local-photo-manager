@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     QItemSelectionModel,
     QModelIndex,
     QObject,
+    QSize,
     Qt,
     QThreadPool,
     QTimer,
@@ -629,7 +630,17 @@ class MainCoordinator(QObject):
         ui.toggle_hidden_people_action.toggled.connect(self._handle_hidden_people_toggle_changed)
 
         # Semantic Search
-        ui.main_header.search_requested.connect(self._handle_search_requested)
+        ui.main_header.search_submitted_with_scope.connect(
+            self._handle_search_requested
+        )
+        ui.main_header.search_popup_opened.connect(self._prepare_search_popup)
+        ui.main_header.similar_search_requested.connect(self._handle_similar_search)
+        ui.main_header.search_history_clear_requested.connect(
+            self._clear_search_history
+        )
+        self._thumbnail_service.thumbnailReady.connect(
+            self._on_popup_thumbnail_ready
+        )
         ui.main_header.search_precision_group.triggered.connect(
             self._handle_search_precision_changed
         )
@@ -1207,18 +1218,131 @@ class MainCoordinator(QObject):
                 "_sync_selection failed for row %s", row, exc_info=True
             )
 
-    def _handle_search_requested(self, query: str) -> None:
+    def _record_search_history(self, query: str) -> None:
+        """Remember the query so the search dropdown can offer it again."""
+
+        text = (query or "").strip()
+        if not text:
+            return
+        try:
+            history = list(self._context.settings.get("agent.search_history", []) or [])
+        except Exception:
+            history = []
+        history = [text] + [item for item in history if item != text]
+        self._context.settings.set("agent.search_history", history[:10])
+
+    def _clear_search_history(self) -> None:
+        self._context.settings.set("agent.search_history", [])
+        self._window.ui.main_header.set_search_history([])
+
+    def _current_album_rel_path(self) -> str | None:
+        """Library-relative path of the album being viewed, if any."""
+
+        root = self._context.library.root()
+        active = getattr(self._gallery_vm, "active_root", None)
+        active_path = getattr(active, "value", active)
+        if root is None or active_path is None:
+            return None
+        try:
+            relative = (
+                Path(active_path).resolve().relative_to(Path(root).resolve()).as_posix()
+            )
+        except (OSError, ValueError):
+            return None
+        return None if relative in ("", ".") else relative
+
+    def _current_album_label(self) -> str | None:
+        relative = self._current_album_rel_path()
+        return Path(relative).name if relative else None
+
+    def _prepare_search_popup(self) -> None:
+        """Fill the dropdown with history, scope and visual shortcuts."""
+
+        header = self._window.ui.main_header
+        try:
+            history = list(self._context.settings.get("agent.search_history", []) or [])
+        except Exception:
+            history = []
+        header.set_search_history(history[:10])
+        header.set_album_scope(self._current_album_label())
+        self._populate_popup_similar()
+
+    def _populate_popup_similar(self) -> None:
+        """Offer a few thumbnails from the current view for "find similar"."""
+
+        header = self._window.ui.main_header
+        size = QSize(72, 72)
+        self._popup_similar_paths: dict[Path, str] = {}
+        items: list[tuple[str, object]] = []
+
+        store = self._gallery_store
+        try:
+            count = min(8, store.count())
+        except Exception:
+            count = 0
+
+        for row in range(count):
+            try:
+                asset = store.asset_at(row)
+            except Exception:
+                asset = None
+            if asset is None or asset.abs_path is None:
+                continue
+            asset_id = str(getattr(asset, "id", "") or "")
+            if not asset_id:
+                continue
+            path = Path(asset.abs_path)
+            self._popup_similar_paths[path] = asset_id
+            pixmap = self._thumbnail_service.get_thumbnail(path, size)
+            if pixmap is not None:
+                items.append((asset_id, pixmap))
+
+        header.set_similar_photos(items)
+
+    def _on_popup_thumbnail_ready(self, path: Path) -> None:
+        """Fill a suggested thumbnail as soon as the cache produces it."""
+
+        target = Path(path)
+        asset_id = getattr(self, "_popup_similar_paths", {}).get(target)
+        if not asset_id:
+            return
+        header = self._window.ui.main_header
+        popup = getattr(header, "_search_popup", None)
+        if popup is None or not popup.isVisible():
+            return
+        pixmap = self._thumbnail_service.get_thumbnail(target, QSize(72, 72))
+        if pixmap is not None:
+            header.add_similar_photo(asset_id, pixmap)
+
+    def _handle_similar_search(self, asset_id: str) -> None:
+        """Search for photos that look like *asset_id*."""
+
+        self._handle_search_requested(
+            tr("search.similar_query"), "all", similar_to=asset_id
+        )
+
+    def _handle_search_requested(
+        self, query: str, scope: str = "all", *, similar_to: str | None = None
+    ) -> None:
         """Handle semantic search request from the search input."""
-        self._logger.info("Search requested: %s", query)
+        self._logger.info("Search requested: %s (scope=%s)", query, scope)
 
         state = self._search_state
-        if state is not None and not state.get("done") and state.get("query") == query:
+        if (
+            state is not None
+            and not state.get("done")
+            and state.get("query") == query
+            and state.get("similar_to") == similar_to
+        ):
             # Same query is already searching (e.g. Enter pressed twice): show the
             # panel again instead of spawning a second worker that loads the model
             # in parallel.
             self._view_router.show_gallery()
             self._show_search_loading(query)
             return
+
+        if similar_to is None:
+            self._record_search_history(query)
 
         self._search_serial += 1
         serial = self._search_serial
@@ -1228,6 +1352,8 @@ class MainCoordinator(QObject):
             "done": False,
             "error": "",
             "serial": serial,
+            "scope": scope,
+            "similar_to": similar_to,
         }
         # A dedicated sidebar entry keeps the search reachable while it loads, so
         # the user can browse other views instead of waiting on the loading panel.
@@ -1281,12 +1407,27 @@ class MainCoordinator(QObject):
                 "乡村": "countryside village",
             }
 
-            def __init__(self, query_text, model_path, lib_root, *, precision="balanced"):
+            def __init__(
+                self,
+                query_text,
+                model_path,
+                lib_root,
+                *,
+                precision="balanced",
+                scope_album_path=None,
+                similar_to=None,
+            ):
                 super().__init__()
                 self._query = query_text
                 self._model_dir = model_path
                 self._library_root = lib_root
                 self._precision = precision
+                # Library-relative album path when the search is scoped to the
+                # album currently open; ``None`` searches the whole library.
+                self._scope_album_path = scope_album_path
+                # When set, rank by visual similarity to this asset instead of by
+                # a text query ("find similar photos").
+                self._similar_to = similar_to
 
             def _translate_query(self, query: str) -> str:
                 """Translate Chinese query to English for CLIP."""
@@ -1370,12 +1511,42 @@ class MainCoordinator(QObject):
 
                     self.progress.emit(f"已加载 {len(all_embeddings)} 个索引，正在搜索...", 2, 3)
 
-                    # 3. Translate query and search
-                    translated_query = self._translate_query(self._query)
-                    query_embedding = service.encode_text(translated_query)
-                    if query_embedding is None:
-                        self.finished.emit(None, "搜索编码失败")
-                        return
+                    # Scope: "当前相册" keeps only the embeddings of the album the
+                    # user is looking at.
+                    if self._scope_album_path:
+                        try:
+                            from iPhoto.domain.models.query import AssetQuery
+
+                            query_service = (
+                                getattr(library_session, "asset_queries", None)
+                                if library_session is not None
+                                else None
+                            )
+                            if query_service is not None:
+                                scoped_rows = query_service.read_query_asset_rows(
+                                    Path(self._library_root),
+                                    AssetQuery(
+                                        album_path=self._scope_album_path,
+                                        include_subalbums=True,
+                                    ),
+                                )
+                                scoped_ids = {
+                                    row.get("id")
+                                    for row in scoped_rows
+                                    if isinstance(row, dict)
+                                }
+                                all_embeddings = [
+                                    item
+                                    for item in all_embeddings
+                                    if item["asset_id"] in scoped_ids
+                                ]
+                        except Exception:
+                            logging.getLogger(__name__).warning(
+                                "Album scope filter failed", exc_info=True
+                            )
+                        if not all_embeddings:
+                            self.finished.emit(None, "当前相册里没有可搜索的照片")
+                            return
 
                     # Adaptive cutoff: keep the head of *this* query's score
                     # distribution instead of one global threshold (0.24 admitted
@@ -1395,35 +1566,67 @@ class MainCoordinator(QObject):
                     )
 
                     matrix = _np.stack([item["embedding"] for item in all_embeddings])
-                    sim_scores = matrix @ query_embedding
 
-                    floor, margin, margin_tolerance = precision_params(
-                        self._precision
-                    )
-                    try:
-                        floor = float(_os.environ.get("IPHOTO_SEARCH_MIN_SIM", floor))
-                    except ValueError:
-                        pass
+                    if self._similar_to:
+                        query_index = next(
+                            (
+                                index
+                                for index, item in enumerate(all_embeddings)
+                                if item["asset_id"] == self._similar_to
+                            ),
+                            None,
+                        )
+                        if query_index is None:
+                            self.finished.emit(None, "找不到这张照片的向量")
+                            return
+                        query_embedding = all_embeddings[query_index]["embedding"]
+                        sim_scores = matrix @ query_embedding
+                        # The source photo itself is always the perfect match.
+                        sim_scores[query_index] = -1.0
+                        keep_indices = select_results(
+                            sim_scores, floor=0.65, margin=0.08
+                        )
+                    else:
+                        translated_query = self._translate_query(self._query)
+                        query_embedding = service.encode_text(translated_query)
+                        if query_embedding is None:
+                            self.finished.emit(None, "搜索编码失败")
+                            return
 
-                    margins = None
-                    group = labels_for_query(translated_query)
-                    if group is not None and margin_tolerance is not None:
-                        other_vectors = [
-                            vector
-                            for label in other_labels(group)
-                            if (vector := service.encode_text_cached(label)) is not None
-                        ]
-                        if other_vectors:
-                            other_scores = matrix @ _np.stack(other_vectors).T
-                            margins = sim_scores - other_scores.max(axis=1)
+                        sim_scores = matrix @ query_embedding
+                        floor, margin, margin_tolerance = precision_params(
+                            self._precision
+                        )
+                        try:
+                            floor = float(
+                                _os.environ.get("IPHOTO_SEARCH_MIN_SIM", floor)
+                            )
+                        except ValueError:
+                            pass
 
-                    keep_indices = select_results(
-                        sim_scores,
-                        floor=floor,
-                        margin=margin,
-                        margins=margins,
-                        margin_tolerance=margin_tolerance,
-                    )
+                        margins = None
+                        group = labels_for_query(translated_query)
+                        if group is not None and margin_tolerance is not None:
+                            other_vectors = [
+                                vector
+                                for label in other_labels(group)
+                                if (
+                                    vector := service.encode_text_cached(label)
+                                )
+                                is not None
+                            ]
+                            if other_vectors:
+                                other_scores = matrix @ _np.stack(other_vectors).T
+                                margins = sim_scores - other_scores.max(axis=1)
+
+                        keep_indices = select_results(
+                            sim_scores,
+                            floor=floor,
+                            margin=margin,
+                            margins=margins,
+                            margin_tolerance=margin_tolerance,
+                        )
+
                     results = [
                         {
                             "asset_id": all_embeddings[index]["asset_id"],
@@ -1432,23 +1635,28 @@ class MainCoordinator(QObject):
                         for index in keep_indices
                     ]
 
-                    # OCR text search (if available)
-                    try:
-                        from iPhoto.ai.db.ocr_database import get_ocr_repository
-                        ocr_repo = get_ocr_repository(self._library_root)
-                        ocr_hits = ocr_repo.search(self._query, limit=200)
-                        seen_ids = {r["asset_id"] for r in results}
-                        for hit in ocr_hits:
-                            if hit.asset_id not in seen_ids:
-                                results.append({
-                                    "asset_id": hit.asset_id,
-                                    "score": min(hit.confidence, 1.0),
-                                    "source": "ocr",
-                                })
-                                seen_ids.add(hit.asset_id)
-                        results.sort(key=lambda x: x["score"], reverse=True)
-                    except Exception:
-                        pass
+                    # OCR text search (if available). Similar-photo searches are
+                    # purely visual, so they skip the text index.
+                    if self._similar_to is None:
+                        try:
+                            from iPhoto.ai.db.ocr_database import get_ocr_repository
+
+                            ocr_repo = get_ocr_repository(self._library_root)
+                            ocr_hits = ocr_repo.search(self._query, limit=200)
+                            seen_ids = {r["asset_id"] for r in results}
+                            for hit in ocr_hits:
+                                if hit.asset_id not in seen_ids:
+                                    results.append(
+                                        {
+                                            "asset_id": hit.asset_id,
+                                            "score": min(hit.confidence, 1.0),
+                                            "source": "ocr",
+                                        }
+                                    )
+                                    seen_ids.add(hit.asset_id)
+                            results.sort(key=lambda x: x["score"], reverse=True)
+                        except Exception:
+                            pass
 
                     # Keep the whole match set: the cutoff already decides what
                     # belongs here, and the gallery loads result windows lazily.
@@ -1475,7 +1683,14 @@ class MainCoordinator(QObject):
             )
 
         thread = SearchThread(
-            query, model_dir, library_root, precision=self._search_precision()
+            query,
+            model_dir,
+            library_root,
+            precision=self._search_precision(),
+            scope_album_path=(
+                self._current_album_rel_path() if scope == "album" else None
+            ),
+            similar_to=similar_to,
         )
         thread.finished.connect(on_finished)
         thread.progress.connect(on_progress)

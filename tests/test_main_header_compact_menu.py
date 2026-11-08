@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton
 
 from iPhoto.gui.ui.widgets.main_header import MainHeaderWidget
 
@@ -118,3 +118,67 @@ def test_search_field_keeps_the_magnifier_inside(
     assert header.search_input.actions()
     assert header.search_input._leading_action.isEnabled() is False
     assert header.search_icon.isVisible() is False
+
+
+def _history_chip(header: MainHeaderWidget, text: str) -> QPushButton:
+    popup = header._search_popup
+    assert popup is not None
+    for button in popup.findChildren(QPushButton):
+        if button.text() == text:
+            return button
+    raise AssertionError(f"history chip {text!r} not found")
+
+
+def test_search_enter_emits_query_with_scope(
+    chrome: tuple[QMainWindow, MainHeaderWidget],
+) -> None:
+    _window, header = chrome
+    submitted: list[tuple[str, str]] = []
+    header.search_submitted_with_scope.connect(
+        lambda query, scope: submitted.append((query, scope))
+    )
+
+    header.search_input.setText("dog")
+    header.search_input._on_return_pressed()
+
+    assert submitted == [("dog", "all")]
+
+
+def test_history_chip_starts_a_search(
+    chrome: tuple[QMainWindow, MainHeaderWidget], qapp: QApplication
+) -> None:
+    _window, header = chrome
+    submitted: list[tuple[str, str]] = []
+    header.search_submitted_with_scope.connect(
+        lambda query, scope: submitted.append((query, scope))
+    )
+    header.set_search_history(["cat"])
+    header.focus_search()
+    qapp.processEvents()
+
+    _history_chip(header, "cat").click()
+
+    assert submitted == [("cat", "all")]
+    assert header.search_input.text() == "cat"
+
+
+def test_album_scope_is_used_when_selected(
+    chrome: tuple[QMainWindow, MainHeaderWidget], qapp: QApplication
+) -> None:
+    _window, header = chrome
+    submitted: list[tuple[str, str]] = []
+    header.search_submitted_with_scope.connect(
+        lambda query, scope: submitted.append((query, scope))
+    )
+    header.set_album_scope("202406_a")
+    header.focus_search()
+    qapp.processEvents()
+
+    popup = header._search_popup
+    assert popup is not None
+    popup._scope_album.click()
+    header.search_input.setText("dog")
+    header.search_input._on_return_pressed()
+
+    assert submitted == [("dog", "album")]
+

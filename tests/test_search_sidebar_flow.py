@@ -7,6 +7,7 @@ the sidebar entry instead of yanking the view back.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
@@ -166,6 +167,49 @@ def test_progress_updates_panel_while_search_visible() -> None:
     MainCoordinator._update_search_progress(coordinator, 7, "正在搜索...", 0, 0)
 
     assert page.loading == ["正在搜索..."]
+
+
+def test_current_album_rel_path_only_returns_nested_albums() -> None:
+    library = Path("/library")
+
+    nested = SimpleNamespace(
+        _context=SimpleNamespace(library=SimpleNamespace(root=lambda: library)),
+        _gallery_vm=SimpleNamespace(active_root=SimpleNamespace(value=library / "Trip")),
+    )
+    root_view = SimpleNamespace(
+        _context=SimpleNamespace(library=SimpleNamespace(root=lambda: library)),
+        _gallery_vm=SimpleNamespace(active_root=SimpleNamespace(value=library)),
+    )
+
+    assert MainCoordinator._current_album_rel_path(nested) == "Trip"
+    assert MainCoordinator._current_album_rel_path(root_view) is None
+
+
+def test_search_history_dedupes_and_keeps_ten_entries() -> None:
+    class _Settings:
+        def __init__(self) -> None:
+            self.values: dict[str, object] = {"agent.search_history": ["a", "b"]}
+
+        def get(self, key: str, default=None):
+            return self.values.get(key, default)
+
+        def set(self, key: str, value) -> None:
+            self.values[key] = value
+
+    settings = _Settings()
+    coordinator = SimpleNamespace(_context=SimpleNamespace(settings=settings))
+
+    MainCoordinator._record_search_history(coordinator, "a")
+    MainCoordinator._record_search_history(coordinator, "c")
+
+    assert settings.values["agent.search_history"] == ["c", "a", "b"]
+
+    for index in range(12):
+        MainCoordinator._record_search_history(coordinator, f"query-{index}")
+
+    history = settings.values["agent.search_history"]
+    assert len(history) == 10
+    assert history[0] == "query-11"
 
 
 def test_stale_progress_is_ignored() -> None:

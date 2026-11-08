@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QPalette
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from ....i18n import tr
 from ..icon import load_icon
+from .search_popup import SearchPopup
 
 
 class SearchInput(QLineEdit):
@@ -25,6 +27,9 @@ class SearchInput(QLineEdit):
 
     # Signal emitted when user presses Enter
     search_submitted = Signal(str)
+    # The dropdown wants to be shown (focus / click on the field).
+    popup_requested = Signal()
+    escape_pressed = Signal()
 
     # macOS-style search field: a rounded, slightly recessed capsule that turns
     # white with a hairline accent border while focused.
@@ -72,15 +77,37 @@ class SearchInput(QLineEdit):
         if text:
             self.search_submitted.emit(text)
 
+    def focusInEvent(self, event) -> None:  # noqa: N802
+        super().focusInEvent(event)
+        self.popup_requested.emit()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        super().mousePressEvent(event)
+        self.popup_requested.emit()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape:
+            self.escape_pressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
 
 class MainHeaderWidget(QWidget):
     """Container hosting the menu bar alongside quick access buttons."""
 
     # Signal for search queries
     search_requested = Signal(str)
+    # Same query plus the scope chosen in the dropdown ("all" or "album").
+    search_submitted_with_scope = Signal(str, str)
+    search_popup_opened = Signal()
+    similar_search_requested = Signal(str)
+    search_history_clear_requested = Signal()
 
     def __init__(self, parent: QWidget | None, main_window: QWidget) -> None:
         super().__init__(parent)
+        self._main_window = main_window
+        self._search_popup: SearchPopup | None = None
         self.setObjectName("menuBarContainer")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
@@ -123,8 +150,14 @@ class MainHeaderWidget(QWidget):
 
         # Search input
         self.search_input = SearchInput(self)
-        self.search_input.search_submitted.connect(self.search_requested.emit)
+        self.search_input.search_submitted.connect(self._on_search_submitted)
+        self.search_input.popup_requested.connect(self._show_search_popup)
+        self.search_input.escape_pressed.connect(self._hide_search_popup)
         search_layout.addWidget(self.search_input)
+
+        find_shortcut = QShortcut(QKeySequence.StandardKey.Find, main_window)
+        find_shortcut.activated.connect(self.focus_search)
+        self._find_shortcut = find_shortcut
 
         layout.addSpacerItem(
             QSpacerItem(
@@ -422,6 +455,97 @@ class MainHeaderWidget(QWidget):
                 self.search_precision_actions[tier]
             )
 
+    def _on_search_submitted(self, text: str) -> None:
+        popup = self._search_popup
+        scope = popup.current_scope() if popup is not None else "all"
+        self._hide_search_popup()
+        self.search_requested.emit(text)
+        self.search_submitted_with_scope.emit(text, scope)
+
+    def _ensure_search_popup(self) -> SearchPopup:
+        if self._search_popup is None:
+            popup = SearchPopup(self._main_window)
+            popup.query_selected.connect(self._on_history_query_selected)
+            popup.similar_selected.connect(self._on_similar_selected)
+            popup.clear_history_requested.connect(
+                self.search_history_clear_requested.emit
+            )
+            self._search_popup = popup
+        return self._search_popup
+
+    def _on_history_query_selected(self, query: str) -> None:
+        self.search_input.setText(query)
+        self._on_search_submitted(query)
+
+    def _on_similar_selected(self, asset_id: str) -> None:
+        self._hide_search_popup()
+        self.similar_search_requested.emit(asset_id)
+
+    def _show_search_popup(self) -> None:
+        popup = self._ensure_search_popup()
+        self.search_popup_opened.emit()
+
+        width = max(360, self.search_input.width())
+        width = min(width, max(280, self._main_window.width() - 24))
+        popup.setFixedWidth(width)
+        popup.adjustSize()
+
+        position = self.search_input.mapTo(
+            self._main_window, QPoint(0, self.search_input.height() + 6)
+        )
+        if position.x() + width > self._main_window.width() - 12:
+            position.setX(max(12, self._main_window.width() - width - 12))
+        popup.move(position)
+        popup.show()
+        popup.raise_()
+
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+
+    def _hide_search_popup(self) -> None:
+        if self._search_popup is not None:
+            self._search_popup.hide()
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        popup = self._search_popup
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and popup is not None
+            and popup.isVisible()
+        ):
+            widget = QApplication.widgetAt(event.globalPosition().toPoint())
+            inside = widget is not None and (
+                widget is popup
+                or popup.isAncestorOf(widget)
+                or widget is self.search_input
+            )
+            if not inside:
+                self._hide_search_popup()
+        return super().eventFilter(watched, event)
+
+    def focus_search(self) -> None:
+        """Focus the search field and open its suggestions (Ctrl/Cmd+F)."""
+
+        self.search_input.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.search_input.selectAll()
+        self._show_search_popup()
+
+    def set_search_history(self, queries) -> None:
+        self._ensure_search_popup().set_history(queries)
+
+    def set_album_scope(self, label: str | None) -> None:
+        self._ensure_search_popup().set_album_scope(label)
+
+    def set_similar_photos(self, items) -> None:
+        self._ensure_search_popup().set_similar_photos(items)
+
+    def add_similar_photo(self, asset_id: str, pixmap) -> None:
+        self._ensure_search_popup().add_similar_photo(asset_id, pixmap)
+
     def retranslate(self) -> None:
         """Refresh all menu and action texts for the current language."""
 
@@ -462,6 +586,9 @@ class MainHeaderWidget(QWidget):
         self.smart_album_location_action.setText(tr("action.smart_album_location"))
         self.smart_album_time_action.setText(tr("action.smart_album_time"))
         self.smart_album_theme_action.setText(tr("action.smart_album_theme"))
+
+        if self._search_popup is not None:
+            self._search_popup.retranslate()
 
         # Menu titles (with safety checks for deleted objects)
         try:

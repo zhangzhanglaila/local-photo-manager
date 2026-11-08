@@ -286,6 +286,15 @@ _ZH: dict[str, str] = {
     "search.searching": "正在搜索 '{query}'...",
     "search.no_results": "未找到结果",
     "search.found": "找到 {count} 张照片",
+    "search.popup.scope": "搜索范围",
+    "search.popup.scope_all": "全部照片",
+    "search.popup.scope_album": "当前相册",
+    "search.popup.history": "最近搜索",
+    "search.popup.history_empty": "还没有搜索记录",
+    "search.popup.clear": "清空",
+    "search.popup.similar": "智能推荐",
+    "search.popup.similar_tooltip": "查找相似照片",
+    "search.similar_query": "相似照片",
 
     # -- Agent --
     "action.enable_semantic_search": "启用语义搜索",
@@ -569,6 +578,15 @@ _EN: dict[str, str] = {
     "search.searching": "Searching for '{query}'...",
     "search.no_results": "No results found",
     "search.found": "Found {count} photos",
+    "search.popup.scope": "Search in",
+    "search.popup.scope_all": "All photos",
+    "search.popup.scope_album": "Current album",
+    "search.popup.history": "Recent searches",
+    "search.popup.history_empty": "No recent searches",
+    "search.popup.clear": "Clear",
+    "search.popup.similar": "Suggested",
+    "search.popup.similar_tooltip": "Find similar photos",
+    "search.similar_query": "Similar photos",
 
     # -- Agent --
     "action.enable_semantic_search": "Enable Semantic Search",
