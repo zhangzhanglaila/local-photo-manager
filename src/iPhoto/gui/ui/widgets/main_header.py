@@ -321,6 +321,20 @@ class MainHeaderWidget(QWidget):
         )
         self.toggle_semantic_search_action.setChecked(False)
 
+        # Search precision tiers: stricter tiers keep fewer, more confident hits.
+        self.search_precision_group = QActionGroup(main_window)
+        self.search_precision_actions: dict[str, QAction] = {}
+        for tier, label_key in (
+            ("strict", "action.search_precision_strict"),
+            ("balanced", "action.search_precision_balanced"),
+            ("loose", "action.search_precision_loose"),
+        ):
+            action = QAction(tr(label_key), main_window, checkable=True)
+            action.setData(tier)
+            self.search_precision_group.addAction(action)
+            self.search_precision_actions[tier] = action
+        self.search_precision_actions["balanced"].setChecked(True)
+
         # Agent organize actions
         self.find_duplicates_action = QAction(tr("action.find_duplicates"), main_window)
         self.smart_album_event_action = QAction(tr("action.smart_album_event"), main_window)
@@ -400,6 +414,13 @@ class MainHeaderWidget(QWidget):
         # Agent features
         self._settings_menu.addSeparator()
         self._settings_menu.addAction(self.toggle_semantic_search_action)
+        self._search_precision_menu = self._settings_menu.addMenu(
+            tr("menu.search_precision")
+        )
+        for tier in ("strict", "balanced", "loose"):
+            self._search_precision_menu.addAction(
+                self.search_precision_actions[tier]
+            )
 
     def retranslate(self) -> None:
         """Refresh all menu and action texts for the current language."""
@@ -427,6 +448,15 @@ class MainHeaderWidget(QWidget):
         self.language_zh.setText(tr("action.lang_zh"))
         self.language_en.setText(tr("action.lang_en"))
         self.toggle_semantic_search_action.setText(tr("action.enable_semantic_search"))
+        self.search_precision_actions["strict"].setText(
+            tr("action.search_precision_strict")
+        )
+        self.search_precision_actions["balanced"].setText(
+            tr("action.search_precision_balanced")
+        )
+        self.search_precision_actions["loose"].setText(
+            tr("action.search_precision_loose")
+        )
         self.find_duplicates_action.setText(tr("action.find_duplicates"))
         self.smart_album_event_action.setText(tr("action.smart_album_event"))
         self.smart_album_location_action.setText(tr("action.smart_album_location"))
@@ -441,6 +471,11 @@ class MainHeaderWidget(QWidget):
                 self._view_menu.setTitle(tr("menu.view"))
             if hasattr(self, '_settings_menu') and self._settings_menu is not None:
                 self._settings_menu.setTitle(tr("menu.settings"))
+            if (
+                hasattr(self, '_search_precision_menu')
+                and self._search_precision_menu is not None
+            ):
+                self._search_precision_menu.setTitle(tr("menu.search_precision"))
             if hasattr(self, '_appearance_menu') and self._appearance_menu is not None:
                 self._appearance_menu.setTitle(tr("menu.appearance"))
             if hasattr(self, '_export_dest_menu') and self._export_dest_menu is not None:

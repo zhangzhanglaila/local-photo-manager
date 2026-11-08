@@ -51,6 +51,9 @@ class CLIPEmbeddingService:
         self._tokenizer = None
         self._lock = threading.Lock()
         self._loaded = False
+        # Text vectors are deterministic; caching them keeps repeated searches and
+        # the label vocabulary from re-encoding the same strings.
+        self._text_cache: dict[str, np.ndarray] = {}
 
     def _ensure_loaded(self) -> bool:
         """Load the CLIP model if not already loaded."""
@@ -156,6 +159,17 @@ class CLIPEmbeddingService:
         except Exception as e:
             _LOGGER.warning("Failed to encode text '%s': %s", text, e)
             return None
+
+    def encode_text_cached(self, text: str) -> Optional[np.ndarray]:
+        """Encode *text* once and reuse the vector for later searches."""
+
+        cached = self._text_cache.get(text)
+        if cached is not None:
+            return cached
+        vector = self.encode_text(text)
+        if vector is not None:
+            self._text_cache[text] = vector
+        return vector
 
     def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """Compute cosine similarity between two embeddings."""

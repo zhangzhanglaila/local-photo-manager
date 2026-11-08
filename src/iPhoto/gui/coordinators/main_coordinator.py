@@ -630,6 +630,9 @@ class MainCoordinator(QObject):
 
         # Semantic Search
         ui.main_header.search_requested.connect(self._handle_search_requested)
+        ui.main_header.search_precision_group.triggered.connect(
+            self._handle_search_precision_changed
+        )
         ui.sidebar.searchEntrySelected.connect(self._handle_search_entry_selected)
         ui.main_header.toggle_semantic_search_action.toggled.connect(
             self._handle_semantic_search_toggle
@@ -1278,11 +1281,12 @@ class MainCoordinator(QObject):
                 "乡村": "countryside village",
             }
 
-            def __init__(self, query_text, model_path, lib_root):
+            def __init__(self, query_text, model_path, lib_root, *, precision="balanced"):
                 super().__init__()
                 self._query = query_text
                 self._model_dir = model_path
                 self._library_root = lib_root
+                self._precision = precision
 
             def _translate_query(self, query: str) -> str:
                 """Translate Chinese query to English for CLIP."""
@@ -1373,28 +1377,61 @@ class MainCoordinator(QObject):
                         self.finished.emit(None, "搜索编码失败")
                         return
 
-                    # 0.2 sat at the median similarity of the whole library (measured:
-                    # median 0.195 for "cake"), so it admitted ~35% of all photos.
-                    # 0.24 keeps the head of the distribution; the cap keeps the result
-                    # list usable even for a very broad query.
+                    # Adaptive cutoff: keep the head of *this* query's score
+                    # distribution instead of one global threshold (0.24 admitted
+                    # 366 "dog" photos and 653 "cat" ones on a real library).
+                    # Animal queries additionally require the query to beat the
+                    # best-scoring other animal, which is the zero-shot
+                    # "is this more a dog than any other animal?" decision.
                     import os as _os
 
+                    import numpy as _np
+
+                    from iPhoto.agent.services.search_ranking import (
+                        labels_for_query,
+                        other_labels,
+                        precision_params,
+                        select_results,
+                    )
+
+                    matrix = _np.stack([item["embedding"] for item in all_embeddings])
+                    sim_scores = matrix @ query_embedding
+
+                    floor, margin, cap, margin_tolerance = precision_params(
+                        self._precision
+                    )
                     try:
-                        min_similarity = float(_os.environ.get("IPHOTO_SEARCH_MIN_SIM", "0.24"))
+                        floor = float(_os.environ.get("IPHOTO_SEARCH_MIN_SIM", floor))
                     except ValueError:
-                        min_similarity = 0.24
-                    max_results = 300
+                        pass
 
-                    results = []
-                    for i, item in enumerate(all_embeddings):
-                        similarity = service.compute_similarity(query_embedding, item["embedding"])
-                        if similarity >= min_similarity:
-                            results.append({
-                                "asset_id": item["asset_id"],
-                                "score": float(similarity),
-                            })
+                    margins = None
+                    group = labels_for_query(translated_query)
+                    if group is not None and margin_tolerance is not None:
+                        other_vectors = [
+                            vector
+                            for label in other_labels(group)
+                            if (vector := service.encode_text_cached(label)) is not None
+                        ]
+                        if other_vectors:
+                            other_scores = matrix @ _np.stack(other_vectors).T
+                            margins = sim_scores - other_scores.max(axis=1)
 
-                    results.sort(key=lambda x: x["score"], reverse=True)
+                    keep_indices = select_results(
+                        sim_scores,
+                        floor=floor,
+                        margin=margin,
+                        cap=cap,
+                        margins=margins,
+                        margin_tolerance=margin_tolerance,
+                    )
+                    results = [
+                        {
+                            "asset_id": all_embeddings[index]["asset_id"],
+                            "score": float(sim_scores[index]),
+                        }
+                        for index in keep_indices
+                    ]
 
                     # OCR text search (if available)
                     try:
@@ -1416,8 +1453,8 @@ class MainCoordinator(QObject):
 
                     # Keep the list bounded: a very broad query can still match
                     # thousands of photos, and the UI paginates anyway.
-                    if len(results) > max_results:
-                        results = results[:max_results]
+                    if len(results) > cap:
+                        results = results[:cap]
 
                     self.finished.emit(results, "")
 
@@ -1440,7 +1477,9 @@ class MainCoordinator(QObject):
                 ),
             )
 
-        thread = SearchThread(query, model_dir, library_root)
+        thread = SearchThread(
+            query, model_dir, library_root, precision=self._search_precision()
+        )
         thread.finished.connect(on_finished)
         thread.progress.connect(on_progress)
         thread.finished.connect(lambda *_: self._retire_search_thread(thread))
@@ -1603,6 +1642,19 @@ class MainCoordinator(QObject):
         # Return to normal gallery view
         self._gallery_vm.open_all_photos()
         self._status_bar.show_message("")
+
+    def _search_precision(self) -> str:
+        """Return the configured search precision tier."""
+
+        value = self._context.settings.get("agent.search_precision", "balanced")
+        return value if value in {"strict", "balanced", "loose"} else "balanced"
+
+    def _handle_search_precision_changed(self, action) -> None:
+        """Persist the precision tier picked from the settings menu."""
+
+        tier = action.data()
+        if tier in {"strict", "balanced", "loose"}:
+            self._context.settings.set("agent.search_precision", tier)
 
     def _handle_semantic_search_toggle(self, enabled: bool) -> None:
         """Handle semantic search toggle.
@@ -2218,6 +2270,12 @@ class MainCoordinator(QObject):
         else:
             semantic_search_enabled = bool(stored_semantic_search)
         ui.main_header.toggle_semantic_search_action.setChecked(semantic_search_enabled)
+        precision = self._search_precision()
+        precision_action = getattr(ui.main_header, "search_precision_actions", {}).get(
+            precision
+        )
+        if precision_action is not None:
+            precision_action.setChecked(True)
         if semantic_search_enabled:
             self._start_embedding_generation()
         # 2. Volume / Mute

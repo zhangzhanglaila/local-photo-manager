@@ -43,6 +43,10 @@ _ZH: dict[str, str] = {
     "menu.wheel_action": "滚轮操作",
     "menu.share_action": "分享操作",
     "menu.language": "语言",
+    "menu.search_precision": "搜索精度",
+    "action.search_precision_strict": "精确",
+    "action.search_precision_balanced": "均衡",
+    "action.search_precision_loose": "宽松",
 
     # -- Theme --
     "action.system_default": "跟随系统",
@@ -322,6 +326,10 @@ _EN: dict[str, str] = {
     "menu.wheel_action": "Wheel Action",
     "menu.share_action": "Share Action",
     "menu.language": "Language",
+    "menu.search_precision": "Search Precision",
+    "action.search_precision_strict": "Precise",
+    "action.search_precision_balanced": "Balanced",
+    "action.search_precision_loose": "Loose",
 
     # -- Theme --
     "action.system_default": "System Default",
