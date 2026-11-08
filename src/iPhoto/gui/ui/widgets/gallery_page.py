@@ -169,16 +169,16 @@ class GalleryPageWidget(QWidget):
 
         layout.addWidget(top_bar)
 
-        # Content area — centred, macOS-style status (spinner + short copy).
+        # Content area — a narrow centred column, macOS-style status.
         content = QWidget()
+        content.setFixedWidth(460)
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(40, 0, 40, 40)
-        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
         content_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        self._spinner = _LoadingSpinner(28)
+        self._spinner = _LoadingSpinner(32)
         content_layout.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignHCenter)
-        content_layout.addSpacing(4)
 
         self._status_label = QLabel("")
         self._status_label.setStyleSheet(
@@ -186,8 +186,9 @@ class GalleryPageWidget(QWidget):
         )
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status_label.setWordWrap(True)
-        self._status_label.setMaximumWidth(420)
-        content_layout.addWidget(self._status_label, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._status_label.setFixedWidth(460)
+        self._status_label.setContentsMargins(0, 14, 0, 0)
+        content_layout.addWidget(self._status_label)
 
         self._sub_label = QLabel("")
         self._sub_label.setStyleSheet(
@@ -195,8 +196,9 @@ class GalleryPageWidget(QWidget):
         )
         self._sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_label.setWordWrap(True)
-        self._sub_label.setMaximumWidth(420)
-        content_layout.addWidget(self._sub_label, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._sub_label.setFixedWidth(460)
+        self._sub_label.setContentsMargins(0, 5, 0, 0)
+        content_layout.addWidget(self._sub_label)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setMinimum(0)
@@ -211,37 +213,46 @@ class GalleryPageWidget(QWidget):
             "QProgressBar::chunk { background: palette(highlight);"
             " border-radius: 2px; }"
         )
-        self._progress_bar.hide()
-        content_layout.addWidget(
-            self._progress_bar, 0, Qt.AlignmentFlag.AlignHCenter
-        )
 
         self._detail_label = QLabel("")
         self._detail_label.setStyleSheet(
             "font-size: 11px; color: palette(placeholder-text);"
         )
         self._detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._detail_label.hide()
-        content_layout.addWidget(self._detail_label)
+
+        self._progress_widget = QWidget()
+        progress_layout = QVBoxLayout(self._progress_widget)
+        progress_layout.setContentsMargins(0, 16, 0, 0)
+        progress_layout.setSpacing(6)
+        progress_layout.addWidget(
+            self._progress_bar, 0, Qt.AlignmentFlag.AlignHCenter
+        )
+        progress_layout.addWidget(self._detail_label)
+        self._progress_widget.hide()
+        content_layout.addWidget(
+            self._progress_widget, 0, Qt.AlignmentFlag.AlignHCenter
+        )
 
         self._continue_btn = QPushButton("先去看照片")
         self._continue_btn.setStyleSheet(_SECONDARY_BUTTON_STYLE)
+        self._continue_btn.setMinimumHeight(30)
         self._continue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._continue_btn.clicked.connect(self._on_continue_clicked)
         self._continue_btn.hide()
 
         self._retry_btn = QPushButton("重试")
         self._retry_btn.setStyleSheet(_SECONDARY_BUTTON_STYLE)
+        self._retry_btn.setMinimumHeight(30)
         self._retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._retry_btn.clicked.connect(self._on_retry_clicked)
         self._retry_btn.hide()
 
         btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 20, 0, 0)
         btn_layout.setSpacing(8)
         btn_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         btn_layout.addWidget(self._continue_btn)
         btn_layout.addWidget(self._retry_btn)
-        content_layout.addSpacing(4)
         content_layout.addLayout(btn_layout)
 
         self._hint_label = QLabel("")
@@ -249,11 +260,12 @@ class GalleryPageWidget(QWidget):
             "font-size: 11px; color: palette(placeholder-text);"
         )
         self._hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._hint_label.setContentsMargins(0, 10, 0, 0)
         self._hint_label.hide()
         content_layout.addWidget(self._hint_label)
 
         layout.addStretch(1)
-        layout.addWidget(content)
+        layout.addWidget(content, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(1)
 
         return widget
@@ -266,8 +278,7 @@ class GalleryPageWidget(QWidget):
         self._spinner.start()
         self._status_label.setText(f"正在搜索“{query}”")
         self._sub_label.setText("使用本地 AI 搜索照片")
-        self._progress_bar.hide()
-        self._detail_label.hide()
+        self._progress_widget.hide()
         self._continue_btn.hide()
         self._retry_btn.hide()
         self._hint_label.hide()
@@ -281,8 +292,7 @@ class GalleryPageWidget(QWidget):
         self._spinner.start()
         self._status_label.setText("正在准备搜索")
         self._sub_label.setText("正在加载本地 AI 模型，只需一次")
-        self._progress_bar.hide()
-        self._detail_label.hide()
+        self._progress_widget.hide()
         self._continue_btn.show()
         self._retry_btn.hide()
         self._hint_label.setText("之后的搜索会很快")
@@ -301,7 +311,7 @@ class GalleryPageWidget(QWidget):
         pct = int(current / total * 100) if total > 0 else 0
         self._progress_bar.setMaximum(max(1, total))
         self._progress_bar.setValue(current)
-        self._progress_bar.show()
+        self._progress_widget.show()
 
         # ETA is measured from the start of the indexing phase; repeated progress
         # updates must not reset it.
@@ -323,8 +333,7 @@ class GalleryPageWidget(QWidget):
         self._spinner.hide()
         self._status_label.setText(title)
         self._sub_label.setText(message)
-        self._progress_bar.hide()
-        self._detail_label.hide()
+        self._progress_widget.hide()
         self._continue_btn.show()
         self._retry_btn.show()
         self._hint_label.hide()
@@ -341,8 +350,7 @@ class GalleryPageWidget(QWidget):
         self._stop_timer()
         self._loading_phase = ""
         self._spinner.stop()
-        self._progress_bar.hide()
-        self._detail_label.hide()
+        self._progress_widget.hide()
         # ⭐ 强制切换到 grid_view，加载完成后立即显示照片
         # 即使 _loading_widget 因某种原因被显示，也强制回到 grid_view
         if self._stack.currentWidget() is not self.grid_view:
