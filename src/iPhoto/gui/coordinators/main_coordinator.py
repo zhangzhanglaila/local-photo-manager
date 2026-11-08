@@ -72,6 +72,9 @@ MAP_FOCUS_RETRY_INTERVAL_MS = 400
 #: takes a few hundred milliseconds and used to happen on every single search.
 _SEARCH_EMBEDDINGS_CACHE: dict[str, tuple[float, list]] = {}
 
+#: Search workers that were still running when the app shut down. Keeping them
+#: referenced prevents a live QThread from being destroyed during teardown.
+_ORPHANED_SEARCH_THREADS: list = []
 
 def _load_search_embeddings(library_root: Path) -> list:
     """Return embeddings for *library_root*, reloading only when the DB changed."""
@@ -145,6 +148,9 @@ class MainCoordinator(QObject):
         # a superseded search cannot overwrite the newer one.
         self._search_state: dict | None = None
         self._search_serial = 0
+        # Running search threads. The previous one must stay referenced until it
+        # finishes: replacing the only reference destroyed a live QThread.
+        self._search_threads: list = []
         self._thumbnail_service = self._context.asset_runtime.thumbnail_service
         bound_people_service = self._people_service(library_root=lib_root)
         self._playback_people_service = bound_people_service or PeopleService()
@@ -489,6 +495,16 @@ class MainCoordinator(QObject):
 
     def shutdown(self) -> None:
         """Stop worker threads and background jobs before the app exits."""
+        # 0. Search workers load the AI model; let them finish or expire before the
+        #    window (and their Qt parent objects) are torn down.
+        for thread in list(getattr(self, "_search_threads", [])):
+            if thread.isRunning():
+                thread.requestInterruption()
+                thread.wait(3000)
+            if thread.isRunning():
+                _ORPHANED_SEARCH_THREADS.append(thread)
+        self._search_threads.clear()
+
         # 1. Cancel any active background scans/imports via Facade
         if self._facade:
             self._facade.cancel_active_scans()
@@ -1192,6 +1208,15 @@ class MainCoordinator(QObject):
         """Handle semantic search request from the search input."""
         self._logger.info("Search requested: %s", query)
 
+        state = self._search_state
+        if state is not None and not state.get("done") and state.get("query") == query:
+            # Same query is already searching (e.g. Enter pressed twice): show the
+            # panel again instead of spawning a second worker that loads the model
+            # in parallel.
+            self._view_router.show_gallery()
+            self._show_search_loading(query)
+            return
+
         self._search_serial += 1
         serial = self._search_serial
         self._search_state = {
@@ -1227,7 +1252,7 @@ class MainCoordinator(QObject):
         # Reuse the session's embedding service: it is warmed before the face scan
         # starts, so rebuilding a service here would reload the weights on every
         # single search.
-        library_session = getattr(self, "_session", None)
+        library_session = self._active_session()
 
         class SearchThread(QThread):
             finished = Signal(object, str)  # results or None, error
@@ -1283,30 +1308,38 @@ class MainCoordinator(QObject):
                 try:
                     from iPhoto.agent.infrastructure.clip_embedding import CLIPEmbeddingService
                     from iPhoto.bootstrap.embedding_index import load_stored_embeddings
+                    from iPhoto.agent.infrastructure.clip_downloader import (
+                        get_model_dir,
+                        is_model_available,
+                    )
                     import time
 
-                    # 1. Load model
-                    already_loaded = False
+                    # Reuse the session's embedding service when the weights are
+                    # installed: it is also the instance the startup preload warms,
+                    # so a search does not decode the 577 MB model a second time.
+                    # Guard on availability first: ``get_embedding_service`` opens a
+                    # download dialog, which must not happen on this worker thread.
+                    session_service = None
                     if library_session is not None:
                         try:
-                            probe_service = library_session.get_embedding_service()
-                            probe = (
-                                getattr(probe_service, "is_loaded", None)
-                                if probe_service is not None
-                                else None
-                            )
-                            already_loaded = bool(probe()) if callable(probe) else False
+                            if is_model_available(
+                                get_model_dir(library_session.library_root)
+                            ):
+                                session_service = (
+                                    library_session.get_embedding_service()
+                                )
                         except Exception:
-                            already_loaded = False
+                            session_service = None
+                    probe = (
+                        getattr(session_service, "is_loaded", None)
+                        if session_service is not None
+                        else None
+                    )
+                    already_loaded = bool(probe()) if callable(probe) else False
                     self.progress.emit(
                         "正在搜索..." if already_loaded else "正在加载 AI 模型...", 0, 0
                     )
-                    service = None
-                    if library_session is not None:
-                        try:
-                            service = library_session.get_embedding_service()
-                        except Exception:
-                            service = None
+                    service = session_service
                     if service is None:
                         service = CLIPEmbeddingService(model_dir=self._model_dir)
                     loader = getattr(service, "load", None)
@@ -1314,6 +1347,9 @@ class MainCoordinator(QObject):
                         loader()
                     else:
                         service._ensure_loaded()
+
+                    if self.isInterruptionRequested():
+                        return
 
                     if not service.is_loaded():
                         self.finished.emit(None, "AI 模型加载失败")
@@ -1404,10 +1440,25 @@ class MainCoordinator(QObject):
                 ),
             )
 
-        self._search_thread = SearchThread(query, model_dir, library_root)
-        self._search_thread.finished.connect(on_finished)
-        self._search_thread.progress.connect(on_progress)
-        self._search_thread.start()
+        thread = SearchThread(query, model_dir, library_root)
+        thread.finished.connect(on_finished)
+        thread.progress.connect(on_progress)
+        thread.finished.connect(lambda *_: self._retire_search_thread(thread))
+        self._search_thread = thread
+        self._search_threads.append(thread)
+        thread.start()
+
+    def _retire_search_thread(self, thread) -> None:
+        """Release a finished search worker without destroying a running one."""
+
+        thread.wait(1000)
+        try:
+            self._search_threads.remove(thread)
+        except ValueError:
+            pass
+        if getattr(self, "_search_thread", None) is thread:
+            self._search_thread = None
+        thread.deleteLater()
 
     def _display_search_results_raw(self, results: list, query: str) -> None:
         """Display search results."""

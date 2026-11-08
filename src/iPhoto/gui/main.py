@@ -525,11 +525,12 @@ def main(argv: list[str] | None = None) -> int:
             app.processEvents()
             _logger.info("startup step 4: opening library")
 
-            # 检查是否已有数据库
-            has_existing_db = _check_existing_db()
-
-            # 打开库（可能启动扫描）
+            # 打开库（同步完成路径绑定，随后启动后台扫描）
             context.resume_startup_tasks()
+
+            # 只有在库绑定之后 root() 才有值。此前先检测会让这里永远返回
+            # False，启动于是固定等满 5 秒超时才进首屏。
+            has_existing_db = _check_existing_db()
 
             if has_existing_db:
                 # 数据库已存在，不需要等待扫描

@@ -11,6 +11,13 @@ import numpy as np
 
 _LOGGER = logging.getLogger(__name__)
 
+# Importing ``transformers`` from two threads at the same time can observe its lazy
+# module while it is still initialising, which surfaces as
+# "cannot import name 'CLIPModel' from 'transformers'". Serialise the import and
+# the weight load across service instances (searches and the startup preload each
+# may hold their own instance).
+_LOAD_LOCK = threading.Lock()
+
 # CLIP model ID
 _MODEL_ID = "openai/clip-vit-base-patch32"
 _EMBEDDING_DIMENSION = 512
@@ -54,32 +61,33 @@ class CLIPEmbeddingService:
             if self._loaded:
                 return True
 
-            try:
-                import torch
-                from transformers import CLIPModel, CLIPProcessor, CLIPTokenizer
+            with _LOAD_LOCK:
+                try:
+                    import torch
+                    from transformers import CLIPModel, CLIPProcessor, CLIPTokenizer
 
-                _LOGGER.info("Loading CLIP model from %s", self._model_dir)
+                    _LOGGER.info("Loading CLIP model from %s", self._model_dir)
 
-                # Load model with optimizations
-                self._model = CLIPModel.from_pretrained(
-                    str(self._model_dir),
-                    torch_dtype=torch.float32,  # Use float32 for CPU
-                )
-                self._processor = CLIPProcessor.from_pretrained(str(self._model_dir))
-                self._tokenizer = CLIPTokenizer.from_pretrained(str(self._model_dir))
+                    # Load model with optimizations
+                    self._model = CLIPModel.from_pretrained(
+                        str(self._model_dir),
+                        torch_dtype=torch.float32,  # Use float32 for CPU
+                    )
+                    self._processor = CLIPProcessor.from_pretrained(str(self._model_dir))
+                    self._tokenizer = CLIPTokenizer.from_pretrained(str(self._model_dir))
 
-                # Set to eval mode and optimize
-                self._model.eval()
-                if hasattr(torch, 'set_float32_matmul_precision'):
-                    torch.set_float32_matmul_precision('medium')
+                    # Set to eval mode and optimize
+                    self._model.eval()
+                    if hasattr(torch, 'set_float32_matmul_precision'):
+                        torch.set_float32_matmul_precision('medium')
 
-                self._loaded = True
-                _LOGGER.info("CLIP model loaded successfully")
-                return True
+                    self._loaded = True
+                    _LOGGER.info("CLIP model loaded successfully")
+                    return True
 
-            except Exception as e:
-                _LOGGER.error("Failed to load CLIP model: %s", e)
-                return False
+                except Exception as e:
+                    _LOGGER.error("Failed to load CLIP model: %s", e)
+                    return False
 
     def encode_image(self, image_path: Path) -> Optional[np.ndarray]:
         """Generate embedding for a single image."""
