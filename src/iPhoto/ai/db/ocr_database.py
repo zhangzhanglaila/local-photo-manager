@@ -84,6 +84,15 @@ class OCRRepository:
 
             CREATE INDEX IF NOT EXISTS idx_ocr_regions_asset
             ON ocr_regions(asset_id);
+
+            -- Every image the OCR worker touched, including ones with no text.
+            -- Without this the worker re-processed the whole library on every
+            -- launch because "no regions" left no trace.
+            CREATE TABLE IF NOT EXISTS ocr_processed (
+                asset_id     TEXT PRIMARY KEY,
+                asset_rel    TEXT NOT NULL,
+                processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
 
         # FTS5 virtual table
@@ -124,6 +133,17 @@ class OCRRepository:
                 pass  # Trigger already exists
 
         conn.commit()
+
+        # Seed the processed marker from existing regions so upgrading does not
+        # re-OCR the images that already have text.
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO ocr_processed(asset_id, asset_rel) "
+                "SELECT DISTINCT asset_id, asset_rel FROM ocr_regions"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
     # ------------------------------------------------------------------
     # Write operations
@@ -229,7 +249,25 @@ class OCRRepository:
         """Delete all OCR data for an asset."""
         conn = self._get_conn()
         conn.execute("DELETE FROM ocr_regions WHERE asset_id = ?", (asset_id,))
+        conn.execute("DELETE FROM ocr_processed WHERE asset_id = ?", (asset_id,))
         conn.commit()
+
+    def mark_processed(self, asset_id: str, asset_rel: str) -> None:
+        """Remember that an image was OCR'd, even if it contained no text."""
+
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO ocr_processed(asset_id, asset_rel) VALUES (?, ?)",
+            (asset_id, asset_rel),
+        )
+        conn.commit()
+
+    def get_processed_asset_ids(self) -> set[str]:
+        """Asset IDs that the OCR worker already looked at."""
+
+        conn = self._get_conn()
+        rows = conn.execute("SELECT asset_id FROM ocr_processed").fetchall()
+        return {row["asset_id"] for row in rows}
 
     # ------------------------------------------------------------------
     # Read operations

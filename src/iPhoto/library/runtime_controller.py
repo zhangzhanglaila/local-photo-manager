@@ -79,6 +79,7 @@ class LibraryRuntimeController(
     peopleIndexUpdated = Signal()
     peopleSnapshotCommitted = Signal(object)
     faceScanStatusChanged = Signal(str)
+    ocrScanStatusChanged = Signal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)

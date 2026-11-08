@@ -45,6 +45,14 @@ class OCRWorker(QRunnable):
         self._finished = False
         self._cancelled = False
         self._paused = False
+        # Images already processed in an earlier session (including ones with no
+        # text) so a restart does not redo hours of OCR.
+        try:
+            self._processed: set[str] = set(
+                self._repo.get_processed_asset_ids()
+            )
+        except Exception:
+            self._processed = set()
 
         self.signals = OCRWorkerSignals()
 
@@ -66,6 +74,9 @@ class OCRWorker(QRunnable):
 
         filtered = []
         for row in rows:
+            asset_id = row.get("id", "")
+            if asset_id and asset_id in self._processed:
+                continue
             rel = row.get("rel", "")
             if not rel:
                 continue
@@ -142,7 +153,19 @@ class OCRWorker(QRunnable):
                     _LOGGER.debug("OCR failed for %s: %s", asset_rel, e)
                     failed += 1
 
+                self._mark_processed(asset_id, asset_rel)
                 self.signals.progress.emit(processed, processed + failed)
 
         self.signals.finished.emit(processed, failed)
         _LOGGER.info("OCR worker finished: %d processed, %d failed", processed, failed)
+
+    def _mark_processed(self, asset_id: str, asset_rel: str) -> None:
+        """Remember the attempt so the next launch can skip this image."""
+
+        try:
+            self._repo.mark_processed(asset_id, asset_rel)
+        except Exception:
+            _LOGGER.debug(
+                "Failed to record OCR progress for %s", asset_rel, exc_info=True
+            )
+        self._processed.add(asset_id)

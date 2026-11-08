@@ -691,6 +691,9 @@ class MainCoordinator(QObject):
         self._context.library.faceScanStatusChanged.connect(
             lambda msg: self._status_bar.show_message(msg)
         )
+        self._context.library.ocrScanStatusChanged.connect(
+            self._on_ocr_scan_status
+        )
         # Sidebar checkbox filtering
         ui.sidebar.albumCheckStateChanged.connect(self._on_album_check_state_changed)
         self._restore_checked_library_paths()
@@ -1320,6 +1323,23 @@ class MainCoordinator(QObject):
         self._handle_search_requested(
             tr("search.similar_query"), "all", similar_to=asset_id
         )
+
+    def _on_ocr_scan_status(self, message: str) -> None:
+        """Surface the OCR backfill in the status bar.
+
+        Skipped while the user is looking at search results so the result count
+        is not replaced by background-scan chatter.
+        """
+
+        if not message:
+            return
+        visible = getattr(self, "_is_search_page_visible", None)
+        if callable(visible) and visible():
+            return
+        if "完成" in message:
+            self._status_bar.show_message(message, 5000)
+        else:
+            self._status_bar.show_message(message)
 
     def _handle_search_requested(
         self, query: str, scope: str = "all", *, similar_to: str | None = None
