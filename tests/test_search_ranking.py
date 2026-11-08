@@ -10,6 +10,8 @@ from iPhoto.agent.services.search_ranking import (
     other_labels,
     precision_params,
     select_results,
+    translate_query,
+    translation_is_partial,
 )
 
 
@@ -97,3 +99,25 @@ def test_text_vectors_are_cached_across_calls() -> None:
 
     assert calls == ["dog"]
     assert first is second
+
+
+def test_translation_keeps_known_part_of_a_brand() -> None:
+    # "茉酸奶" contains the known word "酸奶"; the unknown brand prefix is
+    # dropped instead of feeding CJK to the English text tower.
+    assert translate_query("茉酸奶") == "yogurt"
+    assert translation_is_partial("茉酸奶") is True
+
+
+def test_translation_prefers_compound_terms_and_drops_fillers() -> None:
+    assert translate_query("海边") == "beach"
+    assert translate_query("沙滩") == "sand beach"
+    assert translate_query("红色的车") == "red car"
+    assert translate_query("我的猫") == "cat"
+    assert translation_is_partial("红色的车") is False
+    assert translation_is_partial("我的猫") is False
+    assert translate_query("奶茶") == "milk tea"
+
+
+def test_unknown_chinese_is_left_for_ocr() -> None:
+    assert translate_query("张三") == "张三"
+    assert translation_is_partial("张三") is True

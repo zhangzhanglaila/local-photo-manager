@@ -1387,26 +1387,6 @@ class MainCoordinator(QObject):
             finished = Signal(object, str)  # results or None, error
             progress = Signal(str, int, int)  # message, current, total
 
-            # Chinese to English translation map
-            _ZH_EN_MAP = {
-                "树": "tree", "花": "flower", "山": "mountain", "水": "water",
-                "海": "sea ocean", "河": "river", "湖": "lake", "天空": "sky",
-                "日落": "sunset", "日出": "sunrise", "月亮": "moon", "星星": "star",
-                "狗": "dog", "猫": "cat", "鸟": "bird", "鱼": "fish",
-                "车": "car", "飞机": "airplane", "船": "boat",
-                "人": "person people", "孩子": "child children", "宝宝": "baby",
-                "美食": "food", "蛋糕": "cake", "咖啡": "coffee",
-                "建筑": "building", "房子": "house", "桥": "bridge",
-                "路": "road", "公园": "park", "花园": "garden",
-                "雪": "snow", "雨": "rain", "云": "cloud",
-                "红色": "red", "蓝色": "blue", "绿色": "green", "黄色": "yellow",
-                "海边": "beach", "沙滩": "sand beach",
-                "婚礼": "wedding", "生日": "birthday", "聚会": "party",
-                "旅行": "travel", "风景": "landscape scenery",
-                "夜景": "night cityscape", "城市": "city",
-                "乡村": "countryside village",
-            }
-
             def __init__(
                 self,
                 query_text,
@@ -1428,26 +1408,6 @@ class MainCoordinator(QObject):
                 # When set, rank by visual similarity to this asset instead of by
                 # a text query ("find similar photos").
                 self._similar_to = similar_to
-
-            def _translate_query(self, query: str) -> str:
-                """Translate Chinese query to English for CLIP."""
-                import re
-                query_lower = query.lower().strip()
-
-                # Replace Chinese words with English
-                for zh, en in self._ZH_EN_MAP.items():
-                    if zh in query_lower:
-                        query_lower = query_lower.replace(zh, en)
-
-                # If still has Chinese characters, try to extract English words
-                if re.search(r'[一-鿿]', query_lower):
-                    english_words = re.findall(r'[a-zA-Z]+', query)
-                    if english_words:
-                        return ' '.join(english_words)
-                    # Fallback: return original
-                    return query
-
-                return query_lower
 
             def run(self):
                 try:
@@ -1563,6 +1523,8 @@ class MainCoordinator(QObject):
                         other_labels,
                         precision_params,
                         select_results,
+                        translate_query,
+                        translation_is_partial,
                     )
 
                     matrix = _np.stack([item["embedding"] for item in all_embeddings])
@@ -1587,7 +1549,8 @@ class MainCoordinator(QObject):
                             sim_scores, floor=0.65, margin=0.08
                         )
                     else:
-                        translated_query = self._translate_query(self._query)
+                        translated_query = translate_query(self._query)
+                        partial_translation = translation_is_partial(self._query)
                         query_embedding = service.encode_text(translated_query)
                         if query_embedding is None:
                             self.finished.emit(None, "搜索编码失败")
@@ -1603,6 +1566,17 @@ class MainCoordinator(QObject):
                             )
                         except ValueError:
                             pass
+
+                        if partial_translation:
+                            # A brand prefix ("茉" in "茉酸奶") or fully unknown
+                            # CJK leaves the English model guessing. Keep only the
+                            # head of the distribution instead of hundreds of
+                            # loose matches.
+                            floor = max(floor, 0.265)
+                            margin = min(margin, 0.035)
+                            if translated_query == self._query:
+                                floor = max(floor, 0.28)
+                                margin = min(margin, 0.02)
 
                         margins = None
                         group = labels_for_query(translated_query)

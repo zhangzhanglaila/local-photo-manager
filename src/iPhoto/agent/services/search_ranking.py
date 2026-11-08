@@ -34,6 +34,113 @@ PRECISION_TIERS: dict[str, tuple[float, float, float | None]] = {
 
 DEFAULT_PRECISION = "balanced"
 
+#: Filler words removed before translating so "我的猫" behaves like "猫".
+CJK_FILLERS: tuple[str, ...] = (
+    "帮我找",
+    "照片",
+    "图片",
+    "相片",
+    "一些",
+    "一只",
+    "一个",
+    "一张",
+    "我的",
+)
+
+#: Chinese query terms mapped to the English text tower. Keys are matched
+#: longest-first so compounds ("海边", "酸奶") are not split by single
+#: characters; values stay lowercase.
+ZH_EN_TERMS: dict[str, str] = {
+    # animals
+    "狗": "dog", "小狗": "puppy", "猫": "cat", "猫咪": "cat", "小猫": "kitten",
+    "鸟": "bird", "小鸟": "bird", "鱼": "fish", "马": "horse", "牛": "cow",
+    "羊": "sheep", "猪": "pig", "鸡": "chicken", "鸭": "duck", "兔子": "rabbit",
+    "熊": "bear", "狼": "wolf", "狐狸": "fox", "鹿": "deer", "老虎": "tiger",
+    "狮子": "lion", "熊猫": "panda", "大象": "elephant", "猴子": "monkey",
+    "松鼠": "squirrel", "蝴蝶": "butterfly", "蜜蜂": "bee", "蛇": "snake",
+    # food and drink
+    "酸奶": "yogurt", "奶茶": "milk tea", "饮料": "drink beverage",
+    "果汁": "juice", "牛奶": "milk", "咖啡": "coffee", "茶": "tea",
+    "啤酒": "beer", "红酒": "wine", "白酒": "liquor", "酒": "wine alcohol",
+    "蛋糕": "cake", "面包": "bread", "甜点": "dessert", "巧克力": "chocolate",
+    "冰淇淋": "ice cream", "水果": "fruit", "苹果": "apple", "香蕉": "banana",
+    "橙子": "orange", "葡萄": "grape", "西瓜": "watermelon", "草莓": "strawberry",
+    "米饭": "rice", "面条": "noodles", "火锅": "hotpot", "烧烤": "barbecue",
+    "汉堡": "hamburger", "披萨": "pizza", "寿司": "sushi", "早餐": "breakfast",
+    "午餐": "lunch", "晚餐": "dinner", "零食": "snack", "糖果": "candy",
+    "美食": "food", "食物": "food", "杯子": "cup", "瓶子": "bottle",
+    # scenes and objects
+    "树": "tree", "花": "flower", "山": "mountain", "水": "water",
+    "海": "sea ocean", "海边": "beach", "沙滩": "sand beach", "河": "river",
+    "湖": "lake", "森林": "forest", "草地": "grass", "天空": "sky",
+    "日落": "sunset", "日出": "sunrise", "太阳": "sun", "月亮": "moon",
+    "星星": "star", "雪": "snow", "雨": "rain", "云": "cloud",
+    "建筑": "building", "房子": "house", "桥": "bridge", "路": "road",
+    "公园": "park", "花园": "garden", "城市": "city",
+    "夜景": "night cityscape", "乡村": "countryside village",
+    "风景": "landscape scenery", "旅行": "travel", "婚礼": "wedding",
+    "生日": "birthday", "聚会": "party", "自拍": "selfie",
+    # vehicles and people
+    "车": "car", "汽车": "car", "自行车": "bicycle", "飞机": "airplane",
+    "船": "boat", "火车": "train", "地铁": "subway", "人": "person people",
+    "孩子": "child children", "宝宝": "baby", "女孩": "girl", "男孩": "boy",
+    "男人": "man", "女人": "woman",
+    # colours
+    "红色": "red", "红": "red", "蓝色": "blue", "蓝": "blue",
+    "绿色": "green", "绿": "green", "黄色": "yellow", "黄": "yellow",
+    "白色": "white", "白": "white", "黑色": "black", "黑": "black",
+}
+
+_CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
+
+#: Grammatical particles never count as an untranslated word.
+_CJK_PARTICLES = frozenset("的了在是和与")
+
+
+def translate_query(query: str) -> str:
+    """Best-effort Chinese → English rewrite for the English CLIP text tower.
+
+    Unknown CJK is dropped once a known part was translated ("茉酸奶" → "yogurt"),
+    otherwise the original text is returned so the caller can tell that nothing
+    was understood.
+    """
+
+    text = (query or "").strip()
+    if not text or not _CJK_PATTERN.search(text):
+        return text
+
+    lowered = text.casefold()
+    for filler in sorted(CJK_FILLERS, key=len, reverse=True):
+        lowered = lowered.replace(filler, " ")
+    translated = lowered
+    for term in sorted(ZH_EN_TERMS, key=len, reverse=True):
+        if term in translated:
+            translated = translated.replace(term, ZH_EN_TERMS[term])
+
+    had_translation = translated != lowered
+    if _CJK_PATTERN.search(translated):
+        english = re.findall(r"[a-zA-Z]+", translated)
+        if had_translation and english:
+            return " ".join(english)
+        return text
+    return " ".join(translated.split())
+
+
+def translation_is_partial(query: str) -> bool:
+    """True when part of the CJK query has no known English translation."""
+
+    text = (query or "").strip()
+    if not _CJK_PATTERN.search(text):
+        return False
+    for filler in sorted(CJK_FILLERS, key=len, reverse=True):
+        text = text.replace(filler, "")
+    matched: set[str] = set()
+    for term in ZH_EN_TERMS:
+        if term in text:
+            matched.update(term)
+    remaining = set(_CJK_PATTERN.findall(text)) - matched - _CJK_PARTICLES
+    return bool(remaining)
+
 #: Species labels used only for contrast; generic ones would defeat the purpose.
 ANIMAL_LABELS: tuple[str, ...] = (
     "dog",
