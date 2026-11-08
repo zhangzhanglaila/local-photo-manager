@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -56,9 +56,8 @@ class SearchInput(QLineEdit):
         self.setPlaceholderText(tr("search.placeholder", default="搜索照片（如：海边、黄色、狗）..."))
         self.setObjectName("searchInput")
         self.setClearButtonEnabled(True)
-        self.setMinimumWidth(200)
-        self.setMaximumWidth(320)
-        self.setFixedHeight(30)
+        self.setFixedWidth(560)
+        self.setFixedHeight(32)
         self.setStyleSheet(self.SEARCH_FIELD_STYLESHEET)
         # The magnifier lives inside the field, like the macOS search field,
         # instead of sitting next to it as a separate emoji label.
@@ -168,8 +167,17 @@ class MainHeaderWidget(QWidget):
             )
         )
 
-        # Search sits at the trailing edge like a macOS toolbar.
+        # Search sits in the middle of the toolbar, like a browser address bar.
         layout.addWidget(search_container)
+
+        layout.addSpacerItem(
+            QSpacerItem(
+                1,
+                1,
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Minimum,
+            )
+        )
 
         self.rescan_button = QToolButton(self)
         self.rescan_button.setObjectName("rescanButton")
@@ -497,6 +505,11 @@ class MainHeaderWidget(QWidget):
             position.setX(max(12, self._main_window.width() - width - 12))
         popup.move(position)
         popup.show()
+        # Size after showing: nested layouts only report usable heights once
+        # their geometry is live. A second pass on the next event-loop turn picks
+        # up the real chip heights; the resize happens before the first paint.
+        popup.refresh_size()
+        QTimer.singleShot(0, popup.refresh_size)
         popup.raise_()
 
         app = QApplication.instance()

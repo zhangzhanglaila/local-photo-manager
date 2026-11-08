@@ -91,9 +91,6 @@ class _FlowLayout(QLayout):
         line_height = 0
 
         for item in self._items:
-            widget = item.widget()
-            if widget is not None and not widget.isVisible():
-                continue
             hint = item.sizeHint()
             next_x = x + hint.width() + self._spacing
             if next_x - self._spacing > effective.right() and line_height > 0:
@@ -137,7 +134,7 @@ class SearchPopup(QFrame):
             "  border: 1px solid transparent;"
             "  background: transparent;"
             "  border-radius: 8px;"
-            "  padding: 4px 10px;"
+            "  padding: 6px 12px;"
             "  color: palette(text);"
             "  font-size: 13px;"
             "}"
@@ -210,6 +207,7 @@ class SearchPopup(QFrame):
         self._scope_album.setIconSize(QSize(16, 16))
         self._scope_album.clicked.connect(lambda: self._set_scope("album"))
         scope_row.addWidget(self._scope_album)
+        self._scope_row = scope_row
         scope_row.addStretch(1)
         outer.addLayout(scope_row)
 
@@ -231,6 +229,7 @@ class SearchPopup(QFrame):
 
         self._history_container = QWidget()
         self._history_layout = _FlowLayout(self._history_container, spacing=8)
+        self._history_row = history_row
         outer.addWidget(self._history_container)
 
         # --- Similar photos -------------------------------------------
@@ -254,14 +253,47 @@ class SearchPopup(QFrame):
         return self._scope
 
     def refresh_size(self) -> None:
-        """Grow to the height the current content needs at the current width."""
+        """Set the card height from the content, independent of widget geometry.
+
+        The layout's own heightForWidth is unreliable before the widget is shown
+        (nested windows report zero-sized children), which used to clip the
+        thumbnail row. Summing the block heights is deterministic.
+        """
 
         width = self.width()
         if width <= 0:
             return
-        height = self.heightForWidth(width)
-        if height > 0:
-            self.setFixedHeight(height)
+        # Chip sizeHints are 0x0 until the stylesheet is polished; the flow
+        # layout then reports a zero height and clips the chips.
+        self.ensurePolished()
+        layout = self.layout()
+        if layout is None:
+            return
+        margins = layout.contentsMargins()
+        spacing = layout.spacing()
+        content_width = max(0, width - margins.left() - margins.right())
+
+        blocks = [
+            self._scope_row.sizeHint().height(),
+            self._history_row.sizeHint().height(),
+            self._history_layout.heightForWidth(content_width),
+        ]
+        if not self._similar_header.isHidden():
+            blocks.append(self._similar_header.sizeHint().height())
+            blocks.append(_SIMILAR_THUMB_SIZE)
+
+        height = (
+            margins.top()
+            + margins.bottom()
+            + sum(blocks)
+            + spacing * max(0, len(blocks) - 1)
+        )
+        # Once shown, the layout knows the real chip heights (and the flow layout
+        # wraps them); take the larger of the two estimates so nothing is clipped.
+        layout_height = layout.totalHeightForWidth(width)
+        if layout_height > height:
+            height = layout_height
+        self.setFixedHeight(max(0, height))
 
     def retranslate(self) -> None:
         """Refresh labels after a language switch."""
