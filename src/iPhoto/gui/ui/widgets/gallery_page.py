@@ -5,11 +5,63 @@ from __future__ import annotations
 import time
 
 from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QPainter, QPalette, QPen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QPushButton, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
 from ..icon import load_icon
 from .gallery_grid_view import GalleryGridView
 from .main_window_metrics import HEADER_BUTTON_SIZE, HEADER_ICON_GLYPH_SIZE
+
+
+class _LoadingSpinner(QWidget):
+    """Small indeterminate spinner in the platform accent colour."""
+
+    def __init__(self, diameter: int = 28, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(diameter, diameter)
+        self._angle = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(16)
+        self._timer.timeout.connect(self._advance)
+
+    def start(self) -> None:
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self.start()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self.stop()
+        super().hideEvent(event)
+
+    def _advance(self) -> None:
+        self._angle = (self._angle + 24) % 360
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        pen = QPen(self.palette().color(QPalette.ColorRole.Highlight))
+        pen.setWidth(2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        rect = self.rect().adjusted(3, 3, -3, -3)
+        painter.drawArc(rect, -self._angle * 16, 100 * 16)
+
+
+_SECONDARY_BUTTON_STYLE = (
+    "QPushButton { padding: 5px 14px; font-size: 12px; border-radius: 6px;"
+    " background: palette(button); color: palette(button-text);"
+    " border: 1px solid palette(mid); }"
+    "QPushButton:hover { background: palette(midlight); }"
+    "QPushButton:pressed { background: palette(mid); }"
+)
 
 
 class GalleryPageWidget(QWidget):
@@ -64,7 +116,9 @@ class GalleryPageWidget(QWidget):
         search_header_layout.addWidget(self._search_back_btn)
 
         self._search_results_label = QLabel("搜索结果")
-        self._search_results_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self._search_results_label.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: palette(text);"
+        )
         search_header_layout.addWidget(self._search_results_label)
         search_header_layout.addStretch()
 
@@ -86,10 +140,9 @@ class GalleryPageWidget(QWidget):
 
         self._stack.setCurrentWidget(self.grid_view)
 
-        # Timer state
+        # Loading timer (ETA estimate only; elapsed seconds are not shown).
         self._loading_start_time = 0
-        self._elapsed_timer = QTimer(self)
-        self._elapsed_timer.timeout.connect(self._update_elapsed_time)
+        self._loading_phase = ""
 
     def _create_loading_view(self) -> QWidget:
         """Create the loading view with status, progress, and buttons."""
@@ -112,104 +165,96 @@ class GalleryPageWidget(QWidget):
         self._search_back_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._search_back_button.clicked.connect(self._on_back_clicked)
         top_bar_layout.addWidget(self._search_back_button)
-
-        self._search_title = QLabel("搜索中")
-        self._search_title.setStyleSheet("font-size: 14px; font-weight: bold;")
-        top_bar_layout.addWidget(self._search_title)
         top_bar_layout.addStretch()
 
         layout.addWidget(top_bar)
 
-        # Content area
+        # Content area — centred, macOS-style status (spinner + short copy).
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(60, 20, 60, 40)
-        content_layout.setSpacing(16)
-        content_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        content_layout.setContentsMargins(40, 0, 40, 40)
+        content_layout.setSpacing(8)
+        content_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        # Icon
-        self._icon_label = QLabel("⏳")
-        self._icon_label.setStyleSheet("font-size: 48px;")
-        self._icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        content_layout.addWidget(self._icon_label)
+        self._spinner = _LoadingSpinner(28)
+        content_layout.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignHCenter)
+        content_layout.addSpacing(4)
 
-        # Main status
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: palette(text);")
+        self._status_label.setStyleSheet(
+            "font-size: 13px; font-weight: 600; color: palette(text);"
+        )
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status_label.setWordWrap(True)
-        content_layout.addWidget(self._status_label)
+        self._status_label.setMaximumWidth(420)
+        content_layout.addWidget(self._status_label, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        # Sub status
         self._sub_label = QLabel("")
-        self._sub_label.setStyleSheet("font-size: 13px; color: palette(mid);")
+        self._sub_label.setStyleSheet(
+            "font-size: 12px; color: palette(placeholder-text);"
+        )
         self._sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._sub_label.setWordWrap(True)
-        content_layout.addWidget(self._sub_label)
+        self._sub_label.setMaximumWidth(420)
+        content_layout.addWidget(self._sub_label, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        # Progress bar
         self._progress_bar = QProgressBar()
         self._progress_bar.setMinimum(0)
         self._progress_bar.setMaximum(100)
         self._progress_bar.setValue(0)
-        self._progress_bar.setMinimumWidth(400)
-        self._progress_bar.setMaximumWidth(500)
-        self._progress_bar.setFixedHeight(24)
-        self._progress_bar.setTextVisible(True)
-        self._progress_bar.setFormat("%p%")
+        self._progress_bar.setFixedWidth(320)
+        self._progress_bar.setFixedHeight(4)
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setStyleSheet(
+            "QProgressBar { border: none; background: palette(midlight);"
+            " border-radius: 2px; }"
+            "QProgressBar::chunk { background: palette(highlight);"
+            " border-radius: 2px; }"
+        )
         self._progress_bar.hide()
-        content_layout.addWidget(self._progress_bar, 0, Qt.AlignmentFlag.AlignCenter)
+        content_layout.addWidget(
+            self._progress_bar, 0, Qt.AlignmentFlag.AlignHCenter
+        )
 
-        # Progress detail (current/total + ETA)
         self._detail_label = QLabel("")
-        self._detail_label.setStyleSheet("font-size: 12px; color: palette(mid);")
+        self._detail_label.setStyleSheet(
+            "font-size: 11px; color: palette(placeholder-text);"
+        )
         self._detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._detail_label.hide()
         content_layout.addWidget(self._detail_label)
 
-        # Elapsed time
-        self._time_label = QLabel("")
-        self._time_label.setStyleSheet("font-size: 12px; color: palette(mid);")
-        self._time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        content_layout.addWidget(self._time_label)
-
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
         self._continue_btn = QPushButton("先去看照片")
-        self._continue_btn.setStyleSheet(
-            "QPushButton { padding: 10px 24px; font-size: 13px; "
-            "background: palette(highlight); color: palette(highlighted-text); "
-            "border-radius: 8px; font-weight: bold; }"
-            "QPushButton:hover { opacity: 0.85; }"
-        )
+        self._continue_btn.setStyleSheet(_SECONDARY_BUTTON_STYLE)
         self._continue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._continue_btn.clicked.connect(self._on_continue_clicked)
         self._continue_btn.hide()
-        btn_layout.addWidget(self._continue_btn)
 
         self._retry_btn = QPushButton("重试")
-        self._retry_btn.setStyleSheet(
-            "QPushButton { padding: 10px 24px; font-size: 13px; "
-            "background: palette(button); color: palette(button-text); "
-            "border-radius: 8px; }"
-            "QPushButton:hover { background: palette(mid); }"
-        )
+        self._retry_btn.setStyleSheet(_SECONDARY_BUTTON_STYLE)
         self._retry_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._retry_btn.clicked.connect(self._on_retry_clicked)
         self._retry_btn.hide()
-        btn_layout.addWidget(self._retry_btn)
 
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        btn_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        btn_layout.addWidget(self._continue_btn)
+        btn_layout.addWidget(self._retry_btn)
+        content_layout.addSpacing(4)
         content_layout.addLayout(btn_layout)
 
-        # Hint
         self._hint_label = QLabel("")
-        self._hint_label.setStyleSheet("font-size: 11px; color: palette(mid); font-style: italic;")
+        self._hint_label.setStyleSheet(
+            "font-size: 11px; color: palette(placeholder-text);"
+        )
         self._hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._hint_label.hide()
         content_layout.addWidget(self._hint_label)
 
-        layout.addWidget(content, 1)
+        layout.addStretch(1)
+        layout.addWidget(content)
+        layout.addStretch(1)
 
         return widget
 
@@ -217,62 +262,65 @@ class GalleryPageWidget(QWidget):
 
     def show_search_loading(self, query: str) -> None:
         """Show search loading state."""
-        self._search_title.setText(f"搜索: {query}")
-        self._icon_label.setText("🔍")
-        self._status_label.setText(f"正在搜索 \"{query}\"")
-        self._sub_label.setText("正在使用 AI 搜索照片...")
+        self._spinner.show()
+        self._spinner.start()
+        self._status_label.setText(f"正在搜索“{query}”")
+        self._sub_label.setText("使用本地 AI 搜索照片")
         self._progress_bar.hide()
         self._detail_label.hide()
         self._continue_btn.hide()
         self._retry_btn.hide()
         self._hint_label.hide()
+        self._loading_phase = "search"
         self._start_timer()
         self._stack.setCurrentWidget(self._loading_widget)
 
     def show_model_loading(self, elapsed: int = 0) -> None:
         """Show model loading phase."""
-        self._search_title.setText("初始化中")
-        self._icon_label.setText("⏳")
-        self._status_label.setText("正在加载 AI 模型（约350MB）")
-        self._sub_label.setText("首次使用需要加载模型，之后搜索会很快")
+        self._spinner.show()
+        self._spinner.start()
+        self._status_label.setText("正在准备搜索")
+        self._sub_label.setText("正在加载本地 AI 模型，只需一次")
         self._progress_bar.hide()
         self._detail_label.hide()
         self._continue_btn.show()
         self._retry_btn.hide()
-        self._hint_label.setText("💡 之后搜索只需 0.1 秒")
+        self._hint_label.setText("之后的搜索会很快")
         self._hint_label.show()
+        self._loading_phase = "model"
         self._start_timer()
         self._stack.setCurrentWidget(self._loading_widget)
 
     def show_indexing_progress(self, current: int, total: int) -> None:
-        """Show indexing progress with progress bar."""
-        self._search_title.setText("初始化中")
-        self._icon_label.setText("📸")
-        self._status_label.setText("正在为照片生成索引")
-
-        pct = int(current / total * 100) if total > 0 else 0
+        """Show indexing progress with a thin progress bar."""
+        self._spinner.show()
+        self._spinner.start()
+        self._status_label.setText("正在建立搜索索引")
         self._sub_label.setText(f"已处理 {current} / {total} 张照片")
 
-        self._progress_bar.setMaximum(total)
+        pct = int(current / total * 100) if total > 0 else 0
+        self._progress_bar.setMaximum(max(1, total))
         self._progress_bar.setValue(current)
         self._progress_bar.show()
 
-        # Calculate ETA
+        # ETA is measured from the start of the indexing phase; repeated progress
+        # updates must not reset it.
+        if self._loading_phase != "index":
+            self._loading_phase = "index"
+            self._start_timer()
         eta_text = self._calculate_eta(current, total)
-        self._detail_label.setText(f"{pct}% 完成  •  {eta_text}")
+        self._detail_label.setText(f"{pct}% · {eta_text}")
         self._detail_label.show()
 
         self._continue_btn.show()
         self._retry_btn.hide()
-        self._hint_label.setText("💡 之后搜索只需 0.1 秒")
-        self._hint_label.show()
-
+        self._hint_label.hide()
         self._stack.setCurrentWidget(self._loading_widget)
 
     def show_error(self, title: str, message: str) -> None:
         """Show error state with retry button."""
-        self._search_title.setText("出错了")
-        self._icon_label.setText("❌")
+        self._spinner.stop()
+        self._spinner.hide()
         self._status_label.setText(title)
         self._sub_label.setText(message)
         self._progress_bar.hide()
@@ -280,6 +328,7 @@ class GalleryPageWidget(QWidget):
         self._continue_btn.show()
         self._retry_btn.show()
         self._hint_label.hide()
+        self._loading_phase = "error"
         self._stop_timer()
         self._stack.setCurrentWidget(self._loading_widget)
 
@@ -290,6 +339,8 @@ class GalleryPageWidget(QWidget):
     def hide_loading(self) -> None:
         """Hide loading view and show grid."""
         self._stop_timer()
+        self._loading_phase = ""
+        self._spinner.stop()
         self._progress_bar.hide()
         self._detail_label.hide()
         # ⭐ 强制切换到 grid_view，加载完成后立即显示照片
@@ -307,7 +358,7 @@ class GalleryPageWidget(QWidget):
             query: The search query.
             count: Number of results.
         """
-        self._search_results_label.setText(f"搜索 \"{query}\" - {count} 个结果")
+        self._search_results_label.setText(f"搜索“{query}” · {count} 张")
         self._search_results_header.show()
 
     def hide_search_results_header(self) -> None:
@@ -322,27 +373,12 @@ class GalleryPageWidget(QWidget):
     # --- Internal ---
 
     def _start_timer(self) -> None:
-        """Start elapsed time timer."""
+        """Record when the current loading phase started (used for the ETA)."""
         self._loading_start_time = time.time()
-        self._time_label.setText("已等待 0 秒")
-        self._time_label.show()
-        self._elapsed_timer.start(1000)
 
     def _stop_timer(self) -> None:
-        """Stop elapsed time timer."""
-        self._elapsed_timer.stop()
+        """Reset the loading start time."""
         self._loading_start_time = 0
-
-    def _update_elapsed_time(self) -> None:
-        """Update elapsed time display."""
-        if self._loading_start_time > 0:
-            elapsed = int(time.time() - self._loading_start_time)
-            if elapsed < 60:
-                self._time_label.setText(f"已等待 {elapsed} 秒")
-            else:
-                minutes = elapsed // 60
-                seconds = elapsed % 60
-                self._time_label.setText(f"已等待 {minutes} 分 {seconds} 秒")
 
     def _calculate_eta(self, current: int, total: int) -> str:
         """Calculate estimated time remaining."""
