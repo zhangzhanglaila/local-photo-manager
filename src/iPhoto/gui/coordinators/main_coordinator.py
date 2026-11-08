@@ -1397,7 +1397,7 @@ class MainCoordinator(QObject):
                     matrix = _np.stack([item["embedding"] for item in all_embeddings])
                     sim_scores = matrix @ query_embedding
 
-                    floor, margin, cap, margin_tolerance = precision_params(
+                    floor, margin, margin_tolerance = precision_params(
                         self._precision
                     )
                     try:
@@ -1421,7 +1421,6 @@ class MainCoordinator(QObject):
                         sim_scores,
                         floor=floor,
                         margin=margin,
-                        cap=cap,
                         margins=margins,
                         margin_tolerance=margin_tolerance,
                     )
@@ -1451,10 +1450,8 @@ class MainCoordinator(QObject):
                     except Exception:
                         pass
 
-                    # Keep the list bounded: a very broad query can still match
-                    # thousands of photos, and the UI paginates anyway.
-                    if len(results) > cap:
-                        results = results[:cap]
+                    # Keep the whole match set: the cutoff already decides what
+                    # belongs here, and the gallery loads result windows lazily.
 
                     self.finished.emit(results, "")
 
@@ -1510,9 +1507,7 @@ class MainCoordinator(QObject):
         # Show search results header with back button
         total_count = len(results)
         ui.gallery_page.show_search_results_header(query, total_count)
-        # Show results (limit to 1000 for performance)
-        max_results = 1000
-        asset_ids = [r["asset_id"] for r in results[:max_results]]
+        asset_ids = [r["asset_id"] for r in results]
         self._gallery_vm.show_search_results(asset_ids)
 
         # Scroll to top

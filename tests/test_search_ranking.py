@@ -32,10 +32,10 @@ def test_other_labels_excludes_the_query_group() -> None:
     assert "pet" not in others
 
 
-def test_adaptive_cutoff_keeps_the_head_and_applies_cap() -> None:
+def test_adaptive_cutoff_keeps_the_head() -> None:
     scores = np.array([0.30, 0.27, 0.25, 0.24, 0.10], dtype=np.float32)
 
-    indices = select_results(scores, floor=0.20, margin=0.06, cap=3)
+    indices = select_results(scores, floor=0.20, margin=0.06)
 
     assert indices == [0, 1, 2]
 
@@ -43,7 +43,7 @@ def test_adaptive_cutoff_keeps_the_head_and_applies_cap() -> None:
 def test_floor_rejects_queries_whose_best_match_is_too_weak() -> None:
     scores = np.array([0.22, 0.221, 0.219], dtype=np.float32)
 
-    assert select_results(scores, floor=0.24, margin=0.06, cap=10) == []
+    assert select_results(scores, floor=0.24, margin=0.06) == []
 
 
 def test_margin_filter_drops_other_animals() -> None:
@@ -54,7 +54,6 @@ def test_margin_filter_drops_other_animals() -> None:
         scores,
         floor=0.20,
         margin=0.05,
-        cap=10,
         margins=margins,
         margin_tolerance=0.0,
     )
@@ -70,7 +69,6 @@ def test_margin_tolerance_none_disables_the_filter() -> None:
         scores,
         floor=0.20,
         margin=0.05,
-        cap=10,
         margins=margins,
         margin_tolerance=None,
     )

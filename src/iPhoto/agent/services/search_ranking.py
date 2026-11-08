@@ -20,14 +20,16 @@ from typing import Iterable, Sequence
 
 import numpy as np
 
-#: ``(floor, margin, cap, margin_tolerance)`` per precision tier.
+#: ``(floor, margin, margin_tolerance)`` per precision tier.
+#: There is deliberately no result cap: the cutoff decides what was found, and the
+#: gallery loads result windows lazily, so a large match set stays cheap to browse.
 #: ``margin_tolerance`` is the minimum ``sim(query) - max(sim(other animals))``;
 #: ``None`` disables the label filter (the "loose" tier is the old behaviour plus
 #: the relative cutoff).
-PRECISION_TIERS: dict[str, tuple[float, float, int, float | None]] = {
-    "strict": (0.25, 0.04, 120, 0.0),
-    "balanced": (0.24, 0.06, 200, -0.01),
-    "loose": (0.23, 0.08, 300, None),
+PRECISION_TIERS: dict[str, tuple[float, float, float | None]] = {
+    "strict": (0.25, 0.04, 0.0),
+    "balanced": (0.24, 0.06, -0.01),
+    "loose": (0.23, 0.08, -0.02),
 }
 
 DEFAULT_PRECISION = "balanced"
@@ -74,8 +76,8 @@ QUERY_LABEL_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
 )
 
 
-def precision_params(tier: str | None) -> tuple[float, float, int, float | None]:
-    """Return ``(floor, margin, cap, margin_tolerance)`` for *tier*."""
+def precision_params(tier: str | None) -> tuple[float, float, float | None]:
+    """Return ``(floor, margin, margin_tolerance)`` for *tier*."""
 
     return PRECISION_TIERS.get(tier or "", PRECISION_TIERS[DEFAULT_PRECISION])
 
@@ -108,15 +110,14 @@ def select_results(
     *,
     floor: float,
     margin: float,
-    cap: int,
     margins: Sequence[float] | np.ndarray | None = None,
     margin_tolerance: float | None = None,
 ) -> list[int]:
     """Return indices worth showing, strongest first.
 
-    Keeps scores within *margin* of the best match but never below *floor*, drops
-    results whose contrastive margin is below *margin_tolerance* (when provided),
-    then caps the list.
+    Keeps scores within *margin* of the best match but never below *floor*, and
+    drops results whose contrastive margin is below *margin_tolerance* (when
+    provided). No fixed result limit: a larger match set is intentional.
     """
 
     scores_array = np.asarray(scores, dtype=np.float32)
@@ -136,7 +137,4 @@ def select_results(
         return []
 
     order = np.argsort(scores_array[indices])[::-1]
-    indices = indices[order]
-    if cap > 0 and indices.size > cap:
-        indices = indices[:cap]
-    return [int(index) for index in indices.tolist()]
+    return [int(index) for index in indices[order].tolist()]

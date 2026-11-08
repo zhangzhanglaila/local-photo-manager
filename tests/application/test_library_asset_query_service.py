@@ -249,3 +249,37 @@ def test_date_query_compares_scanned_utc_rows_with_naive_bounds(tmp_path: Path) 
     )
 
     assert [row["id"] for row in rows] == ["inside"]
+
+
+def test_asset_id_query_materialises_rows_once_for_all_windows(tmp_path: Path) -> None:
+    """Each gallery window must not re-fetch the whole search result set."""
+
+    library_root = tmp_path / "Library"
+    repo = _Repository()
+    fetch_count = {"n": 0}
+    original = repo.get_rows_by_ids
+
+    def counting_get_rows_by_ids(asset_ids):
+        fetch_count["n"] += 1
+        return original(asset_ids)
+
+    repo.get_rows_by_ids = counting_get_rows_by_ids  # type: ignore[method-assign]
+    service = LibraryAssetQueryService(library_root, repository_factory=lambda _root: repo)
+
+    first_window = list(
+        service.read_query_asset_rows(
+            library_root, AssetQuery(asset_ids=["a", "b"], offset=0, limit=1)
+        )
+    )
+    second_window = list(
+        service.read_query_asset_rows(
+            library_root, AssetQuery(asset_ids=["a", "b"], offset=1, limit=1)
+        )
+    )
+
+    assert [row["id"] for row in first_window] == ["b"]
+    assert [row["id"] for row in second_window] == ["a"]
+    assert fetch_count["n"] == 1
+    assert service.count_query_assets(AssetQuery(asset_ids=["a", "b"])) == 2
+    assert fetch_count["n"] == 1, "the count reuses the materialised rows"
+

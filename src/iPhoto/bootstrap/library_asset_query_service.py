@@ -47,6 +47,10 @@ class LibraryAssetQueryService:
     ) -> None:
         self.library_root = Path(library_root)
         self._repository_factory = repository_factory or get_global_repository
+        # Search results are queried by an explicit id list. Fetching every id on
+        # each scroll window is what forced the UI to cap result counts; cache the
+        # ordered rows once so the whole match set can be browsed cheaply.
+        self._asset_id_rows_cache: tuple[tuple, list[dict[str, Any]]] | None = None
 
     def count_assets(
         self,
@@ -184,6 +188,11 @@ class LibraryAssetQueryService:
     def count_query_assets(self, query: AssetQuery) -> int:
         """Return the number of indexed assets matching an application query."""
 
+        if self._is_plain_asset_id_query(query):
+            # The count and the rows come from the same materialised list, so the
+            # scrollbar and the grid cannot disagree about the result size.
+            return len(self._ordered_asset_id_rows(query))
+
         count_query = self._count_query(query)
         if self._requires_in_memory_query(count_query):
             return sum(1 for _row in self._filtered_query_rows(count_query))
@@ -258,7 +267,67 @@ class LibraryAssetQueryService:
     def _repository(self) -> AssetRepositoryPort:
         return self._repository_factory(self.library_root)
 
+    @staticmethod
+    def _is_plain_asset_id_query(query: AssetQuery) -> bool:
+        """True when *query* is only an explicit id list (semantic search results)."""
+
+        return bool(query.asset_ids) and not (
+            query.album_id
+            or query.album_path
+            or query.album_paths
+            or query.media_types
+            or query.is_favorite is not None
+            or query.is_deleted is not None
+            or query.has_gps is not None
+            or query.date_from is not None
+            or query.date_to is not None
+        )
+
+    def _ordered_asset_id_rows(self, query: AssetQuery) -> list[dict[str, Any]]:
+        """Fetch, filter and sort the rows behind an explicit id list once.
+
+        The gallery asks for a new window on every scroll. Re-querying the whole id
+        list each time is what made large search result sets expensive; the ordered
+        list is cached and windows are sliced from it.
+        """
+
+        ids = tuple(str(asset_id) for asset_id in query.asset_ids if asset_id)
+        cache_key = (
+            ids,
+            query.order_by,
+            query.order,
+            query.is_deleted,
+            query.is_favorite,
+            tuple(query.media_types),
+        )
+        cached = self._asset_id_rows_cache
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        # Filter against a copy without the id list: `_row_matches_query` rebuilds a
+        # set of every id per row otherwise, which is quadratic for large searches.
+        base_query = copy.copy(query)
+        base_query.asset_ids = []
+        rows = [
+            dict(row)
+            for row in self._repository().get_rows_by_ids(ids).values()
+            if self._row_matches_query(row, base_query)
+        ]
+        rows.sort(
+            key=lambda row: self._sort_key_for_query(row, query),
+            reverse=self._sort_descending(query),
+        )
+        self._asset_id_rows_cache = (cache_key, rows)
+        return rows
+
     def _filtered_query_rows(self, query: AssetQuery) -> Iterator[dict[str, Any]]:
+        if self._is_plain_asset_id_query(query):
+            return iter(
+                self._slice_materialized_rows(
+                    self._ordered_asset_id_rows(query), query
+                )
+            )
+
         repository = self._repository()
         if query.asset_ids:
             rows = repository.get_rows_by_ids(query.asset_ids).values()
