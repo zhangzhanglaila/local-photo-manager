@@ -78,11 +78,11 @@ class NavigationCoordinator(QObject):
     def open_album(self, path: Path) -> None:
         if self._should_treat_as_refresh(path):
             return
-        self._reset_playback()
+        self._begin_navigation()
         self._gallery_vm.open_album(path)
 
     def open_pinned_item(self, pinned_item: PinnedSidebarItem) -> None:
-        self._reset_playback()
+        self._begin_navigation()
         library_root = self._context.library.root()
         if pinned_item.kind == "album":
             target = Path(pinned_item.item_id)
@@ -187,16 +187,16 @@ class NavigationCoordinator(QObject):
     def open_all_photos(self) -> None:
         import logging
         diag("[DIAG] navigation_coordinator.open_all_photos called")
-        self._reset_playback()
+        self._begin_navigation()
         self._gallery_vm.open_all_photos()
         self._set_grid_empty_mode(None)
 
     def open_recently_deleted(self) -> None:
-        self._reset_playback()
+        self._begin_navigation()
         self._gallery_vm.open_recently_deleted()
 
     def open_location_view(self) -> None:
-        self._reset_playback()
+        self._begin_navigation()
         self._gallery_vm.open_location_map()
         map_view = self._router.map_view()
         if map_view is not None:
@@ -205,15 +205,15 @@ class NavigationCoordinator(QObject):
                 set_focused(False)
 
     def open_people_view(self) -> None:
-        self._reset_playback()
+        self._begin_navigation()
         self._gallery_vm.open_people_dashboard()
 
     def open_cluster_gallery(self, assets: list) -> None:
-        self._reset_playback()
+        self._begin_navigation()
         self._gallery_vm.open_cluster_gallery(assets)
 
     def open_people_cluster_gallery(self, query) -> None:
-        self._reset_playback()
+        self._begin_navigation()
         self._gallery_vm.open_people_cluster_gallery(query)
         self._router.show_gallery()
 
@@ -238,22 +238,22 @@ class NavigationCoordinator(QObject):
             self.open_recently_deleted()
             self._set_grid_empty_mode(None)
         elif normalized == "albums" or name == tr("sidebar.albums"):
-            self._reset_playback()
+            self._begin_navigation()
             self._gallery_vm.open_albums_dashboard()
         elif normalized == "favorites":
-            self._reset_playback()
+            self._begin_navigation()
             self._gallery_vm.open_filtered_collection(name, is_favorite=True)
             self._set_grid_empty_mode("favorites")
         elif normalized == "videos":
             from iPhoto.domain.models.core import MediaType
 
-            self._reset_playback()
+            self._begin_navigation()
             self._gallery_vm.open_filtered_collection(name, media_types=[MediaType.VIDEO])
             self._set_grid_empty_mode("videos")
         elif normalized == "live photos":
             from iPhoto.domain.models.core import MediaType
 
-            self._reset_playback()
+            self._begin_navigation()
             self._gallery_vm.open_filtered_collection(name, media_types=[MediaType.LIVE_PHOTO])
             self._set_grid_empty_mode("live")
         elif normalized == "people":
@@ -464,9 +464,28 @@ class NavigationCoordinator(QObject):
             return self._router.is_gallery_view_active()
         return False
 
+    def _begin_navigation(self) -> None:
+        """Common preamble for leaving the current view."""
+
+        self._leave_search_view()
+        self._reset_playback()
+
     def _reset_playback(self) -> None:
         if self._playback_coordinator is not None:
             self._playback_coordinator.reset_for_gallery()
+
+    def _leave_search_view(self) -> None:
+        """Drop the search loading/results UI when navigating to another view.
+
+        Without this, a search that is still loading keeps the gallery's loading
+        panel on top and the user cannot browse while it finishes.
+        """
+
+        page = self._router.gallery_page()
+        if page is None:
+            return
+        page.hide_search_results_header()
+        page.hide_loading()
 
     def suppress_tree_refresh_for_edit(self) -> None:
         self._suppress_tree_refresh = True

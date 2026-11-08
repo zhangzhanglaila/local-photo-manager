@@ -323,3 +323,55 @@ def test_sidebar_action_hint_is_an_in_widget_label(tmp_path: Path, qapp: QApplic
     finally:
         sidebar.close()
         manager.shutdown()
+
+
+def test_model_shows_active_search_entry(tmp_path: Path, qapp: QApplication) -> None:
+    """An active search gets its own sidebar row that survives refreshes."""
+
+    library_root = tmp_path / "Library"
+    library_root.mkdir()
+    manager = LibraryRuntimeController()
+    manager.bind_path(library_root)
+    qapp.processEvents()
+    model = AlbumTreeModel(manager)
+    qapp.processEvents()
+
+    model.set_search_state("cat", loading=True)
+    qapp.processEvents()
+    loading_index = model.search_index()
+    assert loading_index.isValid()
+    assert model.data(loading_index, AlbumTreeRole.NODE_TYPE) == NodeType.SEARCH
+    assert model.data(loading_index) == tr("sidebar.search.loading", query="cat")
+    # The entry is the first row, above the library header.
+    assert loading_index.row() == 0
+
+    model.set_search_state("cat", count=3)
+    qapp.processEvents()
+    assert model.data(model.search_index()) == tr(
+        "sidebar.search.results", query="cat", count=3
+    )
+
+    # Background tree rebuilds (scan chunks) must keep the entry.
+    model.refresh()
+    qapp.processEvents()
+    assert model.search_index().isValid()
+
+    model.clear_search()
+    qapp.processEvents()
+    assert not model.search_index().isValid()
+
+
+def test_model_search_entry_reports_failure(tmp_path: Path, qapp: QApplication) -> None:
+    library_root = tmp_path / "Library"
+    library_root.mkdir()
+    manager = LibraryRuntimeController()
+    manager.bind_path(library_root)
+    qapp.processEvents()
+    model = AlbumTreeModel(manager)
+    qapp.processEvents()
+
+    model.set_search_state("cat", failed=True)
+
+    assert model.data(model.search_index()) == tr(
+        "sidebar.search.failed", query="cat"
+    )

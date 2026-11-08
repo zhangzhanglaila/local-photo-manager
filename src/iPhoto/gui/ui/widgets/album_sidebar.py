@@ -171,6 +171,7 @@ class AlbumSidebar(QWidget):
     pinnedItemSelected = Signal(object)
     allPhotosSelected = Signal()
     staticNodeSelected = Signal(str)
+    searchEntrySelected = Signal()
     bindLibraryRequested = Signal()
     excludeAlbumRequested = Signal(Path)
     filesDropped = Signal(Path, object)
@@ -187,6 +188,7 @@ class AlbumSidebar(QWidget):
         self._current_selection: Path | None = None
         self._current_static_selection: str | None = None
         self._current_pinned_selection: tuple[str, str] | None = None
+        self._current_search_selected = False
 
         # Give the widget a stable object name so the stylesheet targets only the
         # sidebar shell and does not bleed into child controls such as the tree view.
@@ -421,7 +423,9 @@ class AlbumSidebar(QWidget):
         QTimer.singleShot(0, self._restore_selection_after_reset)
 
     def _restore_selection_after_reset(self) -> None:
-        if self._pending_selection is not None:
+        if self._current_search_selected:
+            self.select_search_entry(emit_signal=False)
+        elif self._pending_selection is not None:
             self.select_path(self._pending_selection)
             self._pending_selection = None
         elif self._current_pinned_selection is not None:
@@ -470,7 +474,15 @@ class AlbumSidebar(QWidget):
         if node_type == NodeType.HEADER:
             if item.title == tr("sidebar.albums"):
                 self._current_pinned_selection = None
+                self._current_search_selected = False
                 self.staticNodeSelected.emit(tr("sidebar.albums"))
+            return
+        if node_type == NodeType.SEARCH:
+            self._current_selection = None
+            self._current_static_selection = None
+            self._current_pinned_selection = None
+            self._current_search_selected = True
+            self.searchEntrySelected.emit()
             return
         if node_type == NodeType.STATIC:
             if self._library.root() is None:
@@ -481,6 +493,7 @@ class AlbumSidebar(QWidget):
                 return
             self._current_selection = None
             self._current_static_selection = item.title
+            self._current_search_selected = False
             if item.title == self.ALL_PHOTOS_TITLE:
                 _logger.debug("_on_selection_changed: emitting allPhotosSelected")
                 self.allPhotosSelected.emit()
@@ -495,10 +508,12 @@ class AlbumSidebar(QWidget):
             self._current_selection = None
             self._current_static_selection = None
             self._current_pinned_selection = (pinned_item.kind, pinned_item.item_id)
+            self._current_search_selected = False
             self.pinnedItemSelected.emit(pinned_item)
             return
         self._current_static_selection = None
         self._current_pinned_selection = None
+        self._current_search_selected = False
         album = item.album
         if album is not None:
             self._current_selection = album.path
@@ -680,6 +695,7 @@ class AlbumSidebar(QWidget):
         self._current_static_selection = None
         self._current_pinned_selection = None
         self._current_selection = path
+        self._current_search_selected = False
 
         # When programmatically selecting an album in response to an external event (like
         # 'albumOpened'), we must suppress the sidebar's selection signals.
@@ -716,6 +732,7 @@ class AlbumSidebar(QWidget):
         self._current_selection = None
         self._current_static_selection = None
         self._current_pinned_selection = (pinned_item.kind, pinned_item.item_id)
+        self._current_search_selected = False
 
         selection_model = self._tree.selectionModel()
         already_selected = selection_model is not None and self._tree.currentIndex() == index
@@ -739,6 +756,57 @@ class AlbumSidebar(QWidget):
         _logger.debug("select_all_photos: emit_signal=%s", emit_signal)
         self.select_static_node(self.ALL_PHOTOS_TITLE, emit_signal=emit_signal)
 
+    def set_search_state(
+        self,
+        query: str,
+        *,
+        loading: bool = False,
+        count: int | None = None,
+        failed: bool = False,
+    ) -> None:
+        """Create or update the sidebar entry for the active search."""
+
+        self._model.set_search_state(
+            query, loading=loading, count=count, failed=failed
+        )
+
+    def clear_search(self) -> None:
+        """Remove the search entry and move the highlight back to All Photos."""
+
+        self._model.clear_search()
+        if self._current_search_selected:
+            self._current_search_selected = False
+            self.select_all_photos(emit_signal=False)
+
+    def select_search_entry(self, emit_signal: bool = False) -> None:
+        """Highlight the active search entry when one is shown."""
+
+        index = self._model.search_index()
+        if not index.isValid():
+            return
+        self._current_selection = None
+        self._current_static_selection = None
+        self._current_pinned_selection = None
+        self._current_search_selected = True
+
+        selection_model = self._tree.selectionModel()
+        already_selected = (
+            selection_model is not None and self._tree.currentIndex() == index
+        )
+        if selection_model is not None and not emit_signal:
+            selection_model.blockSignals(True)
+        try:
+            self._tree.setCurrentIndex(index)
+        finally:
+            if selection_model is not None and not emit_signal:
+                selection_model.blockSignals(False)
+        try:
+            self._tree.scrollTo(index)
+        except Exception:
+            pass
+        if emit_signal and already_selected:
+            self.searchEntrySelected.emit()
+
     def select_static_node(self, title: str, emit_signal: bool = False) -> None:
         """Select the static node matching *title* when present."""
 
@@ -746,6 +814,7 @@ class AlbumSidebar(QWidget):
         self._current_selection = None
         self._current_static_selection = title
         self._current_pinned_selection = None
+        self._current_search_selected = False
 
         index = self._find_static_index(title)
         if not index.isValid():
@@ -815,17 +884,21 @@ class AlbumSidebar(QWidget):
         self._pending_selection = target
 
     def _find_static_index(self, title: str) -> QModelIndex:
-        root_index = self._model.index(0, 0)
-        if not root_index.isValid():
-            return QModelIndex()
-        item = self._model.item_from_index(root_index)
-        if item is None:
-            return QModelIndex()
-        for row in range(self._model.rowCount(root_index)):
-            index = self._model.index(row, 0, root_index)
-            child = self._model.item_from_index(index)
-            if child and child.title == title:
-                return index
+        # The first root row is not always the "Basic Library" header: an active
+        # search entry is inserted above it. Search the root level and its
+        # children instead of assuming a fixed layout.
+        for row in range(self._model.rowCount()):
+            top_index = self._model.index(row, 0)
+            if not top_index.isValid():
+                continue
+            top_item = self._model.item_from_index(top_index)
+            if top_item is not None and top_item.title == title:
+                return top_index
+            for child_row in range(self._model.rowCount(top_index)):
+                index = self._model.index(child_row, 0, top_index)
+                child = self._model.item_from_index(index)
+                if child and child.title == title:
+                    return index
         return QModelIndex()
 
     def _on_data_changed(self, topLeft, bottomRight, roles=None) -> None:

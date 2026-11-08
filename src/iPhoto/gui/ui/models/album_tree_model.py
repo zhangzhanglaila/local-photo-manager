@@ -36,6 +36,7 @@ class NodeType(Enum):
     HEADER = auto()
     SECTION = auto()
     STATIC = auto()
+    SEARCH = auto()
     ACTION = auto()
     ALBUM = auto()
     SUBALBUM = auto()
@@ -118,6 +119,12 @@ class AlbumTreeModel(QAbstractItemModel):
         self._root_item = AlbumTreeItem("root", NodeType.ROOT)
         self._path_map: Dict[Path, AlbumTreeItem] = {}
         self._pinned_map: Dict[tuple[str, str], AlbumTreeItem] = {}
+        # Active search entry shown above the library header. It survives the
+        # background tree rebuilds triggered by scans.
+        self._search_query: Optional[str] = None
+        self._search_status: str = "done"  # "loading" | "done" | "failed"
+        self._search_count: Optional[int] = None
+        self._search_item: Optional[AlbumTreeItem] = None
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(150)
@@ -288,6 +295,12 @@ class AlbumTreeModel(QAbstractItemModel):
             NodeType.HEADER,
             icon_name="photo.on.rectangle.svg",
         )
+        if self._search_query is not None:
+            self._search_item = AlbumTreeItem(self._search_title(), NodeType.SEARCH)
+            self._root_item.add_child(self._search_item)
+            self._root_item.add_child(AlbumTreeItem("──────────", NodeType.SEPARATOR))
+        else:
+            self._search_item = None
         self._root_item.add_child(header)
         # The smart collections belong directly under the "Basic Library" header,
         # however they do not require an inline separator anymore because the
@@ -377,6 +390,59 @@ class AlbumTreeModel(QAbstractItemModel):
         if not index.isValid():
             return None
         return self._item_from_index(index)
+
+    def set_search_state(
+        self,
+        query: str,
+        *,
+        loading: bool = False,
+        count: int | None = None,
+        failed: bool = False,
+    ) -> None:
+        """Create or update the sidebar entry for the active search.
+
+        The entry lives at the top of the tree so a search that is still loading
+        stays reachable while the user browses other views.
+        """
+
+        status = "failed" if failed else ("loading" if loading else "done")
+        if (
+            query == self._search_query
+            and status == self._search_status
+            and count == self._search_count
+            and self._search_item is not None
+        ):
+            return
+        self._search_query = query
+        self._search_status = status
+        self._search_count = count
+        self.refresh()
+
+    def clear_search(self) -> None:
+        """Remove the search entry from the sidebar."""
+
+        if self._search_query is None:
+            return
+        self._search_query = None
+        self._search_status = "done"
+        self._search_count = None
+        self.refresh()
+
+    def search_index(self) -> QModelIndex:
+        """Return the index of the active search entry, if any."""
+
+        item = self._search_item
+        if item is None or item.parent is None:
+            return QModelIndex()
+        return self.createIndex(item.row(), 0, item)
+
+    def _search_title(self) -> str:
+        query = self._search_query or ""
+        if self._search_status == "loading":
+            return tr("sidebar.search.loading", query=query)
+        if self._search_status == "failed":
+            return tr("sidebar.search.failed", query=query)
+        return tr("sidebar.search.results", query=query, count=self._search_count or 0)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -534,6 +600,12 @@ class AlbumTreeModel(QAbstractItemModel):
             return load_icon(item.icon_name, stroke_width=stroke_width, color=color)
         if item.node_type == NodeType.ACTION:
             return load_icon("plus.circle", stroke_width=stroke_width, color=color)
+        if item.node_type == NodeType.SEARCH:
+            return load_icon(
+                "magnifyingglass.svg",
+                color=SIDEBAR_ICON_COLOR_HEX,
+                stroke_width=stroke_width,
+            )
         if item.node_type == NodeType.STATIC:
             icon_name = self._STATIC_ICON_MAP.get(item.title.casefold())
             if icon_name:

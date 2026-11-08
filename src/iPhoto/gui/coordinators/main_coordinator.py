@@ -141,6 +141,10 @@ class MainCoordinator(QObject):
         self._gallery_store = self._asset_list_vm.store
         self._media_session = MediaSelectionSession()
         self._media_session.bind_collection(self._gallery_store)
+        # Active semantic search: query, results, completion state and a serial so
+        # a superseded search cannot overwrite the newer one.
+        self._search_state: dict | None = None
+        self._search_serial = 0
         self._thumbnail_service = self._context.asset_runtime.thumbnail_service
         bound_people_service = self._people_service(library_root=lib_root)
         self._playback_people_service = bound_people_service or PeopleService()
@@ -610,6 +614,7 @@ class MainCoordinator(QObject):
 
         # Semantic Search
         ui.main_header.search_requested.connect(self._handle_search_requested)
+        ui.sidebar.searchEntrySelected.connect(self._handle_search_entry_selected)
         ui.main_header.toggle_semantic_search_action.toggled.connect(
             self._handle_semantic_search_toggle
         )
@@ -1187,6 +1192,19 @@ class MainCoordinator(QObject):
         """Handle semantic search request from the search input."""
         self._logger.info("Search requested: %s", query)
 
+        self._search_serial += 1
+        serial = self._search_serial
+        self._search_state = {
+            "query": query,
+            "results": [],
+            "done": False,
+            "error": "",
+            "serial": serial,
+        }
+        # A dedicated sidebar entry keeps the search reachable while it loads, so
+        # the user can browse other views instead of waiting on the loading panel.
+        self._window.ui.sidebar.set_search_state(query, loading=True)
+
         # Switch to gallery view
         self._view_router.show_gallery()
 
@@ -1373,16 +1391,18 @@ class MainCoordinator(QObject):
 
         def on_finished(results, error):
             from PySide6.QtCore import QTimer
-            if error:
-                QTimer.singleShot(0, lambda: self._display_search_error(error))
-            elif results:
-                QTimer.singleShot(0, lambda: self._display_search_results_raw(results, query))
-            else:
-                QTimer.singleShot(0, lambda: self._display_search_results_raw([], query))
+            QTimer.singleShot(
+                0, lambda: self._finish_search(serial, results, error, query)
+            )
 
         def on_progress(message, current, total):
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._update_search_progress(message, current, total))
+            QTimer.singleShot(
+                0,
+                lambda: self._update_search_progress(
+                    serial, message, current, total
+                ),
+            )
 
         self._search_thread = SearchThread(query, model_dir, library_root)
         self._search_thread.finished.connect(on_finished)
@@ -1409,12 +1429,93 @@ class MainCoordinator(QObject):
         ui.grid_view.scrollToTop()
         self._status_bar.show_message(f"找到 {total_count} 张与 '{query}' 相关的照片")
 
+    def _finish_search(self, serial: int, results, error: str, query: str) -> None:
+        """Complete a search and decide whether to show or announce the results."""
+
+        state = self._search_state
+        if (
+            state is None
+            or state.get("serial") != serial
+            or state.get("query") != query
+        ):
+            return  # superseded by a newer search
+
+        state["done"] = True
+        state["error"] = error or ""
+        state["results"] = list(results or [])
+
+        sidebar = self._window.ui.sidebar
+        if error:
+            sidebar.set_search_state(query, failed=True)
+        else:
+            sidebar.set_search_state(query, count=len(state["results"]))
+
+        if self._is_search_page_visible():
+            if error:
+                self._display_search_error(error)
+            else:
+                self._display_search_results_raw(state["results"], query)
+            return
+
+        # The user navigated away while the search was running: keep the result
+        # available in the sidebar and announce it instead of switching views.
+        toast = getattr(self._window.ui, "notification_toast", None)
+        if error:
+            self._status_bar.show_message(f"搜索失败：{error}", 8000)
+        elif state["results"]:
+            self._status_bar.show_message(
+                f"搜索完成：找到 {len(state['results'])} 张，"
+                f"点击左侧「搜索：{query}」查看",
+                10000,
+            )
+            if toast is not None:
+                toast.show_toast(f"搜索完成 · {len(state['results'])} 张")
+        else:
+            self._status_bar.show_message(f"没有找到与 '{query}' 相关的照片", 8000)
+            if toast is not None:
+                toast.show_toast("搜索完成 · 0 张")
+
+    def _handle_search_entry_selected(self) -> None:
+        """Open the active search (loading panel or its results) from the sidebar."""
+
+        state = self._search_state
+        if state is None:
+            return
+        self._view_router.show_gallery()
+        if not state.get("done"):
+            self._show_search_loading(state["query"])
+            return
+        error = state.get("error") or ""
+        if error:
+            self._display_search_error(error)
+            return
+        self._display_search_results_raw(state.get("results") or [], state["query"])
+
+    def _is_search_page_visible(self) -> bool:
+        """Return whether the gallery is currently showing the search panel."""
+
+        page = getattr(self._window.ui, "gallery_page", None)
+        stack = getattr(page, "_stack", None)
+        loading = getattr(page, "_loading_widget", None)
+        return (
+            stack is not None
+            and loading is not None
+            and stack.currentWidget() is loading
+        )
+
     def _show_search_loading(self, query: str, sub_message: str = None, show_continue: bool = False) -> None:
         """Show loading state in the grid view area."""
         ui = self._window.ui
         ui.gallery_page.show_search_loading(query)
-    def _update_search_progress(self, message: str, current: int, total: int) -> None:
+    def _update_search_progress(self, serial: int, message: str, current: int, total: int) -> None:
         """Update search progress in the UI."""
+
+        state = self._search_state
+        if state is None or state.get("serial") != serial:
+            return
+        if not self._is_search_page_visible():
+            # The user navigated away; do not pull them back into the search panel.
+            return
         ui = self._window.ui
         page = ui.gallery_page
         if "模型" in message:
@@ -1445,6 +1546,8 @@ class MainCoordinator(QObject):
         """Handle back button click during search."""
         # Hide search results header
         ui = self._window.ui
+        self._search_state = None
+        ui.sidebar.clear_search()
         ui.gallery_page.hide_search_results_header()
         # Return to normal gallery view
         self._gallery_vm.open_all_photos()

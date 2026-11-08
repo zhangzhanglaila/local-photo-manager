@@ -455,3 +455,70 @@ def test_tree_refresh_does_not_renavigate_to_restored_selection(
         "refreshing the sidebar model must not emit a navigation signal for the "
         f"selection it just restored (got {emitted!r})"
     )
+
+
+def test_search_entry_selection_emits_signal(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    """Clicking the search entry asks the coordinator to show the search."""
+
+    root = tmp_path / "Library"
+    root.mkdir()
+    manager = LibraryRuntimeController()
+    manager.bind_path(root)
+    qapp.processEvents()
+
+    sidebar = AlbumSidebar(manager)
+    qapp.processEvents()
+
+    sidebar.set_search_state("cat", loading=True)
+    qapp.processEvents()
+
+    selected: list[bool] = []
+    sidebar.searchEntrySelected.connect(lambda: selected.append(True))
+
+    sidebar.select_search_entry(emit_signal=True)
+    qapp.processEvents()
+
+    assert selected == [True]
+    assert sidebar._current_search_selected is True
+
+    sidebar.select_all_photos(emit_signal=False)
+    assert sidebar._current_search_selected is False
+
+    sidebar.close()
+    manager.shutdown()
+
+
+def test_search_entry_survives_tree_refresh_without_navigating(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    """Background tree rebuilds keep the search entry and its highlight."""
+
+    root = tmp_path / "Library"
+    root.mkdir()
+    manager = LibraryRuntimeController()
+    manager.bind_path(root)
+    qapp.processEvents()
+
+    sidebar = AlbumSidebar(manager)
+    qapp.processEvents()
+
+    sidebar.set_search_state("cat", loading=True)
+    sidebar.select_search_entry(emit_signal=False)
+    qapp.processEvents()
+
+    emitted: list[bool] = []
+    sidebar.searchEntrySelected.connect(lambda: emitted.append(True))
+
+    sidebar.refresh_tree_model()
+    for _ in range(5):
+        qapp.processEvents()
+
+    assert emitted == []
+    assert sidebar._model.search_index().isValid()
+    assert sidebar._current_search_selected is True
+
+    sidebar.close()
+    manager.shutdown()
+

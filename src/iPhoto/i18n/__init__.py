@@ -71,6 +71,9 @@ _ZH: dict[str, str] = {
     "sidebar.basic_library_unbound": "基础图库 — 未绑定",
     "sidebar.albums": "相册",
     "sidebar.pinned": "置顶",
+    "sidebar.search.loading": "搜索：{query}（搜索中…）",
+    "sidebar.search.results": "搜索：{query}（{count} 张）",
+    "sidebar.search.failed": "搜索：{query}（失败）",
     # -- Timeline rail --
     "timeline.day_format": "{year}年{month:02d}月{day:02d}日",
     "timeline.month_format": "{year}年{month:02d}月",
@@ -347,6 +350,9 @@ _EN: dict[str, str] = {
     "sidebar.basic_library_unbound": "Basic Library — not bound",
     "sidebar.albums": "Albums",
     "sidebar.pinned": "Pinned",
+    "sidebar.search.loading": "Search: {query} (searching…)",
+    "sidebar.search.results": "Search: {query} ({count})",
+    "sidebar.search.failed": "Search: {query} (failed)",
     # -- Timeline rail --
     "timeline.day_format": "{month:02d}/{day:02d}/{year}",
     "timeline.month_format": "{month:02d}/{year}",
