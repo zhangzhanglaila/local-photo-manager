@@ -485,10 +485,10 @@ class MainHeaderWidget(QWidget):
         popup = self._ensure_search_popup()
         self.search_popup_opened.emit()
 
-        width = max(360, self.search_input.width())
+        width = max(520, self.search_input.width())
         width = min(width, max(280, self._main_window.width() - 24))
         popup.setFixedWidth(width)
-        popup.adjustSize()
+        popup.refresh_size()
 
         position = self.search_input.mapTo(
             self._main_window, QPoint(0, self.search_input.height() + 6)
