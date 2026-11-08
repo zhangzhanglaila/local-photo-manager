@@ -1493,3 +1493,37 @@ def test_robust_fit_points_returns_small_inputs_unchanged() -> None:
     points = [(114.2, 30.4), (114.3, 30.5), (114.25, 30.45)]
 
     assert photo_map_view_module._robust_fit_points(points) == points
+
+
+class _InteractionSender(QObject):
+    viewChanged = Signal(float, float, float)
+    panned = Signal(QPointF)
+
+
+class _InteractionReceiver(QObject):
+    interacted = Signal()
+
+
+def test_interaction_forwarding_drops_signal_payload(qapp: QApplication) -> None:
+    """Pan/zoom payloads must not be forwarded to the argument-less signal.
+
+    ``viewChanged`` emits three floats and ``panned`` emits a QPointF; connecting
+    them directly to ``userInteracting.emit`` raised
+    ``TypeError: userInteracting() only accepts 0 argument(s), 3 given!`` on every
+    map interaction.
+    """
+
+    sender = _InteractionSender()
+    receiver = _InteractionReceiver()
+    forward = photo_map_view_module._reemit_without_payload(receiver.interacted)
+    sender.viewChanged.connect(forward)
+    sender.panned.connect(forward)
+
+    seen: list[int] = []
+    receiver.interacted.connect(lambda: seen.append(1))
+
+    sender.viewChanged.emit(114.2, 30.4, 3.0)
+    sender.panned.emit(QPointF(1.0, 2.0))
+
+    assert seen == [1, 1]
+

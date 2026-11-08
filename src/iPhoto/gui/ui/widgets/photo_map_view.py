@@ -69,6 +69,21 @@ _FIT_TRIM_RATIO = 0.02
 _FIT_TRIM_MIN_POINTS = 20
 
 
+def _reemit_without_payload(signal):
+    """Return a slot that re-emits *signal* and discards the source arguments.
+
+    ``viewChanged`` carries ``(center_x, center_y, zoom)`` and ``panned`` carries a
+    ``QPointF``.  Connecting them straight to a zero-argument signal forwarded those
+    arguments and raised ``TypeError: userInteracting() only accepts 0 argument(s)``
+    on every pan/zoom.
+    """
+
+    def _emit(*_args: object) -> None:
+        signal.emit()
+
+    return _emit
+
+
 def _robust_fit_points(
     points: list[tuple[float, float]],
     *,
@@ -980,8 +995,12 @@ class PhotoMapView(QWidget):
         self._map_widget.viewChanged.connect(self._on_view_changed_repaint_trail)
         # Panning/zooming is exactly when the map needs CPU for tiles, so tell the
         # host that the user is interacting with the interface.
-        self._map_widget.viewChanged.connect(self.userInteracting.emit)
-        self._map_widget.panned.connect(self.userInteracting.emit)
+        self._map_widget.viewChanged.connect(
+            _reemit_without_payload(self.userInteracting)
+        )
+        self._map_widget.panned.connect(
+            _reemit_without_payload(self.userInteracting)
+        )
         self._thumbnail_loader.ready.connect(self._marker_controller.handle_thumbnail_ready)
         self._marker_controller.clustersUpdated.connect(self._handle_clusters_updated)
         self._marker_controller.citiesUpdated.connect(self._handle_city_annotations)
