@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, Mapping
 
 # ``RECENTLY_DELETED_DIR_NAME`` stores the filesystem folder name that acts as
 # the shared trash for the Basic Library.  The directory lives directly under
@@ -98,3 +100,42 @@ SQLITE_BUSY_TIMEOUT_S: Final[float] = 10.0
 
 # People writes can be long (a batch insert of face crops), so they wait longer.
 SQLITE_LONG_BUSY_TIMEOUT_S: Final[float] = 30.0
+
+# --- Semantic search -------------------------------------------------------
+# Similarity floor for CLIP results. Measured on a real library: the median
+# similarity across all photos is ~0.195, so a floor of 0.2 admitted ~35% of the
+# library. 0.24 keeps the head of the distribution. Overridable at runtime for
+# tuning without a rebuild.
+SEARCH_MIN_SIMILARITY: Final[float] = 0.24
+
+# Upper bound on returned matches: the UI paginates, and a very broad query can
+# otherwise match thousands of photos.
+SEARCH_MAX_RESULTS: Final[int] = 300
+
+
+@dataclass(frozen=True)
+class SearchSettings:
+    """Tunable semantic-search parameters, with environment overrides."""
+
+    min_similarity: float = SEARCH_MIN_SIMILARITY
+    max_results: int = SEARCH_MAX_RESULTS
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "SearchSettings":
+        source = os.environ if environ is None else environ
+        min_similarity = cls.min_similarity
+        max_results = cls.max_results
+        raw_sim = source.get("IPHOTO_SEARCH_MIN_SIM")
+        if raw_sim:
+            try:
+                min_similarity = float(raw_sim)
+            except ValueError:
+                pass
+        raw_max = source.get("IPHOTO_SEARCH_MAX_RESULTS")
+        if raw_max:
+            try:
+                max_results = int(raw_max)
+            except ValueError:
+                pass
+        return cls(min_similarity=min_similarity, max_results=max_results)
+
