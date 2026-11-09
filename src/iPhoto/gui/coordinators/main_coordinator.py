@@ -25,6 +25,7 @@ from PySide6.QtGui import QAction
 from iPhoto.application.search.embedding_cache import EmbeddingCache
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
 from iPhoto.application.dtos import GeotaggedAsset
+from iPhoto.config import SearchSettings
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
@@ -1578,10 +1579,10 @@ class MainCoordinator(QObject):
                             self._precision
                         )
                         try:
-                            floor = float(
-                                _os.environ.get("IPHOTO_SEARCH_MIN_SIM", floor)
-                            )
-                        except ValueError:
+                            settings = SearchSettings.from_env()
+                            if settings.min_similarity_override is not None:
+                                floor = settings.min_similarity_override
+                        except Exception:
                             pass
 
                         if partial_translation:

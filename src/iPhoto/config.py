@@ -119,6 +119,9 @@ class SearchSettings:
 
     min_similarity: float = SEARCH_MIN_SIMILARITY
     max_results: int = SEARCH_MAX_RESULTS
+    # None means "no explicit override": callers keep their own precision preset
+    # (a brand-name query legitimately uses a stricter floor than the default).
+    min_similarity_override: float | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "SearchSettings":
@@ -126,9 +129,11 @@ class SearchSettings:
         min_similarity = cls.min_similarity
         max_results = cls.max_results
         raw_sim = source.get("IPHOTO_SEARCH_MIN_SIM")
+        override: float | None = None
         if raw_sim:
             try:
                 min_similarity = float(raw_sim)
+                override = min_similarity
             except ValueError:
                 pass
         raw_max = source.get("IPHOTO_SEARCH_MAX_RESULTS")
@@ -137,5 +142,9 @@ class SearchSettings:
                 max_results = int(raw_max)
             except ValueError:
                 pass
-        return cls(min_similarity=min_similarity, max_results=max_results)
+        return cls(
+            min_similarity=min_similarity,
+            max_results=max_results,
+            min_similarity_override=override,
+        )
 
