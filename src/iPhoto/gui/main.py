@@ -400,7 +400,6 @@ def main(argv: list[str] | None = None) -> int:
     # overlay repaint before the next heavy synchronous operation begins.
     coordinator_ref: list = []
     _scan_finished = False  # 跟踪扫描是否完成
-    _step5_executed = False  # 防止 _step5_select_photos 被重复调用导致 overlay 二次访问
 
     # ⭐ 关键修改：先连接信号，再启动扫描，避免信号丢失
     def _connect_scan_signals() -> None:
@@ -537,8 +536,7 @@ def main(argv: list[str] | None = None) -> int:
                 # 数据库已存在，不需要等待扫描
                 _scan_finished = True
                 _logger.info("startup: existing DB found, will not wait for scan")
-                if not _step5_executed:
-                    QTimer.singleShot(0, _advance)
+                QTimer.singleShot(0, _advance)
             else:
                 # 需要等待扫描完成，设置超时
                 _logger.info("startup: no DB found, waiting for scan")
@@ -550,8 +548,6 @@ def main(argv: list[str] | None = None) -> int:
     def _check_scan_timeout() -> None:
         """检查扫描是否超时（5秒后）。"""
         nonlocal _scan_finished
-        if _step5_executed:
-            return  # _step5 已经执行过（如扫描完成后被触发），不要再重复触发
         if not _scan_finished:
             _logger.warning("startup: scan timeout, continuing anyway")
             _scan_finished = True
@@ -604,18 +600,12 @@ def main(argv: list[str] | None = None) -> int:
 
     def _step5_select_photos() -> None:
         """选择照片并完成启动。"""
-        nonlocal _step5_executed
         try:
             # ⭐ 防重入：_step5 可能从 _on_scan_finished / _step4 / _check_scan_timeout
             # 三条路径触发，必须保证只执行一次，否则会再次访问已删除的 overlay。
-            if _step5_executed:
-                _logger.info("startup step 5: already executed, skipping")
-                return
-            _step5_executed = True
 
             # 确保扫描已完成后再继续
             if not _scan_finished:
-                _step5_executed = False  # 允许下次重新执行
                 _logger.info("startup step 5: scan still in progress, waiting...")
                 QTimer.singleShot(100, _step5_select_photos)
                 return
