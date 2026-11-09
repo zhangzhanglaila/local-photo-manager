@@ -101,7 +101,15 @@ class RuntimeContext:
         if workspace_base:
             from ..utils.pathutils import set_custom_workspace_base
             try:
-                set_custom_workspace_base(Path(workspace_base).expanduser())
+                base_path = Path(workspace_base).expanduser()
+                set_custom_workspace_base(base_path)
+                # Run the one-off nested layout migration explicitly. It used to run as
+                # a side effect of merely asking for the workspace directory.
+                from ..bootstrap.workspace_migration import migrate_nested_work_dir
+
+                for child in base_path.iterdir() if base_path.is_dir() else ():
+                    if child.is_dir():
+                        migrate_nested_work_dir(child)
             except Exception as exc:
                 _logger.warning("Failed to set custom workspace base: %s", exc)
 
