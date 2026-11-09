@@ -719,8 +719,9 @@ class AlbumSidebar(QWidget):
 
         try:
             self._tree.scrollTo(index)
-        except Exception:
-            pass
+        except RuntimeError:
+            # The tree can already be torn down while the window is closing.
+            _logger.debug("album tree scrollTo failed", exc_info=True)
 
     def select_pinned_item(self, pinned_item: PinnedSidebarItem, emit_signal: bool = False) -> None:
         """Select the sidebar row associated with *pinned_item* when present."""
@@ -745,8 +746,9 @@ class AlbumSidebar(QWidget):
                 selection_model.blockSignals(False)
         try:
             self._tree.scrollTo(index)
-        except Exception:
-            pass
+        except RuntimeError:
+            # The tree can already be torn down while the window is closing.
+            _logger.debug("album tree scrollTo failed", exc_info=True)
         if emit_signal and already_selected:
             self.pinnedItemSelected.emit(pinned_item)
 
@@ -802,8 +804,9 @@ class AlbumSidebar(QWidget):
                 selection_model.blockSignals(False)
         try:
             self._tree.scrollTo(index)
-        except Exception:
-            pass
+        except RuntimeError:
+            # The tree can already be torn down while the window is closing.
+            _logger.debug("album tree scrollTo failed", exc_info=True)
         if emit_signal and already_selected:
             self.searchEntrySelected.emit()
 
@@ -862,8 +865,9 @@ class AlbumSidebar(QWidget):
 
         try:
             self._tree.scrollTo(index)
-        except Exception:
-            pass
+        except RuntimeError:
+            # The tree can already be torn down while the window is closing.
+            _logger.debug("album tree scrollTo failed", exc_info=True)
 
     def _show_context_menu(self, point: QPoint) -> None:
         show_context_menu(
