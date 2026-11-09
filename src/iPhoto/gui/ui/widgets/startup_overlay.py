@@ -51,7 +51,9 @@ class StartupOverlay(QWidget):
         self._scan_label.setStyleSheet(
             "color: #666; font-size: 13px; background: transparent;"
         )
-        self._scan_label.hide()  # 默认隐藏
+        # 扫描状态行属于overlay的固定外观：先只显示标题、稍后再补进度，
+        # 会让启动看起来像两套不同的加载界面。
+        self._scan_label.setText("正在扫描照片... 已处理 0 个文件")
         layout.addWidget(self._scan_label)
 
         self._progress = QProgressBar(self._content)
