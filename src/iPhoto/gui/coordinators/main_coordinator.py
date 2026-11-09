@@ -22,6 +22,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QAction
 
+from iPhoto.application.search.embedding_cache import EmbeddingCache
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
 from iPhoto.application.dtos import GeotaggedAsset
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
@@ -71,7 +72,7 @@ MAP_FOCUS_RETRY_INTERVAL_MS = 400
 
 #: Cache of stored embeddings per library, keyed by the DB mtime. Reading ~10k rows
 #: takes a few hundred milliseconds and used to happen on every single search.
-_SEARCH_EMBEDDINGS_CACHE: dict[str, tuple[float, list]] = {}
+_SEARCH_EMBEDDINGS_CACHE = EmbeddingCache()
 
 #: Search workers that were still running when the app shut down. Keeping them
 #: referenced prevents a live QThread from being destroyed during teardown.
@@ -89,17 +90,13 @@ def _load_search_embeddings(library_root: Path) -> list:
     except Exception:
         mtime = 0.0
 
-    key = str(library_root)
-    cached = _SEARCH_EMBEDDINGS_CACHE.get(key)
-    if cached is not None and cached[0] == mtime and mtime:
-        return cached[1]
-
     from iPhoto.bootstrap.embedding_index import load_stored_embeddings
 
-    embeddings = load_stored_embeddings(library_root)
-    if mtime:
-        _SEARCH_EMBEDDINGS_CACHE[key] = (mtime, embeddings)
-    return embeddings
+    return _SEARCH_EMBEDDINGS_CACHE.get(
+        str(library_root),
+        mtime,
+        lambda: load_stored_embeddings(library_root),
+    )
 
 
 class MainCoordinator(QObject):
