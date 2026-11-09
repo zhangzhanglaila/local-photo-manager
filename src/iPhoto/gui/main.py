@@ -187,14 +187,17 @@ def _configure_qt_opengl_defaults() -> None:
 
     try:
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
-    except Exception:
-        pass
+    except (AttributeError, RuntimeError):
+        # The attribute does not exist in every Qt build, or the application already
+        # exists; sharing contexts is an optimisation, not a requirement.
+        _logger.debug("AA_ShareOpenGLContexts unavailable", exc_info=True)
 
     if should_configure_global_desktop_opengl():
         try:
             QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
-        except Exception:
-            pass
+        except (AttributeError, RuntimeError):
+            # Same as above: unsupported attribute or already-created application.
+            _logger.debug("AA_UseDesktopOpenGL unavailable", exc_info=True)
 
     try:
         QSurfaceFormat.setDefaultFormat(_map_gl_surface_format())
@@ -311,8 +314,9 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             ctypes.windll.kernel32.SetConsoleCtrlHandler(_console_ctrl_handler, 1)
-        except Exception:
-            pass
+        except (AttributeError, OSError):
+            # Only available with a console attached; a windowed launch has none.
+            _logger.debug("SetConsoleCtrlHandler unavailable", exc_info=True)
 
         def _watchdog() -> None:
             _ctrl_c_event.wait()
