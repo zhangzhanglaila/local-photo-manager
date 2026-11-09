@@ -373,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     window = MainWindow(context)
 
     # Startup overlay — shown immediately so the user sees progress feedback.
+    from iPhoto.bootstrap.startup_sequence import StartupSequence
     from iPhoto.gui.ui.widgets.startup_overlay import StartupOverlay
     overlay = StartupOverlay(window.ui.window_shell)
 
@@ -419,7 +420,7 @@ def main(argv: list[str] | None = None) -> int:
             _scan_finished = True
             _logger.info("startup: scan finished, success=%s", success)
             # 扫描完成后继续下一步
-            QTimer.singleShot(0, _step5_select_photos)
+            QTimer.singleShot(0, _advance)
 
         # 连接信号
         context.facade.scanProgress.connect(_on_scan_progress)
@@ -461,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
             coordinator = MainCoordinator(window, context)
             window.set_coordinator(coordinator)
             coordinator_ref.append(coordinator)
-            QTimer.singleShot(0, _step2_connect_signals_first)
+            QTimer.singleShot(0, _advance)
         except Exception:
             _logger.exception("startup step 1: unhandled error")
             raise
@@ -495,7 +496,7 @@ def main(argv: list[str] | None = None) -> int:
                 context.library.scanProgress.connect(_on_status_bar_scan_progress)
                 context.library.scanFinished.connect(_on_status_bar_scan_finished)
 
-            QTimer.singleShot(0, _step3_check_first_launch)
+            QTimer.singleShot(0, _advance)
         except Exception:
             _logger.exception("startup step 2: unhandled error")
             raise
@@ -511,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
                 app.processEvents()
                 _logger.info("startup step 3: workspace configuration needed")
                 context.show_welcome_wizard()
-            QTimer.singleShot(0, _step4_open_library)
+            QTimer.singleShot(0, _advance)
         except Exception:
             _logger.exception("startup step 3: unhandled error")
             raise
@@ -537,7 +538,7 @@ def main(argv: list[str] | None = None) -> int:
                 _scan_finished = True
                 _logger.info("startup: existing DB found, will not wait for scan")
                 if not _step5_executed:
-                    QTimer.singleShot(0, _step5_select_photos)
+                    QTimer.singleShot(0, _advance)
             else:
                 # 需要等待扫描完成，设置超时
                 _logger.info("startup: no DB found, waiting for scan")
@@ -554,7 +555,7 @@ def main(argv: list[str] | None = None) -> int:
         if not _scan_finished:
             _logger.warning("startup: scan timeout, continuing anyway")
             _scan_finished = True
-            QTimer.singleShot(0, _step5_select_photos)
+            QTimer.singleShot(0, _advance)
 
     def _warm_up_thumbnail_cache() -> None:
         """在后台预热缩略图缓存以改善首次浏览体验。"""
@@ -708,7 +709,24 @@ def main(argv: list[str] | None = None) -> int:
             _logger.exception("startup step 5: unhandled error")
             raise
 
-    QTimer.singleShot(0, _step1_create_coordinator)
+    sequence = StartupSequence(
+        [
+            _step1_create_coordinator,
+            _step2_connect_signals_first,
+            _step3_check_first_launch,
+            _step4_open_library,
+            _step5_select_photos,
+        ]
+    )
+
+    def _advance() -> None:
+        """Run the next startup stage; ordering and run-once live in the sequence."""
+
+        if sequence.run_next():
+            return
+        QTimer.singleShot(0, _advance)
+
+    QTimer.singleShot(0, _advance)
 
     return app.exec()
 
