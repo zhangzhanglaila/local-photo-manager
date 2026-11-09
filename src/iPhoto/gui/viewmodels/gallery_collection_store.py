@@ -835,6 +835,9 @@ class GalleryCollectionStore:
         if not self._scan_root_matches_active_root(root):
             # 不匹配当前活动的根目录，忽略
             return
+        # A scan may have added rows, and the query did not change: drop the cached
+        # count so the next load re-reads it.
+        self.invalidate_count_cache()
         self._pending_scan_refresh = True
         if self._visible_range is not None:
             # Final refresh of a scan: force it so no change stays pending.
@@ -1523,11 +1526,18 @@ class GalleryCollectionStore:
     def _iter_cached_rows(self) -> List[tuple[int, AssetDTO]]:
         return sorted(self._row_cache.items(), key=lambda item: item[0])
 
-    def _count_cache_key(self) -> str:
-        """Return a stable key for the current query scope."""
+    def _count_cache_key(self) -> tuple[str, str, str] | None:
+        """Return a stable key for the current query scope.
+
+        Paths are normalised through ``str`` so the key does not depend on the
+        ``repr`` of a ``Path``; the query is still snapshotted via ``repr`` because
+        ``AssetQuery`` is mutable and deliberately kept that way by the domain layer.
+        """
 
         query = self._current_query
-        return repr((self._active_root, self._library_root, query)) if query is not None else ""
+        if query is None:
+            return None
+        return (str(self._active_root), str(self._library_root), repr(query))
 
     def _cached_total(self) -> int | None:
         if self._cached_count_key != self._count_cache_key():
@@ -1537,6 +1547,17 @@ class GalleryCollectionStore:
     def _store_total(self, total: int) -> None:
         self._cached_count = int(total)
         self._cached_count_key = self._count_cache_key()
+
+    def invalidate_count_cache(self) -> None:
+        """Drop the cached row count.
+
+        The key only changes when the query or the library root changes, so rows that
+        appear because of a scan would otherwise leave a stale count behind. Callers
+        that know the data changed invalidate explicitly.
+        """
+
+        self._cached_count = None
+        self._cached_count_key = None
 
     def _reset_window_state(self) -> None:
         self._generation += 1

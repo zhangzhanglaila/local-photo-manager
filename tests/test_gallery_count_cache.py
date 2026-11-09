@@ -60,6 +60,19 @@ def test_a_different_query_misses_the_cache(tmp_path: Path) -> None:
     assert store._cached_total() is None
 
 
+def test_invalidate_forces_a_recount(tmp_path: Path) -> None:
+    """A scan adds rows without changing the query, so invalidation is explicit."""
+
+    store, _service = _store(tmp_path)
+    store._current_query = AssetQuery()
+    store._store_total(42)
+    assert store._cached_total() == 42
+
+    store.invalidate_count_cache()
+
+    assert store._cached_total() is None
+
+
 def test_cache_follows_the_active_root(tmp_path: Path) -> None:
     store, _service = _store(tmp_path)
     store._current_query = AssetQuery()
