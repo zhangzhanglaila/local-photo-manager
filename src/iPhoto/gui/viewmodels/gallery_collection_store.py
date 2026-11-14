@@ -1084,7 +1084,17 @@ class GalleryCollectionStore:
             # keeps the position and repaints only the new cells.
             self._row_cache.update(row_cache)
             self._store_total(total)
-            self.rows_loaded.emit(window[0], window[1])
+            # Notify only the rows the viewport actually shows. Announcing the whole
+            # loaded window made the delegate request decorations (thumbnails) for all
+            # ~200 rows on every drag step, so the couple of dozen visible tiles queued
+            # behind hundreds of useless decodes and stayed black.
+            first, last = window
+            visible = self._visible_range
+            if visible is not None:
+                first = max(first, visible[0])
+                last = min(last, visible[1])
+            if last >= first:
+                self.rows_loaded.emit(first, last)
             return
 
         self._row_mapping_key = self._count_cache_key()
