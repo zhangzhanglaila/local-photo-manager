@@ -389,6 +389,7 @@ class GalleryGridView(AssetGrid):
         if text:
             self._show_date_badge(text, self._scrubber_y_to_view(y))
         self._set_load_apply_throttle(0.25)
+        self._set_scan_refresh_suppressed(True)
         if not self._scrub_timer.isActive():
             self._scrub_timer.start()
 
@@ -427,6 +428,12 @@ class GalleryGridView(AssetGrid):
         if callable(setter):
             setter(seconds)
 
+    def _set_scan_refresh_suppressed(self, suppressed: bool) -> None:
+        store = self._store()
+        setter = getattr(store, "set_scan_refresh_suppressed", None)
+        if callable(setter):
+            setter(suppressed)
+
     def _flush_deferred_load(self) -> None:
         store = self._store()
         flush = getattr(store, "flush_deferred_load", None)
@@ -439,6 +446,7 @@ class GalleryGridView(AssetGrid):
         self._last_hover_row = None
         self._scrub_timer.stop()
         self._set_load_apply_throttle(0.0)
+        self._set_scan_refresh_suppressed(False)
         self._flush_deferred_load()
         self._flush_scrub_scroll()
         # The month preview becomes a full date once the row is loaded.

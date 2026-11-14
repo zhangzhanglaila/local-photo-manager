@@ -132,6 +132,10 @@ class GalleryCollectionStore:
         self._pending_scan_rels: set[str] = set()
         self._pending_scan_sort_keys: set[tuple[str, str]] = set()
         self._last_scan_refresh_at = 0.0
+        # While the user drags the timeline, scan-driven refreshes are held back: each
+        # one resets the model, and combining them with the drag's own reloads left the
+        # grid repainting black tiles. The pending flag keeps the data for later.
+        self._scan_refresh_suppressed = False
         self._direct_mode = False
         # ⭐ 跟踪在 asset_query_service 绑定后需要重新触发的加载
         self._pending_load_after_service_bind: bool = False
@@ -859,6 +863,10 @@ class GalleryCollectionStore:
 
         if not self._pending_scan_refresh:
             return
+        if self._scan_refresh_suppressed:
+            # Held back by an active timeline drag; the pending flag survives so the
+            # refresh runs once the drag ends.
+            return
         if not force:
             if time.monotonic() - self._last_scan_refresh_at < self.SCAN_REFRESH_MIN_INTERVAL_S:
                 return
@@ -984,6 +992,13 @@ class GalleryCollectionStore:
         self._load_requested_at = time.monotonic()
         self._emit_signals_on_load = emit_signals
         _GALLERY_LOAD_POOL.start(worker)
+
+    def set_scan_refresh_suppressed(self, suppressed: bool) -> None:
+        """Hold back scan-driven refreshes (used while the timeline is dragged)."""
+
+        self._scan_refresh_suppressed = bool(suppressed)
+        if not self._scan_refresh_suppressed:
+            self._maybe_flush_pending_scan_refresh(force=True)
 
     def set_apply_throttle(self, seconds: float) -> None:
         """Limit how often a finished load is applied (0 disables the limit)."""
