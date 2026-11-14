@@ -51,6 +51,18 @@ def load_pillow() -> Optional[PillowSupport]:
         register_heif_opener = None
     else:
         try:
+            # libheif caps the number of child boxes in some HEIC structures (100).
+            # iPhone files with many property boxes exceed it and fail with
+            # "Security limit exceeded", so those photos could not be decoded at all
+            # (thumbnail, preview and embedding all failed). These are the user's own
+            # local photos, so the default bound is relaxed; the limit exists to keep
+            # untrusted files from exhausting resources, not to block valid images.
+            from pillow_heif import options as _heif_options
+
+            _heif_options.DISABLE_SECURITY_LIMITS = True
+        except Exception:
+            pass
+        try:
             register_heif_opener()
         except Exception:
             # ``pillow-heif`` is optional; ignore registration failures.
