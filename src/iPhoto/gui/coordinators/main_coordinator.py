@@ -561,8 +561,9 @@ class MainCoordinator(QObject):
         ui.sidebar.allPhotosSelected.connect(self._handle_return_from_map)
         ui.sidebar.staticNodeSelected.connect(self._handle_sidebar_return_from_map)
 
-        # Grid interactions — single/double-click opens detail view.
-        ui.grid_view.itemClicked.connect(self._on_asset_clicked)
+        # Grid interactions — double-click opens the detail view. A single click only
+        # selects: opening on click made an accidental click eject the user into the
+        # detail page.
         ui.grid_view.itemDoubleClicked.connect(self._on_asset_clicked)
         ui.grid_view.visibleRowsChanged.connect(self._asset_list_vm.prioritize_rows)
         ui.grid_view.visibleRowsChanged.connect(self._on_gallery_scrolled)
