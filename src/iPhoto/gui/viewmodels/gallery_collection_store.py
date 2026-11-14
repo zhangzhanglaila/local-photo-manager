@@ -997,8 +997,19 @@ class GalleryCollectionStore:
         """Hold back scan-driven refreshes (used while the timeline is dragged)."""
 
         self._scan_refresh_suppressed = bool(suppressed)
-        if not self._scan_refresh_suppressed:
-            self._maybe_flush_pending_scan_refresh(force=True)
+        if self._scan_refresh_suppressed:
+            return
+        if not self._pending_scan_refresh:
+            return
+        # Deferred, not immediate: flushing right after the release reset the model
+        # while the freshly decoded thumbnails were on screen, which made them vanish
+        # and be requested again — the jump looked far slower than it was.
+        QTimer.singleShot(300, self._flush_scan_refresh_after_scrub)
+
+    def _flush_scan_refresh_after_scrub(self) -> None:
+        if self._scan_refresh_suppressed:
+            return
+        self._maybe_flush_pending_scan_refresh(force=True)
 
     def set_apply_throttle(self, seconds: float) -> None:
         """Limit how often a finished load is applied (0 disables the limit)."""
