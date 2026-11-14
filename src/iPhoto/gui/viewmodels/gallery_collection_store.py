@@ -136,6 +136,11 @@ class GalleryCollectionStore:
         # one resets the model, and combining them with the drag's own reloads left the
         # grid repainting black tiles. The pending flag keeps the data for later.
         self._scan_refresh_suppressed = False
+        # While true, a finished window load is folded into the cache and reported as
+        # a range refresh instead of replacing it with a model reset (see
+        # ``_on_load_finished``). Used for the duration of a timeline drag so the view
+        # keeps its scroll position.
+        self._merge_on_apply = False
         self._direct_mode = False
         # ⭐ 跟踪在 asset_query_service 绑定后需要重新触发的加载
         self._pending_load_after_service_bind: bool = False
@@ -993,6 +998,11 @@ class GalleryCollectionStore:
         self._emit_signals_on_load = emit_signals
         _GALLERY_LOAD_POOL.start(worker)
 
+    def set_merge_on_apply(self, merge: bool) -> None:
+        """Merge finished loads instead of resetting (see ``_on_load_finished``)."""
+
+        self._merge_on_apply = bool(merge)
+
     def set_scan_refresh_suppressed(self, suppressed: bool) -> None:
         """Hold back scan-driven refreshes (used while the timeline is dragged)."""
 
@@ -1060,6 +1070,23 @@ class GalleryCollectionStore:
         self._load_worker = None
 
         old_total = self._total_count
+        window = self._load_window_range
+        if (
+            self._merge_on_apply
+            and self._row_cache
+            and row_cache
+            and window is not None
+            and total == old_total
+        ):
+            # During a timeline drag the model must keep its rows and scroll offset:
+            # a reset snapped the scrollbar back, which made the scrubber dot lag
+            # behind the pointer. Folding the window in and refreshing just that range
+            # keeps the position and repaints only the new cells.
+            self._row_cache.update(row_cache)
+            self._store_total(total)
+            self.rows_loaded.emit(window[0], window[1])
+            return
+
         self._row_mapping_key = self._count_cache_key()
         self._row_cache = row_cache
         self._total_count = total
