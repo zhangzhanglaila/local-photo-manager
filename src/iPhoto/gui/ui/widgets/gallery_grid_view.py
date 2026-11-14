@@ -100,6 +100,11 @@ class GalleryGridView(AssetGrid):
         self._scanning_label.setStyleSheet("color: #86868b; font-size: 15px;")
         self._scanning_label.hide()
 
+        # Last viewport size the placeholder labels were sized to. They span the whole
+        # viewport, so re-applying their geometry on every state update repainted the
+        # entire grid and made timeline dragging crawl.
+        self._placeholder_rect = None
+
         # Suppress "No media found" until the first scan completes so it
         # never flashes during startup.
         self._scan_completed = False
@@ -877,9 +882,14 @@ class GalleryGridView(AssetGrid):
         is_empty = model is None or model.rowCount() == 0
         if self._empty_label is None:
             return
-        self._empty_label.setGeometry(self.viewport().rect())
-        self._loading_label.setGeometry(self.viewport().rect())
-        self._scanning_label.setGeometry(self.viewport().rect())
+        # Only when the viewport actually changed: these labels cover the whole view,
+        # so re-applying their geometry on every update forced a full repaint.
+        viewport_rect = self.viewport().rect()
+        if viewport_rect != self._placeholder_rect:
+            self._placeholder_rect = viewport_rect
+            self._empty_label.setGeometry(viewport_rect)
+            self._loading_label.setGeometry(viewport_rect)
+            self._scanning_label.setGeometry(viewport_rect)
 
         import logging
         diag(
