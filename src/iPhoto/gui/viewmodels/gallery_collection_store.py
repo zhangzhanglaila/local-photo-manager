@@ -573,6 +573,16 @@ class GalleryCollectionStore:
         if dto is None:
             return
         dto.is_favorite = is_favorite
+
+        query = self._current_query
+        if query is not None and query.is_favorite and not is_favorite:
+            # The row no longer matches the active "favourites" filter. Leaving it in
+            # place produced a black tile: the model still reported the row while the
+            # query no longer returned it. Removing it keeps model and query in sync.
+            self.invalidate_count_cache()
+            self.remove_rows([row], emit=True)
+            return
+
         self.row_changed.emit(row)
 
     def update_asset_metadata(self, row: int, metadata: Dict[str, object]) -> None:
