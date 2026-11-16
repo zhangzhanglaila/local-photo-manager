@@ -43,7 +43,11 @@ def merge_scan_row(
 
     if existing_row is not None:
         for field in _PRESERVED_SCAN_STATE_FIELDS:
-            if field in existing_row and (field not in merged or merged.get(field) in (None, "")):
+            # Take the persisted value whenever it holds one. The scanner emits these
+            # fields with neutral defaults (``is_favorite: 0``), so the previous rule —
+            # "only fill when the scanned row lacks a value" — let a rescan wipe the
+            # user's favourites on every start.
+            if field in existing_row and existing_row.get(field) not in (None, ""):
                 merged[field] = existing_row.get(field)
 
     identity_unchanged = existing_row is not None and _asset_identity_unchanged(existing_row, merged)
