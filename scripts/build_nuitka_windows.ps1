@@ -52,6 +52,8 @@ $nativeBuildScript = Join-Path $repoRoot 'tools\osmand_render_helper_native\buil
 $nativeDistDir = Join-Path $repoRoot 'tools\osmand_render_helper_native\dist-msvc'
 $extensionBinDir = Join-Path $srcRoot 'maps\tiles\extension\bin'
 $faceModelDir = Join-Path $srcRoot 'extension\models'
+# CLIP lives at the repository root, not next to the face models.
+$clipModelDir = Join-Path $repoRoot 'extension\models\clip-vit-base-patch32'
 
 Assert-Exists $repoRoot
 Assert-Exists $srcRoot
@@ -70,9 +72,16 @@ if (-not $PythonExe) {
 }
 
 if (-not $IconPath) {
-    $defaultIcon = Join-Path $repoRoot 'logo_new.ico'
-    if (Test-Path $defaultIcon) {
-        $IconPath = $defaultIcon
+    # Prefer the generated application icon; fall back to the older repo logo.
+    $packagedIcon = Join-Path $repoRoot 'packaging\app.ico'
+    if (Test-Path $packagedIcon) {
+        $IconPath = $packagedIcon
+    }
+    else {
+        $defaultIcon = Join-Path $repoRoot 'logo_new.ico'
+        if (Test-Path $defaultIcon) {
+            $IconPath = $defaultIcon
+        }
     }
 }
 
@@ -118,8 +127,12 @@ $arguments = @(
     '--include-package=reverse_geocoder',
     '--include-package=insightface',
     '--include-package=onnxruntime',
+    # OCR models live inside the RapidOCR wheel; without this include they are dropped
+    # and text search silently stops working in the packaged build.
+    '--include-package=rapidocr_onnxruntime',
     "--output-dir=$OutputDir",
     "--include-data-dir=$faceModelDir=extension/models",
+    "--include-data-dir=$clipModelDir=extension/models/clip-vit-base-patch32",
     "--include-data-dir=$(Join-Path $srcRoot 'iPhoto\schemas')=iPhoto/schemas",
     "--include-data-dir=$(Join-Path $srcRoot 'iPhoto\gui\ui\icon')=iPhoto/gui/ui/icon",
     "--include-data-dir=$(Join-Path $srcRoot 'iPhoto\gui\ui\qml')=iPhoto/gui/ui/qml",
