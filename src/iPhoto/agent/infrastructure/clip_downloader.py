@@ -14,17 +14,37 @@ _MODEL_ID = "openai/clip-vit-base-patch32"
 
 
 def get_model_dir(library_root: Path) -> Path:
-    """Get the model directory for CLIP."""
-    # Use project directory instead of library root
-    # This ensures the model is stored with the application, not with user's photos
-    # File is at: src/iPhoto/agent/infrastructure/clip_downloader.py
-    # parents[0] = infrastructure/
-    # parents[1] = agent/
-    # parents[2] = iPhoto/
-    # parents[3] = src/
-    # parents[4] = project root
-    project_dir = Path(__file__).resolve().parents[4]
-    return project_dir / "extension" / "models"
+    """Get the model directory for CLIP.
+
+    Resolution order (same rule as the face models and the map extension):
+
+    1. ``IPHOTO_CLIP_MODEL_DIR`` — explicit override;
+    2. the packaged location ``<install>/extension/models``;
+    3. the source checkout ``<repo>/extension/models``.
+
+    The old code hardcoded ``parents[4]``, which resolves *above* the install
+    directory in a standalone build, so a packaged app could never find the model.
+    """
+
+    override = os.environ.get("IPHOTO_CLIP_MODEL_DIR")
+    if override:
+        return Path(override).expanduser()
+
+    module_path = Path(__file__).resolve()
+    # Source checkout: <repo>/src/iPhoto/... → parents[3] is ``src``.
+    # Standalone build: <install>/iPhoto/... → parents[3] is the install root.
+    install_root = module_path.parents[3]
+    if install_root.name.lower() == "src":
+        install_root = module_path.parents[4]
+
+    # An empty ``clip-vit-base-patch32`` directory exists in the checkout as a leftover,
+    # so require an actual model file rather than "the directory exists".
+    candidates = [install_root, module_path.parents[4], module_path.parents[3]]
+    for root in candidates:
+        model_dir = root / "extension" / "models"
+        if (model_dir / "clip-vit-base-patch32" / "config.json").is_file():
+            return model_dir
+    return install_root / "extension" / "models"
 
 
 def get_model_path(library_root: Path) -> Path:

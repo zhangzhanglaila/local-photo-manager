@@ -1388,15 +1388,13 @@ class MainCoordinator(QObject):
         from PySide6.QtCore import QThread, Signal
 
         # Get paths before starting thread
-        # __file__ = src/iPhoto/gui/coordinators/main_coordinator.py
-        # parents[0] = coordinators/
-        # parents[1] = gui/
-        # parents[2] = iPhoto/
-        # parents[3] = src/
-        # parents[4] = project root
-        project_root = Path(__file__).resolve().parents[4]
-        model_dir = project_root / 'extension' / 'models' / 'clip-vit-base-patch32'
+        # Resolve through the downloader so a packaged build and the
+        # IPHOTO_CLIP_MODEL_DIR override both work (a hardcoded parents[4] pointed
+        # outside the install directory once bundled).
+        from iPhoto.agent.infrastructure.clip_downloader import get_model_path
+
         library_root = Path(self._context.library.root())
+        model_dir = get_model_path(library_root)
         # Reuse the session's embedding service: it is warmed before the face scan
         # starts, so rebuilding a service here would reload the weights on every
         # single search.
