@@ -381,7 +381,14 @@ class GalleryGridView(AssetGrid):
 
         self._scrub_pending_row = row
         self._last_hover_row = row
-        self._last_scrub_at = time.monotonic()
+        now = time.monotonic()
+        previous = getattr(self, "_last_scrub_event_at", None)
+        if previous is not None:
+            # Gap between consecutive scrub events. The pointer moves every few ms, so a
+            # large gap means the main thread was busy elsewhere (not the loader).
+            diag("[DIAG] scrub event gap: %.0f ms", (now - previous) * 1000)
+        self._last_scrub_event_at = now
+        self._last_scrub_at = now
         setter = getattr(self._timeline_scrubber, "set_current_row", None)
         if callable(setter):
             setter(row)

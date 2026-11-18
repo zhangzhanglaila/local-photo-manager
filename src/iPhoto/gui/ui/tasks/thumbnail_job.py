@@ -139,7 +139,16 @@ class ThumbnailJob(QRunnable):
         if image is None:
             rel_for_path = self._cache_rel if self._cache_rel is not None else self._rel
             try:
+                _decode_started = time.monotonic()
                 image = self._render_media()
+                from ...utils.logging import diag
+
+                diag(
+                    "[DIAG] thumb decode: %.0f ms rel=%s cached=%s",
+                    (time.monotonic() - _decode_started) * 1000,
+                    self._rel,
+                    False,
+                )
             except (OSError, ValueError, np.linalg.LinAlgError):
                 LOGGER.exception("ThumbnailJob failed for %s (rel=%s)", self._abs_path, rel_for_path)
                 loader = getattr(self, "_loader", None)

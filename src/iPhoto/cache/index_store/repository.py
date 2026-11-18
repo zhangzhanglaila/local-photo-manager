@@ -15,6 +15,8 @@ Architecture:
 """
 from __future__ import annotations
 
+import time
+
 import json
 import sqlite3
 import threading
@@ -265,7 +267,15 @@ class AssetRepository:
                 conn.row_factory = None
 
             merged_rows = merge_scan_rows_payload(materialized_rows, existing_rows_by_rel)
+            _write_started = time.monotonic()
             self._insert_rows(conn, merged_rows)
+            from ..utils.logging import diag
+
+            diag(
+                "[DIAG] scan write: rows=%d txn=%.0f ms",
+                len(merged_rows),
+                (time.monotonic() - _write_started) * 1000,
+            )
 
         return merged_rows
 
