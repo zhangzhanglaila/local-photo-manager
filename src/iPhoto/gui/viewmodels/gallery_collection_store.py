@@ -1582,11 +1582,7 @@ class GalleryCollectionStore:
     def _reset_window_state(self) -> None:
         self._generation += 1
         self._row_cache.clear()
-        # Do NOT zero the row count here. The model reports ``count()`` as its row
-        # count, so zeroing it collapses the scrollbar range to nothing and the view
-        # snaps back to the top — that is why a timeline drag "stuck" at positions it
-        # had already passed. The next finished load sets the authoritative total; in
-        # between, the previous (still valid) count keeps the scrollbar stable.
+        self._total_count = 0
         self._window_range = None
         self._visible_range = None
         self._pinned_row = None
