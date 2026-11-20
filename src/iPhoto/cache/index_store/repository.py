@@ -269,7 +269,7 @@ class AssetRepository:
             merged_rows = merge_scan_rows_payload(materialized_rows, existing_rows_by_rel)
             _write_started = time.monotonic()
             self._insert_rows(conn, merged_rows)
-            from ..utils.logging import diag
+            from ...utils.logging import diag
 
             diag(
                 "[DIAG] scan write: rows=%d txn=%.0f ms",
