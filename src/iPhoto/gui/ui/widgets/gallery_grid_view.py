@@ -338,6 +338,21 @@ class GalleryGridView(AssetGrid):
         self._last_hover_row: int | None = None
         self._last_scrub_at: float = 0.0
         self._hover_anchor_y: int | None = None
+
+        # Main-thread stall probe (diag only): a 100 ms heartbeat whose *actual* interval
+        # reveals how often the UI thread was blocked, and for how long after startup.
+        import time as _time
+
+        self._stall_last = _time.monotonic()
+        self._stall_origin = self._stall_last
+        self._stall_timer = QTimer(self)
+        self._stall_timer.setInterval(100)
+        self._stall_timer.timeout.connect(self._probe_ui_stall)
+        from ....utils.logging import diag_enabled
+
+        if diag_enabled():
+            self._stall_timer.start()
+
         QTimer.singleShot(0, self._refresh_timeline)
 
     def _scrubber_y_to_view(self, y: int) -> int:
@@ -369,6 +384,21 @@ class GalleryGridView(AssetGrid):
         text = self._date_text_for_row(row)
         if text:
             self._show_date_badge(text, anchor)
+
+    def _probe_ui_stall(self) -> None:
+        """Log when the main thread was blocked longer than a frame budget."""
+
+        import time
+
+        now = time.monotonic()
+        gap = (now - self._stall_last) * 1000
+        self._stall_last = now
+        if gap > 250:
+            diag(
+                "[DIAG] ui stall: %.0f ms at %.0fs after grid start",
+                gap,
+                now - self._stall_origin,
+            )
 
     def _on_timeline_scrub(self, row: int, y: int) -> None:
         """Continuous scrubbing: the ball follows the pointer immediately.
