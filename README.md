@@ -314,6 +314,63 @@ pip install -e .
 
 ---
 
+## 当前项目状态（2026-11-20）
+
+### 启动方式
+
+| 方式 | 命令 / 入口 | 说明 |
+|---|---|---|
+| 桌面快捷方式 | `iPhotron.lnk` → `pythonw.exe run_iphoto.pyw` | 无控制台窗口；图标在 `%LOCALAPPDATA%\iPhoto\app.ico` |
+| 快捷方式（排障） | `iPhotron (日志).lnk` → `python.exe -m iPhoto.gui.main` | 显示控制台输出 |
+| 命令行 | `.venv\Scripts\python.exe -m iPhoto.gui.main` | 与上方等价 |
+
+`run_iphoto.pyw` 是必需的：`pythonw.exe` 启动时 `stdout`/`stderr` 为 `None`，应用写日志时会在窗口出现前退出，表现为"双击无反应"。启动器会把两个流接到 `%LOCALAPPDATA%\iPhoto\launcher.*`。
+
+### 打包（已准备，尚未构建）
+
+- `scripts/build_nuitka_windows.ps1`：Nuitka `--standalone`（onedir 形态），已包含 RapidOCR 包与 CLIP 模型目录；
+- `packaging/app.ico` + `packaging/make_icon*.py`：应用图标（多尺寸，含手工 ICO 生成器）；
+- `packaging/iPhotron.iss`：Inno Setup 安装器（装到 `%LOCALAPPDATA%\Programs\iPhotron`，免管理员，桌面/开始菜单快捷方式）；
+- `packaging/install_shortcuts.ps1`：重建桌面快捷方式（图标必须放在用户目录，仓库目录的 ACL 会让 Explorer 读不到图标文件）。
+
+CLIP 模型路径已支持打包布局与 `IPHOTO_CLIP_MODEL_DIR` 覆盖（此前硬编码 `parents[4]`，打包后指向安装目录之上一级）。
+
+### 本轮重构（结构类）
+
+| 项 | 内容 |
+|---|---|
+| 启动编排 | `bootstrap/startup_sequence.py`：阶段列表驱动，删除 `_step5_executed` 等散落标志 |
+| 加载提示 | 收敛为单一 `StartupOverlay`，移除 `_startup_overlay_active` 这类"用开关压制另一套 UI"的补丁 |
+| 搜索 | `config.SearchSettings` + `application/search/embedding_cache.py`，阈值覆盖改由配置提供 |
+| 工作区 | 嵌套目录迁移从路径 getter 移到 `bootstrap/workspace_migration.py`，启动时显式执行一次 |
+| 图库计数 | 缓存键规范化，并在扫描完成后主动失效 |
+| 异常处理 | 部分 `except Exception: pass` 收窄为具体异常并记日志（进行中） |
+
+### 本轮修复
+
+- **收藏不持久**：扫描合并会把 `is_favorite` 覆盖成默认 0，已改为"库管理字段以持久化值为准"；
+- **收藏里取消后出现黑块**：该行不再属于当前查询，现会立即从集合移除；
+- **部分 iPhone HEIC 无法解码**：pillow-heif 的安全上限（`ipco` 子 box > 100）导致，已放宽；
+- **扫描批次写库全部失败**：诊断埋点的相对导入层级写错（`iPhoto.cache.utils`），已修正；
+- **拖动圆球被拽回**：重置窗口状态时不再把行数清零，模型与滚动范围保持稳定。
+
+### 已知问题
+
+- **首次冷启动明显更慢**：操作系统的文件缓存与 Windows Defender 首次扫描所致；同一会话内再次启动会快很多（进程状态仍然全部重建，快的是 OS 缓存）。
+- **扫描早期拖动时间轴卡顿**：实测主线程停顿 p90 约 240ms、最坏 7.5 秒，约 60–70 秒后消失；窗口加载本身仅约 50ms，瓶颈在主线程上的启动期任务，尚未定位到具体一处。
+- **完整测试套件在本机会触发 Qt 退出期的原生崩溃**（`Windows fatal exception: access violation`），因此日常以定向子集 + `py_compile` + 实机启动截图验证。
+
+### 新增环境变量
+
+| 变量 | 作用 |
+|---|---|
+| `IPHOTO_CLIP_MODEL_DIR` | 覆盖 CLIP 模型目录（打包/自定义部署） |
+| `IPHOTO_SEARCH_MIN_SIM` | 覆盖语义搜索相似度下限（默认 0.24） |
+| `IPHOTO_SEARCH_MAX_RESULTS` | 覆盖返回条数上限（默认 300） |
+| `IPHOTO_DIAG` | 输出 `[DIAG]` 诊断日志（窗口加载耗时、主线程停顿等） |
+
+---
+
 ## 许可证
 
 MIT License
