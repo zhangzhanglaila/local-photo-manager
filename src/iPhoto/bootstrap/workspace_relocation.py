@@ -40,7 +40,13 @@ def _directory_size(path: Path) -> int:
     return total
 
 
-def relocate_workspace(source: Path, destination: Path, *, overwrite: bool = False) -> RelocationResult:
+def relocate_workspace(
+    source: Path,
+    destination: Path,
+    *,
+    overwrite: bool = False,
+    on_progress=None,
+) -> RelocationResult:
     """Copy the workspace at *source* to *destination*.
 
     Raises :class:`RelocationError` when the destination is unusable or the copy fails;
@@ -68,9 +74,22 @@ def relocate_workspace(source: Path, destination: Path, *, overwrite: bool = Fal
     else:
         already_existed = False
 
+    total_bytes = _directory_size(source)
     try:
         destination.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source, destination, dirs_exist_ok=True)
+        copied_so_far = 0
+        for item in source.rglob("*"):
+            target = destination / item.relative_to(source)
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if not item.is_file():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+            copied_so_far += item.stat().st_size
+            if on_progress is not None:
+                on_progress(copied_so_far, total_bytes)
     except OSError as exc:
         raise RelocationError(f"copy failed: {exc}") from exc
 

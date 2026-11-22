@@ -308,6 +308,15 @@ _ZH: dict[str, str] = {
     "action.smart_album_theme": "按主题创建相册",
     "search.tips_title": "搜索技巧",
     "search.tips": "搜索提示：\n\n1. 使用英文关键词效果更好（如 'yellow crane tower' 而非 '黄鹤楼'）\n2. 使用描述性词语（如 'Chinese tower', 'landmark', 'building'）\n3. 可以组合多个关键词（如 'sunset beach summer'）\n4. 支持场景、物体、活动等描述",
+    "action.change_workspace": "更改存储位置…",
+    "dialog.select_workspace_location": "选择新的存储位置",
+    "dialog.workspace_relocate_title": "更改存储位置",
+    "dialog.workspace_relocate_no_workspace": "当前库还没有工作区，无法迁移。",
+    "dialog.workspace_relocate_same": "选择的位置与当前存储位置相同。",
+    "dialog.workspace_relocate_confirm": "将把工作区复制到：\\n{destination}\\n\\n复制并校验成功后会删除旧目录，且需要重启应用才能生效。继续吗？",
+    "dialog.workspace_relocate_copying": "正在迁移工作区…",
+    "dialog.workspace_relocate_failed": "迁移失败，原目录已保留：\\n{error}",
+    "dialog.workspace_relocate_done": "迁移完成：\\n{destination}\\n\\n请重启应用以使用新的存储位置。",
 }
 
 _EN: dict[str, str] = {
@@ -600,6 +609,15 @@ _EN: dict[str, str] = {
     "action.smart_album_theme": "Create Album by Theme",
     "search.tips_title": "Search Tips",
     "search.tips": "Search Tips:\n\n1. English keywords work better (e.g., 'yellow crane tower' instead of '黄鹤楼')\n2. Use descriptive words (e.g., 'Chinese tower', 'landmark', 'building')\n3. Combine multiple keywords (e.g., 'sunset beach summer')\n4. Supports scenes, objects, activities descriptions",
+    "action.change_workspace": "Change Storage Location…",
+    "dialog.select_workspace_location": "Select the new storage location",
+    "dialog.workspace_relocate_title": "Change Storage Location",
+    "dialog.workspace_relocate_no_workspace": "This library has no workspace to relocate yet.",
+    "dialog.workspace_relocate_same": "The selected folder is the current storage location.",
+    "dialog.workspace_relocate_confirm": "The workspace will be copied to:\\n{destination}\\n\\nThe old folder is removed after a verified copy, and the app must restart. Continue?",
+    "dialog.workspace_relocate_copying": "Moving the workspace…",
+    "dialog.workspace_relocate_failed": "Relocation failed; the original folder was kept:\\n{error}",
+    "dialog.workspace_relocate_done": "Relocation finished:\\n{destination}\\n\\nRestart the app to use the new location.",
 }
 
 

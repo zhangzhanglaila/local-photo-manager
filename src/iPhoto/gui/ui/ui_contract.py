@@ -20,6 +20,7 @@ WIRED_UI_ATTRS: Final[tuple[str, ...]] = (
     "albums_dashboard_page",
     "back_button",
     "bind_library_action",
+    "change_workspace_action",
     "close_button",
     "detail_page",
     "download_map_extension_action",

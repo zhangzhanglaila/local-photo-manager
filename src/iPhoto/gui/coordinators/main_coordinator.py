@@ -699,6 +699,7 @@ class MainCoordinator(QObject):
 
         # Navigation
         self._navigation.bindLibraryRequested.connect(self._dialog.bind_library_dialog)
+        ui.change_workspace_action.triggered.connect(self._on_change_workspace)
         ui.bind_library_action.triggered.connect(self._dialog.bind_library_dialog)
         self._detail_vm.edit_requested.connect(self._edit.enter_edit_mode)
 
@@ -2273,6 +2274,22 @@ class MainCoordinator(QObject):
             self._status_bar.show_message(
                 tr("organize.albums_created",
                    default=f"Created {total_albums} smart albums")
+            )
+
+    def _on_change_workspace(self) -> None:
+        """Copy the workspace to a new folder, then switch the setting."""
+
+        from ..ui.controllers.workspace_relocation_controller import (
+            relocate_workspace_interactively,
+        )
+
+        root = self._context.library.root()
+        changed = relocate_workspace_interactively(
+            self._window, root, self._context.settings
+        )
+        if changed:
+            self._status_bar.show_message(
+                "存储位置已更改，请重启应用以生效。", 8000
             )
 
     def _handle_open_album_dialog(self):

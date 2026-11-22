@@ -421,6 +421,10 @@ class MainHeaderWidget(QWidget):
         self._agent_menu.addAction(self.smart_album_theme_action)
 
         self._settings_menu = self.menu_bar.addMenu(tr("menu.settings"))
+        self.change_workspace_action = QAction(
+            tr("action.change_workspace"), self
+        )
+        self._settings_menu.addAction(self.change_workspace_action)
         self._settings_menu.addAction(self.bind_library_action)
         self._settings_menu.addAction(self.download_map_extension_action)
         self._settings_menu.addSeparator()
