@@ -155,6 +155,28 @@ class MapExtensionDownloadController:
                 self._progress_dialog.activateWindow()
             return
 
+        # The map can be fully usable from an extension that is already on disk while the
+        # menu still offered a download (the "installed" check resolved a different root).
+        # Never download on top of a complete installation.
+        try:
+            from ...maps.map_sources import has_installed_osmand_extension
+        except Exception:  # pragma: no cover - import guard only
+            has_installed_osmand_extension = None
+        installed = False
+        if callable(has_installed_osmand_extension):
+            # Check the controller's root first, then the canonical package root: the
+            # resolved root used to differ, which made a complete install look missing.
+            installed = has_installed_osmand_extension(self._package_root) or (
+                has_installed_osmand_extension(None)
+            )
+        if installed:
+            QMessageBox.information(
+                self._parent,
+                "Map Extension",
+                "The offline map extension is already installed.",
+            )
+            return
+
         if not supports_map_extension_download():
             QMessageBox.warning(
                 self._parent,
