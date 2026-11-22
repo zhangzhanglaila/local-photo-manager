@@ -47,6 +47,21 @@ def relocate_workspace_interactively(
         )
         return False
 
+    # Show where the data lives right now *before* asking for a new folder: the picker
+    # alone gave no context, so it was impossible to tell what was being changed.
+    preview = QMessageBox(parent)
+    preview.setIcon(QMessageBox.Icon.Information)
+    preview.setWindowTitle(tr("dialog.workspace_relocate_title"))
+    preview.setText(tr("dialog.workspace_current_location", path=str(current)))
+    preview.setInformativeText(tr("dialog.workspace_change_prompt"))
+    change_button = preview.addButton(
+        tr("action.change_workspace"), QMessageBox.ButtonRole.AcceptRole
+    )
+    preview.addButton(QMessageBox.StandardButton.Cancel)
+    preview.exec()
+    if preview.clickedButton() is not change_button:
+        return False
+
     start = get_custom_workspace_base() or current.parent
     chosen = dialogs.select_directory(
         parent, tr("dialog.select_workspace_location"), start=Path(start)
