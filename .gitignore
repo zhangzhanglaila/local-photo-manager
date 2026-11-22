@@ -264,3 +264,6 @@ exiftool.bat
 
 # Photo-library workspace created when this checkout is itself opened as a library
 /.iPhoto/
+
+# 地图扩展安装时产生的备份副本，体积近 1GB，不应提交
+src/maps/tiles/extension.backup/
