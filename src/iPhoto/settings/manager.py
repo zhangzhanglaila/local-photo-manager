@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import os
 import sys
 from copy import deepcopy
@@ -13,6 +15,8 @@ from PySide6.QtCore import QObject, Signal
 from ..errors import SettingsLoadError, SettingsValidationError
 from ..utils.jsonio import read_json, write_json
 from .schema import DEFAULT_SETTINGS, merge_with_defaults
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def default_settings_path() -> Path:
@@ -60,7 +64,13 @@ class SettingsManager(QObject):
             self._data = merge_with_defaults(payload)
         except Exception as exc:  # pragma: no cover - defensive guard
             raise SettingsValidationError(str(exc)) from exc
-        self._write()
+        # Loading rewrites the file (it normalises the payload), but that write is not
+        # essential: when another instance holds the file the app used to die at startup
+        # with PermissionError. A failed normalisation write must not prevent starting.
+        try:
+            self._write()
+        except OSError:
+            _LOGGER.warning("could not persist normalised settings", exc_info=True)
 
     def get(self, key: str, default: Any | None = None) -> Any:
         """Return the value for *key*, supporting dotted access for nested keys."""
