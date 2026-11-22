@@ -38,8 +38,14 @@ def relocate_workspace_interactively(
     Returns True when the relocation succeeded (a restart is then required).
     """
 
-    current = _current_workspace(library_root)
-    if current is None or not current.is_dir():
+    # The storage location is the workspace *base* (e.g. D:\iPhotronWorkspace): every
+    # library lives in its own subfolder underneath, so migrating one subfolder would be
+    # wrong. Migrate the whole tree.
+    library_workspace = _current_workspace(library_root)
+    current = get_custom_workspace_base() or (
+        library_workspace.parent if library_workspace is not None else None
+    )
+    if current is None or not Path(current).is_dir():
         QMessageBox.warning(
             parent,
             tr("dialog.workspace_relocate_title"),
@@ -69,9 +75,8 @@ def relocate_workspace_interactively(
     if chosen is None:
         return False
 
-    library_name = current.name
-    destination = Path(chosen) / library_name
-    if destination == current:
+    destination = Path(chosen)
+    if destination == Path(current):
         QMessageBox.information(
             parent,
             tr("dialog.workspace_relocate_title"),
@@ -105,7 +110,7 @@ def relocate_workspace_interactively(
 
     try:
         result = relocate_workspace(
-            current, destination, overwrite=False, on_progress=on_progress
+            Path(current), destination, overwrite=True, on_progress=on_progress
         )
     except RelocationError as exc:
         progress.close()
@@ -121,7 +126,7 @@ def relocate_workspace_interactively(
 
     # Verified copy succeeded; the old directory is only removed now.
     try:
-        shutil.rmtree(current)
+        shutil.rmtree(Path(current))
     except OSError:
         _LOGGER.warning("could not remove the previous workspace %s", current, exc_info=True)
 
