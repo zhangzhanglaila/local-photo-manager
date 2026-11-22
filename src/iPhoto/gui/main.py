@@ -271,11 +271,13 @@ def _resolve_app_icon():
     candidates = []
     local = os.environ.get("LOCALAPPDATA")
     if local:
+        candidates.append(Path(local) / "iPhoto" / "app.png")
         candidates.append(Path(local) / "iPhoto" / "app.ico")
     module_path = Path(__file__).resolve()
     # source checkout: <repo>/src/iPhoto/gui/main.py -> parents[3] = <repo>
     for depth in (3, 4):
         try:
+            candidates.append(module_path.parents[depth] / "packaging" / "app.png")
             candidates.append(module_path.parents[depth] / "packaging" / "app.ico")
         except IndexError:
             continue
@@ -411,6 +413,21 @@ def main(argv: list[str] | None = None) -> int:
     context = RuntimeContext.create(defer_startup=True)
     # --- Phase 4: Coordinator Wiring ---
     window = MainWindow(context)
+
+    # The taskbar button follows the *window* icon (WM_SETICON). Setting it only on the
+    # QApplication left pythonw.exe's icon in place, so set it on the window itself and
+    # prefer a PNG, which Qt loads more reliably than an .ico.
+    window_icon = _resolve_app_icon()
+    if window_icon is not None:
+        try:
+            from PySide6.QtGui import QIcon
+
+            icon = QIcon(str(window_icon))
+            if not icon.isNull():
+                window.setWindowIcon(icon)
+                _logger.info("window icon: %s", window_icon)
+        except Exception:
+            _logger.debug("could not set the window icon", exc_info=True)
 
     # Startup overlay — shown immediately so the user sees progress feedback.
     from iPhoto.bootstrap.startup_sequence import StartupSequence
