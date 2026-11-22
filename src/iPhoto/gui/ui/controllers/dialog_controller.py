@@ -40,10 +40,29 @@ class DialogController:
     # Public API
     # ------------------------------------------------------------------
     def open_album_dialog(self) -> Optional[Path]:
-        return dialogs.select_directory(self._parent, tr("dialog.select_album"))
+        # Start where the photos are, not in the process working directory: an empty
+        # start path made the file dialog open the repository folder.
+        return dialogs.select_directory(
+            self._parent,
+            tr("dialog.select_album"),
+            start=self._dialog_start_directory(),
+        )
+
+    def _dialog_start_directory(self) -> Optional[Path]:
+        """Return a sensible directory for folder pickers."""
+
+        root = self._context.library.root()
+        if root is not None and Path(root).is_dir():
+            return Path(root)
+        pictures = Path.home() / "Pictures"
+        return pictures if pictures.is_dir() else Path.home()
 
     def bind_library_dialog(self) -> Optional[Path]:
-        root = dialogs.select_directory(self._parent, tr("dialog.select_basic_library"))
+        root = dialogs.select_directory(
+            self._parent,
+            tr("dialog.select_basic_library"),
+            start=self._dialog_start_directory(),
+        )
         if root is None:
             _logger.info("bind_library_dialog: user cancelled folder selection")
             return None
