@@ -263,6 +263,28 @@ def _install_global_exception_hook() -> None:
     threading.excepthook = _thread_excepthook
 
 
+def _resolve_app_icon():
+    """Return the application icon file, preferring a location Explorer can read."""
+
+    from pathlib import Path
+
+    candidates = []
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        candidates.append(Path(local) / "iPhoto" / "app.ico")
+    module_path = Path(__file__).resolve()
+    # source checkout: <repo>/src/iPhoto/gui/main.py -> parents[3] = <repo>
+    for depth in (3, 4):
+        try:
+            candidates.append(module_path.parents[depth] / "packaging" / "app.ico")
+        except IndexError:
+            continue
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     """Launch the Qt application and return the exit code."""
 
@@ -295,6 +317,20 @@ def main(argv: list[str] | None = None) -> int:
         "qt.qpa.opengl*=false;qt.opengl*=false"
     )
     app = QApplication(arguments)
+
+    # The taskbar / Alt-Tab icon comes from the *window* icon, and a process started as
+    # ``pythonw.exe`` otherwise shows Python's icon. Set it explicitly from the packaged
+    # icon (or the copy in the user profile, which Explorer can always read).
+    icon_path = _resolve_app_icon()
+    if icon_path is not None:
+        try:
+            from PySide6.QtGui import QIcon
+
+            app.setWindowIcon(QIcon(str(icon_path)))
+            _logger.info("application icon: %s", icon_path)
+        except Exception:
+            _logger.debug("could not set the application icon", exc_info=True)
+
 
     # Allow Ctrl+C to terminate the app on Windows, even when the UI thread
     # is completely frozen in native code.  Python's signal handler cannot run
