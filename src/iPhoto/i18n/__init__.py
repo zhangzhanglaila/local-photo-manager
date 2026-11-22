@@ -20,9 +20,9 @@ _current: str = "zh"
 
 _ZH: dict[str, str] = {
     # -- Menu: File --
-    "menu.file": "&File",
-    "menu.view": "&View",
-    "menu.settings": "&Settings",
+    "menu.file": "文件(&F)",
+    "menu.view": "视图(&V)",
+    "menu.settings": "设置(&S)",
     "action.open_album": "打开相册文件夹…",
     "action.rescan": "重新扫描",
     "action.rebuild_links": "重建实况链接",
@@ -603,6 +603,22 @@ _EN: dict[str, str] = {
 }
 
 
+_REVERSE_EN: dict[str, str] = {}
+
+
+def translate_qt(context: str, source: str, disambiguation: str | None = None) -> str:
+    """Translate a Qt-style `(context, source)` pair via the app dictionaries.
+
+    The window calls used `QCoreApplication.translate`, but no `.qm` catalogue ships
+    with the app, so those strings stayed English even when the language was Chinese.
+    """
+
+    if not _REVERSE_EN:
+        _REVERSE_EN.update({value: key for key, value in _EN.items()})
+    key = _REVERSE_EN.get(source)
+    return tr(key) if key else source
+
+
 def tr(key: str, **kwargs: object) -> str:
     """Return the translation for *key* in the current language.
 
@@ -663,4 +679,4 @@ class LanguageStore(QObject):
             self.languageChanged.emit(value)
 
 
-__all__ = ["LanguageStore", "current_language", "set_language", "tr"]
+__all__ = ["LanguageStore", "current_language", "set_language", "tr", "translate_qt"]

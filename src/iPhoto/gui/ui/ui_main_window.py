@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ...i18n import translate_qt
+
 import os
 import sys
 
@@ -313,33 +315,33 @@ class Ui_MainWindow(object):
         """Apply translatable strings to the window."""
 
         MainWindow.setWindowTitle(
-            QCoreApplication.translate("MainWindow", "iPhoto", None)
+            translate_qt("MainWindow", "iPhoto", None)
         )
         self.window_title_label.setText(MainWindow.windowTitle())
         self.minimize_button.setToolTip(
-            QCoreApplication.translate("MainWindow", "Minimize", None)
+            translate_qt("MainWindow", "Minimize", None)
         )
         self.fullscreen_button.setToolTip(
-            QCoreApplication.translate("MainWindow", "Enter Full Screen", None)
+            translate_qt("MainWindow", "Enter Full Screen", None)
         )
         self.close_button.setToolTip(
-            QCoreApplication.translate("MainWindow", "Close", None)
+            translate_qt("MainWindow", "Close", None)
         )
         self.selection_button.setText(
-            QCoreApplication.translate("MainWindow", "Select", None)
+            translate_qt("MainWindow", "Select", None)
         )
         self.selection_button.setToolTip(
-            QCoreApplication.translate(
+            translate_qt(
                 "MainWindow",
                 "Toggle multi-selection mode",
                 None,
             )
         )
         self.edit_adjust_action.setText(
-            QCoreApplication.translate("MainWindow", "Adjust", None)
+            translate_qt("MainWindow", "Adjust", None)
         )
         self.edit_crop_action.setText(
-            QCoreApplication.translate("MainWindow", "Crop", None)
+            translate_qt("MainWindow", "Crop", None)
         )
         self.edit_mode_control.setItems(
             (
@@ -348,57 +350,57 @@ class Ui_MainWindow(object):
             )
         )
         self.edit_compare_button.setToolTip(
-            QCoreApplication.translate(
+            translate_qt(
                 "MainWindow",
                 "Press and hold to preview the unedited photo",
                 None,
             )
         )
         self.edit_reset_button.setText(
-            QCoreApplication.translate("MainWindow", "Revert to Original", None)
+            translate_qt("MainWindow", "Revert to Original", None)
         )
         self.edit_reset_button.setToolTip(
-            QCoreApplication.translate(
+            translate_qt(
                 "MainWindow",
                 "Restore every adjustment to its original value",
                 None,
             )
         )
         self.edit_done_button.setText(
-            QCoreApplication.translate("MainWindow", "Done", None)
+            translate_qt("MainWindow", "Done", None)
         )
         self.open_album_action.setText(
-            QCoreApplication.translate("MainWindow", "Open Album Folder…", None)
+            translate_qt("MainWindow", "Open Album Folder…", None)
         )
         self.rescan_action.setText(
-            QCoreApplication.translate("MainWindow", "Rescan", None)
+            translate_qt("MainWindow", "Rescan", None)
         )
         self.rebuild_links_action.setText(
-            QCoreApplication.translate("MainWindow", "Rebuild Live Links", None)
+            translate_qt("MainWindow", "Rebuild Live Links", None)
         )
         self.bind_library_action.setText(
-            QCoreApplication.translate("MainWindow", "Set Basic Library…", None)
+            translate_qt("MainWindow", "Set Basic Library…", None)
         )
         self.download_map_extension_action.setText(
-            QCoreApplication.translate("MainWindow", "Download Map Extension…", None)
+            translate_qt("MainWindow", "Download Map Extension…", None)
         )
         self.toggle_filmstrip_action.setText(
-            QCoreApplication.translate("MainWindow", "Show Filmstrip", None)
+            translate_qt("MainWindow", "Show Filmstrip", None)
         )
         self.share_action_copy_file.setText(
-            QCoreApplication.translate("MainWindow", "Copy File", None)
+            translate_qt("MainWindow", "Copy File", None)
         )
         self.share_action_copy_path.setText(
-            QCoreApplication.translate("MainWindow", "Copy Path", None)
+            translate_qt("MainWindow", "Copy Path", None)
         )
         self.share_action_reveal_file.setText(
-            QCoreApplication.translate("MainWindow", "Reveal in File Manager", None)
+            translate_qt("MainWindow", "Reveal in File Manager", None)
         )
         self.wheel_action_navigate.setText(
-            QCoreApplication.translate("MainWindow", "Navigate", None)
+            translate_qt("MainWindow", "Navigate", None)
         )
         self.wheel_action_zoom.setText(
-            QCoreApplication.translate("MainWindow", "Zoom", None)
+            translate_qt("MainWindow", "Zoom", None)
         )
 
 
