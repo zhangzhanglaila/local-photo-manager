@@ -36,6 +36,11 @@ from maps.map_sources import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+# Two entry points (startup prompt and the settings action) each own a controller, so a
+# single download could open two dialogs and show two progress bars. This holds the
+# controller that is currently downloading so the other one can just raise its dialog.
+_ACTIVE_DOWNLOAD = None
 _SHOW_STARTUP_PROMPT_KEY = "ui.show_map_extension_startup_prompt"
 
 
@@ -105,6 +110,9 @@ class MapExtensionDownloadController:
         self._package_root = Path(package_root).resolve()
         self._progress_dialog: _MapExtensionProgressDialog | None = None
         self._download_inflight = False
+        global _ACTIVE_DOWNLOAD
+        if _ACTIVE_DOWNLOAD is self:
+            _ACTIVE_DOWNLOAD = None
         self._latest_result: MapExtensionDownloadResult | None = None
         self._active_worker: MapExtensionDownloadWorker | None = None
         self._temporarily_hidden_windows: list[QWidget] = []
@@ -149,6 +157,17 @@ class MapExtensionDownloadController:
 
     def start_download(self, *, source: str) -> None:
         del source
+        global _ACTIVE_DOWNLOAD
+        if (
+            _ACTIVE_DOWNLOAD is not None
+            and _ACTIVE_DOWNLOAD is not self
+            and _ACTIVE_DOWNLOAD._download_inflight
+        ):
+            other = _ACTIVE_DOWNLOAD._progress_dialog
+            if other is not None:
+                other.raise_()
+                other.activateWindow()
+            return
         if self._download_inflight:
             if self._progress_dialog is not None:
                 self._progress_dialog.raise_()
@@ -156,20 +175,13 @@ class MapExtensionDownloadController:
             return
 
         # The map can be fully usable from an extension that is already on disk while the
-        # menu still offered a download (the "installed" check resolved a different root).
-        # Never download on top of a complete installation.
-        try:
-            from ...maps.map_sources import has_installed_osmand_extension
-        except Exception:  # pragma: no cover - import guard only
-            has_installed_osmand_extension = None
-        installed = False
-        if callable(has_installed_osmand_extension):
-            # Check the controller's root first, then the canonical package root: the
-            # resolved root used to differ, which made a complete install look missing.
-            installed = has_installed_osmand_extension(self._package_root) or (
-                has_installed_osmand_extension(None)
-            )
-        if installed:
+        # menu still offered a download. Check both the controller's root and the
+        # canonical package root — they resolved differently, which made a complete
+        # install look missing. (The name is imported at module level; a local import
+        # here used the wrong relative depth and silently disabled this guard.)
+        if has_installed_osmand_extension(self._package_root) or (
+            has_installed_osmand_extension(None)
+        ):
             QMessageBox.information(
                 self._parent,
                 "Map Extension",
@@ -186,6 +198,7 @@ class MapExtensionDownloadController:
             return
 
         self._download_inflight = True
+        _ACTIVE_DOWNLOAD = self
         self._latest_result = None
         self._hide_blocking_top_level_windows()
         self._progress_dialog = _MapExtensionProgressDialog(self._parent)
@@ -255,6 +268,9 @@ class MapExtensionDownloadController:
 
     def _handle_finished(self) -> None:
         self._download_inflight = False
+        global _ACTIVE_DOWNLOAD
+        if _ACTIVE_DOWNLOAD is self:
+            _ACTIVE_DOWNLOAD = None
         self._active_worker = None
 
     def _recover_pending_install_on_startup(self) -> None:
