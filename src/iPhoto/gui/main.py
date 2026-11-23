@@ -469,8 +469,24 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
                 return False
 
         def _reveal() -> None:
+            # Windows refuses SetForegroundWindow for a process that is not already in
+            # front, so flash the window as top-most: that always raises it, and the flag
+            # is cleared right after so it does not stay pinned above other apps.
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            window.show()
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
             window.show()
             _bring_to_front()
+
+            def _release_topmost() -> None:
+                try:
+                    window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+                    window.show()
+                    _bring_to_front()
+                except RuntimeError:
+                    pass
+
+            QTimer.singleShot(900, _release_topmost)
             try:
                 splash.close()
             except (RuntimeError, AttributeError):
