@@ -34,7 +34,12 @@ class SplashScreen(QWidget):
     """Frameless branded splash: icon, product name, status line, thin progress bar."""
 
     def __init__(self) -> None:
-        super().__init__(None, Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint)
+        super().__init__(
+            None,
+            Qt.WindowType.SplashScreen
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(460, 300)
 

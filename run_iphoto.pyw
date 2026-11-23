@@ -43,8 +43,13 @@ def main() -> int:
     try:
         from iPhoto.gui.ui.widgets.splash_screen import SplashScreen
 
+        import time as _time
+
         splash = SplashScreen()
+        splash._splash_shown_at = _time.monotonic()
         splash.show()
+        splash.raise_()
+        splash.activateWindow()
         app.processEvents()
     except Exception:  # noqa: BLE001 - never block startup on cosmetics
         splash = None
