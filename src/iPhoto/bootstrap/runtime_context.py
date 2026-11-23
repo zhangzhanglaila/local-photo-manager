@@ -169,45 +169,51 @@ class RuntimeContext:
         return not has_workspace_config
 
     def show_welcome_wizard(self) -> Optional[Path]:
-        """显示欢迎向导，返回用户选择的工作目录基础路径。
+        """Run the first-launch setup wizard and persist its choices.
 
-        Returns:
-            用户选择的工作目录基础路径，如果选择传统模式则返回 None
+        Returns the chosen workspace base, or `None` when the user cancelled.
         """
+
         try:
-            from ..gui.ui.widgets import WelcomeWizard
             from PySide6.QtWidgets import QApplication
 
-            _logger.info("show_welcome_wizard: Creating WelcomeWizard")
+            from ..gui.ui.widgets.setup_wizard import SetupWizard
+            from ..utils.pathutils import get_custom_workspace_base
 
-            # 获取主窗口作为父窗口
             app = QApplication.instance()
             parent = app.activeWindow() if app else None
+            wizard = SetupWizard(
+                parent,
+                initial_library=self.library.root(),
+                initial_workspace=get_custom_workspace_base(),
+            )
+            if not wizard.show_and_wait():
+                _logger.info("setup wizard cancelled")
+                return None
 
-            _logger.info("show_welcome_wizard: parent window = %s", parent)
+            library_path = wizard.library_path()
+            current_root = self.library.root()
+            if library_path is not None and library_path != current_root:
+                try:
+                    self.library.add_root(library_path)
+                except OSError as exc:
+                    _logger.warning("could not add the chosen library: %s", exc)
 
-            wizard = WelcomeWizard(parent)
+            workspace_base = wizard.workspace_base()
+            self.settings.set("workspace_base", str(workspace_base) if workspace_base else None)
 
-            _logger.info("show_welcome_wizard: Showing wizard dialog")
+            for key, value in wizard.ai_options().items():
+                self.settings.set(f"ai.{key}", bool(value))
+            self.settings.set("setup.completed", True)
 
-            # 模态显示并等待用户选择
-            workspace_base = wizard.show_and_wait()
-
-            _logger.info("show_welcome_wizard: User selected workspace_base = %s", workspace_base)
-
-            # 保存到设置
-            if workspace_base is not None:
-                self.settings.set("workspace_base", str(workspace_base))
-            else:
-                # 如果选择传统模式，确保 workspace_base 为 None
-                self.settings.set("workspace_base", None)
-
+            _logger.info(
+                "setup wizard finished: library=%s workspace=%s",
+                library_path,
+                workspace_base,
+            )
             return workspace_base
-
-        except Exception as exc:
-            _logger.error("Failed to show welcome wizard: %s", exc)
-            import traceback
-            traceback.print_exc()
+        except (ImportError, RuntimeError, OSError):
+            _logger.exception("setup wizard failed")
             return None
 
     @classmethod

@@ -335,3 +335,8 @@ class SetupWizard(QDialog):
             "face_scan_enabled": self._enable_face,
             "ocr_scan_enabled": self._enable_ocr,
         }
+
+    def show_and_wait(self) -> bool:
+        """Run modally and return True when the user completed the wizard."""
+
+        return self.exec() == QDialog.DialogCode.Accepted
