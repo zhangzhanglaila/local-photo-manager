@@ -458,7 +458,27 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
     if splash is None:
         overlay.show_overlay()
     window.show()
-    _bring_to_front()
+    # Windows ignores SetForegroundWindow for a process that is not already in front, so
+    # pin the window above everything for a moment: that always brings it up, and the
+    # flag is removed again so it does not stay on top of other applications.
+    def _pin_topmost() -> None:
+        try:
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            window.show()
+            _bring_to_front()
+            QTimer.singleShot(1800, _unpin_topmost)
+        except RuntimeError:
+            pass
+
+    def _unpin_topmost() -> None:
+        try:
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+            window.show()
+            _bring_to_front()
+        except RuntimeError:
+            pass
+
+    _pin_topmost()
     if splash is not None:
         # The splash covers module import only; waiting for gallery data made startup
         # take 20s+ because the first rows arrive long after the window is usable.
