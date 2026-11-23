@@ -38,6 +38,130 @@ FACE_MODEL_MB = 325
 OCR_MODEL_MB = 13
 
 
+ACCENT = "#7b5e3b"
+ACCENT_SOFT = "#efe7dc"
+PANEL = "#faf8f5"
+BORDER = "#e6e1d8"
+MUTED = "#8a857c"
+
+STYLE_SHEET = f"""
+QDialog {{ background: white; }}
+QWidget#sidePanel {{ background: {PANEL}; }}
+QListWidget#setupSteps {{
+    background: transparent; border: none; outline: none;
+    padding: 12px;
+}}
+QListWidget#setupSteps::item {{
+    border: none; border-radius: 10px; margin: 2px 0;
+}}
+QListWidget#setupSteps::item:selected {{ background: {ACCENT}; }}
+QLabel#stepTitle {{ font-size: 14px; font-weight: 600; color: #2b2b2b; }}
+QLabel#stepSub {{ font-size: 11px; color: {MUTED}; }}
+QLabel#stepTitleActive {{ font-size: 14px; font-weight: 600; color: white; }}
+QLabel#stepSubActive {{ font-size: 11px; color: #efe7dc; }}
+QLabel#cardTitle {{ font-size: 24px; font-weight: 700; color: #1f1f1f; }}
+QLabel#cardSub {{ font-size: 13px; color: {MUTED}; }}
+QLabel#hint {{ font-size: 12px; color: {MUTED}; }}
+QLineEdit {{
+    border: 1px solid {BORDER}; border-radius: 8px; padding: 9px 12px;
+    background: white; font-size: 13px;
+}}
+QListWidget#folders {{
+    border: 1px solid {BORDER}; border-radius: 8px; background: white;
+}}
+QPushButton#ghost {{
+    border: 1px solid {BORDER}; border-radius: 8px; padding: 8px 14px;
+    background: white; color: #444; font-size: 13px;
+}}
+QPushButton#ghost:hover {{ background: #f5f2ec; }}
+QPushButton#primary {{
+    border: none; border-radius: 8px; padding: 10px 22px;
+    background: {ACCENT}; color: white; font-size: 13px; font-weight: 600;
+}}
+QPushButton#primary:disabled {{ background: #c9c1b4; }}
+QPushButton#back {{
+    border: none; background: transparent; color: {MUTED}; font-size: 13px;
+    padding: 8px 12px;
+}}
+QPushButton#back:hover {{ color: {ACCENT}; }}
+QCheckBox {{ font-size: 13px; color: #333; spacing: 8px; }}
+QLabel#privacy {{ font-size: 12px; color: {MUTED}; }}
+"""
+
+
+def _app_icon_path():
+    """Return the packaged icon (Explorer-readable copy first)."""
+
+    import os
+    from pathlib import Path
+
+    local = os.environ.get("LOCALAPPDATA")
+    candidates = []
+    if local:
+        candidates.append(Path(local) / "iPhoto" / "app.png")
+        candidates.append(Path(local) / "iPhoto" / "app.ico")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+class _StepItem(QWidget):
+    """One row in the left step list: numbered badge + title + subtitle."""
+
+    def __init__(self, number: int, title: str, subtitle: str, parent=None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(10)
+
+        self._badge = QLabel(str(number), self)
+        self._badge.setFixedSize(24, 24)
+        self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._badge, 0, Qt.AlignmentFlag.AlignTop)
+
+        column = QVBoxLayout()
+        column.setSpacing(2)
+        self._title = QLabel(title, self)
+        self._title.setObjectName("stepTitle")
+        self._sub = QLabel(subtitle, self)
+        self._sub.setObjectName("stepSub")
+        self._sub.setWordWrap(True)
+        column.addWidget(self._title)
+        column.addWidget(self._sub)
+        layout.addLayout(column, 1)
+
+        self._number = number
+        self.set_state("pending")
+
+    def set_state(self, state: str) -> None:
+        if state == "done":
+            self._badge.setText("\u2713")
+            self._badge.setStyleSheet(
+                f"border-radius: 12px; background: {ACCENT}; color: white; font-size: 12px;"
+            )
+            self._title.setObjectName("stepTitle")
+            self._sub.setObjectName("stepSub")
+        elif state == "active":
+            self._badge.setText(str(self._number))
+            self._badge.setStyleSheet(
+                "border-radius: 12px; background: white; color: #2b2b2b; font-size: 12px;"
+            )
+            self._title.setObjectName("stepTitleActive")
+            self._sub.setObjectName("stepSubActive")
+        else:
+            self._badge.setText(str(self._number))
+            self._badge.setStyleSheet(
+                f"border-radius: 12px; background: transparent; color: {MUTED};"
+                f" border: 1px solid {BORDER}; font-size: 12px;"
+            )
+            self._title.setObjectName("stepTitle")
+            self._sub.setObjectName("stepSub")
+        for widget in (self._title, self._sub):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+
 class SetupWizard(QDialog):
     """Guided first-run configuration: library folder, workspace, AI options."""
 
@@ -73,41 +197,89 @@ class SetupWizard(QDialog):
 
     # ------------------------------------------------------------------ layout
     def _build_ui(self) -> None:
+        self.setStyleSheet(STYLE_SHEET)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
-        self._step_list = QListWidget(self)
-        self._step_list.setFixedWidth(240)
+        side = QWidget(self)
+        side.setObjectName("sidePanel")
+        side.setFixedWidth(250)
+        side_layout = QVBoxLayout(side)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+
+        header = QWidget(side)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(20, 22, 16, 10)
+        header_layout.setSpacing(10)
+
+        self._logo = QLabel(header)
+        self._logo.setFixedSize(34, 34)
+        logo_path = _app_icon_path()
+        if logo_path is not None:
+            from PySide6.QtGui import QPixmap
+
+            pixmap = QPixmap(str(logo_path))
+            if not pixmap.isNull():
+                self._logo.setPixmap(
+                    pixmap.scaled(34, 34, Qt.AspectRatioMode.KeepAspectRatio,
+                                  Qt.TransformationMode.SmoothTransformation)
+                )
+        header_layout.addWidget(self._logo)
+
+        brand = QVBoxLayout()
+        brand.setSpacing(0)
+        title = QLabel("iPhoto", header)
+        title.setStyleSheet("font-size: 16px; font-weight: 700; color: #2b2b2b;")
+        brand.addWidget(title)
+        setup = QLabel("SETUP", header)
+        setup.setStyleSheet("font-size: 10px; font-weight: 600; color: #a09a90; letter-spacing: 1px;")
+        brand.addWidget(setup)
+        header_layout.addLayout(brand, 1)
+        side_layout.addWidget(header)
+
+        self._step_list = QListWidget(side)
         self._step_list.setObjectName("setupSteps")
         self._step_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._step_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for index, (title, subtitle) in enumerate(self._steps):
-            item = QListWidgetItem(f"{index + 1}.  {title}\n     {subtitle}")
-            item.setSizeHint(QSize(220, 56))
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(226, 64))
             self._step_list.addItem(item)
+            self._step_list.setItemWidget(item, _StepItem(index + 1, title, subtitle))
         self._step_list.currentRowChanged.connect(self._on_step_changed)
-        body.addWidget(self._step_list)
+        side_layout.addWidget(self._step_list, 1)
+        body.addWidget(side)
 
-        self._pages = QStackedWidget(self)
+        content = QWidget(self)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        self._pages = QStackedWidget(content)
         self._pages.addWidget(self._page_welcome())
         self._pages.addWidget(self._page_library())
         self._pages.addWidget(self._page_workspace())
         self._pages.addWidget(self._page_ai())
         self._pages.addWidget(self._page_done())
-        body.addWidget(self._pages, 1)
+        content_layout.addWidget(self._pages, 1)
+        body.addWidget(content, 1)
 
         root.addLayout(body, 1)
 
         footer = QHBoxLayout()
-        footer.setContentsMargins(16, 8, 16, 16)
-        footer.addWidget(QLabel(tr("setup.privacy_note")))
+        footer.setContentsMargins(24, 10, 24, 18)
+        privacy = QLabel(tr("setup.privacy_note"), self)
+        privacy.setObjectName("privacy")
+        footer.addWidget(privacy)
         footer.addStretch(1)
         self._back_button = QPushButton(tr("setup.back"), self)
+        self._back_button.setObjectName("back")
         self._back_button.clicked.connect(self._go_back)
         self._next_button = QPushButton(tr("setup.next"), self)
+        self._next_button.setObjectName("primary")
         self._next_button.setDefault(True)
         self._next_button.clicked.connect(self._go_next)
         footer.addWidget(self._back_button)
@@ -119,19 +291,27 @@ class SetupWizard(QDialog):
     def _card(self, title: str, subtitle: str, body: QWidget) -> QWidget:
         page = QWidget(self)
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(28, 24, 28, 24)
-        layout.setSpacing(12)
+        layout.setContentsMargins(36, 34, 36, 24)
+        layout.setSpacing(6)
 
         heading = QLabel(title, page)
-        heading.setStyleSheet("font-size: 22px; font-weight: 600;")
+        heading.setObjectName("cardTitle")
         layout.addWidget(heading)
 
         sub = QLabel(subtitle, page)
+        sub.setObjectName("cardSub")
         sub.setWordWrap(True)
-        sub.setStyleSheet("color: #6b7280;")
         layout.addWidget(sub)
-        layout.addSpacing(8)
-        layout.addWidget(body)
+        layout.addSpacing(18)
+
+        card = QWidget(page)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.addWidget(body)
+        card.setStyleSheet(
+            f"background: white; border: 1px solid {BORDER}; border-radius: 12px;"
+        )
+        layout.addWidget(card)
         layout.addStretch(1)
         return page
 
@@ -293,10 +473,24 @@ class SetupWizard(QDialog):
     def _on_step_changed(self, index: int) -> None:
         if index < 0:
             return
+        self._refresh_step_states(index)
         self._pages.setCurrentIndex(index)
         if index == len(self._steps) - 1:
             self._summary.setText(self._summary_text())
         self._sync_navigation()
+
+    def _refresh_step_states(self, active: int) -> None:
+        for row in range(self._step_list.count()):
+            item = self._step_list.item(row)
+            widget = self._step_list.itemWidget(item)
+            if widget is None or not hasattr(widget, "set_state"):
+                continue
+            if row == active:
+                widget.set_state("active")
+            elif row < active:
+                widget.set_state("done")
+            else:
+                widget.set_state("pending")
 
     def _go_back(self) -> None:
         row = self._step_list.currentRow()
