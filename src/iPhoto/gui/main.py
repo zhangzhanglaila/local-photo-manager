@@ -447,6 +447,9 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
                 hwnd = int(window.winId())
                 ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
                 ctypes.windll.user32.SetForegroundWindow(hwnd)
+                # SetForegroundWindow is ignored unless this process already owns the
+                # foreground; SwitchToThisWindow still activates the window.
+                ctypes.windll.user32.SwitchToThisWindow(hwnd, True)
             except Exception:  # noqa: BLE001 - best effort only
                 _logger.debug("could not force the window to the foreground", exc_info=True)
 
@@ -471,10 +474,20 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
                 return False
 
         def _finish() -> None:
+            # Raise the window while the splash still covers the screen: top-most is the
+            # one flag Windows honours for a process that is not in the foreground.
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
             window.show()
-            window.repaint()  # force the first paint before the splash goes away
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+            window.show()
             _bring_to_front()
+            # Let the window paint behind the splash, then drop the splash in one go.
+            QTimer.singleShot(300, _drop_splash)
+
+        def _drop_splash() -> None:
             try:
+                window.repaint()
+                _bring_to_front()
                 splash.close()
             except (RuntimeError, AttributeError):
                 _logger.debug("could not close the splash", exc_info=True)
