@@ -457,10 +457,9 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
         window.show()
         _bring_to_front()
     else:
-        # Render the main window *behind* the top-most splash and keep the splash up
-        # until the gallery really has content: closing it earlier left a visible gap
-        # where neither UI was on screen.
-        window.show()
+        # Keep the window hidden behind the splash and reveal them in the same tick:
+        # showing the window early put two UIs on screen, and closing the splash before
+        # the first paint left a blank gap.
         waited = {"ms": 0}
 
         def _content_ready() -> bool:
@@ -472,6 +471,8 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
                 return False
 
         def _finish() -> None:
+            window.show()
+            window.repaint()  # force the first paint before the splash goes away
             _bring_to_front()
             try:
                 splash.close()
@@ -480,8 +481,8 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
 
         def _poll() -> None:
             waited["ms"] += 150
-            if _content_ready() or waited["ms"] >= 25000:
-                QTimer.singleShot(400, _finish)
+            if _content_ready() or waited["ms"] >= 12000:
+                _finish()
                 return
             QTimer.singleShot(150, _poll)
 
