@@ -33,20 +33,18 @@ def _ensure_streams() -> None:
 def main() -> int:
     _ensure_streams()
 
-    # Show the splash before importing the heavy modules (Qt plugins, torch, ONNX):
-    # the cold start spends most of its time there, and a blank desktop looks like a
-    # failed launch.
+    # The splash must animate while the heavy modules (Qt plugins, torch, ONNX) import.
+    # A blocking import freezes the event loop, which looked like a stuck progress bar,
+    # so the import runs on a worker thread while this thread keeps pumping events.
     from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
+
     splash = None
     try:
         from iPhoto.gui.ui.widgets.splash_screen import SplashScreen
 
-        import time as _time
-
         splash = SplashScreen()
-        splash._splash_shown_at = _time.monotonic()
         splash.show()
         splash.raise_()
         splash.activateWindow()
@@ -54,9 +52,26 @@ def main() -> int:
     except Exception:  # noqa: BLE001 - never block startup on cosmetics
         splash = None
 
-    from iPhoto.gui.main import main as gui_main
+    import threading
+    import time
 
-    return gui_main(app=app, splash=splash)
+    loaded: dict[str, object] = {}
+
+    def _load() -> None:
+        from iPhoto.gui.main import main as gui_main
+
+        loaded["main"] = gui_main
+
+    worker = threading.Thread(target=_load, name="iPhoto-import", daemon=True)
+    worker.start()
+    while worker.is_alive():
+        app.processEvents()
+        time.sleep(0.008)
+
+    gui_main = loaded.get("main")
+    if gui_main is None:  # pragma: no cover
+        raise SystemExit(1)
+    return gui_main(app=app, splash=splash)  # type: ignore[operator]
 
 
 if __name__ == "__main__":
