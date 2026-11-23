@@ -287,7 +287,7 @@ def _resolve_app_icon():
     return None
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, app=None, splash=None) -> int:
     """Launch the Qt application and return the exit code."""
 
     _install_global_exception_hook()
@@ -318,7 +318,8 @@ def main(argv: list[str] | None = None) -> int:
         "qt.rhi*=false;qt.gui*=false;"
         "qt.qpa.opengl*=false;qt.opengl*=false"
     )
-    app = QApplication(arguments)
+    if app is None:
+        app = QApplication(arguments)
 
     # The taskbar / Alt-Tab icon comes from the *window* icon, and a process started as
     # ``pythonw.exe`` otherwise shows Python's icon. Set it explicitly from the packaged
@@ -435,8 +436,17 @@ def main(argv: list[str] | None = None) -> int:
     overlay = StartupOverlay(window.ui.window_shell)
 
     # Coordinator needs Window, Context, and Container
-    overlay.show_overlay()
+    # With the branded splash on screen the in-window overlay would be a second loading
+    # UI; the splash covers the import phase and the window appears already loaded.
+    if splash is None:
+        overlay.show_overlay()
     window.show()
+    if splash is not None:
+        try:
+            splash.set_status("正在加载照片库…")
+            splash.close()
+        except (RuntimeError, AttributeError):
+            _logger.debug("could not close the splash", exc_info=True)
 
     # Break the heavy startup into multiple event-loop steps so the overlay
     # can repaint between each step (prevents "未响应" appearance).

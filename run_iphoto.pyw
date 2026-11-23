@@ -32,9 +32,26 @@ def _ensure_streams() -> None:
 
 def main() -> int:
     _ensure_streams()
+
+    # Show the splash before importing the heavy modules (Qt plugins, torch, ONNX):
+    # the cold start spends most of its time there, and a blank desktop looks like a
+    # failed launch.
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication(sys.argv)
+    splash = None
+    try:
+        from iPhoto.gui.ui.widgets.splash_screen import SplashScreen
+
+        splash = SplashScreen()
+        splash.show()
+        app.processEvents()
+    except Exception:  # noqa: BLE001 - never block startup on cosmetics
+        splash = None
+
     from iPhoto.gui.main import main as gui_main
 
-    return gui_main()
+    return gui_main(app=app, splash=splash)
 
 
 if __name__ == "__main__":
