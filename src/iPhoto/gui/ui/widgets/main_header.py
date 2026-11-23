@@ -425,6 +425,8 @@ class MainHeaderWidget(QWidget):
             tr("action.change_workspace"), self
         )
         self._settings_menu.addAction(self.change_workspace_action)
+        self.run_setup_action = QAction(tr("action.run_setup_wizard"), self)
+        self._settings_menu.addAction(self.run_setup_action)
         self._settings_menu.addAction(self.bind_library_action)
         self._settings_menu.addAction(self.download_map_extension_action)
         self._settings_menu.addSeparator()

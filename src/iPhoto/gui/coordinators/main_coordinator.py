@@ -700,6 +700,7 @@ class MainCoordinator(QObject):
         # Navigation
         self._navigation.bindLibraryRequested.connect(self._dialog.bind_library_dialog)
         ui.change_workspace_action.triggered.connect(self._on_change_workspace)
+        ui.run_setup_action.triggered.connect(self._on_run_setup_wizard)
         ui.bind_library_action.triggered.connect(self._dialog.bind_library_dialog)
         self._detail_vm.edit_requested.connect(self._edit.enter_edit_mode)
 
@@ -2275,6 +2276,11 @@ class MainCoordinator(QObject):
                 tr("organize.albums_created",
                    default=f"Created {total_albums} smart albums")
             )
+
+    def _on_run_setup_wizard(self) -> None:
+        """Re-open the first-run setup wizard from the settings menu."""
+
+        self._context.show_welcome_wizard()
 
     def _on_change_workspace(self) -> None:
         """Copy the workspace to a new folder, then switch the setting."""

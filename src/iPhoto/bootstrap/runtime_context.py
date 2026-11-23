@@ -212,8 +212,10 @@ class RuntimeContext:
                 workspace_base,
             )
             return workspace_base
-        except (ImportError, RuntimeError, OSError):
-            _logger.exception("setup wizard failed")
+        except Exception:  # noqa: BLE001 - setup must never block startup
+            # A failure here used to leave the app with no window at all, so the wizard is
+            # best-effort: log it and continue with the existing configuration.
+            _logger.exception("setup wizard failed; continuing with current settings")
             return None
 
     @classmethod

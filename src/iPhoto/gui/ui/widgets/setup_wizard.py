@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -50,7 +50,8 @@ class SetupWizard(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("setup.title"))
-        self.setMinimumSize(820, 560)
+        self.setMinimumSize(760, 520)
+        self.resize(860, 580)
         self.setModal(True)
 
         self._library_path: Optional[Path] = initial_library
@@ -85,7 +86,7 @@ class SetupWizard(QDialog):
         self._step_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for index, (title, subtitle) in enumerate(self._steps):
             item = QListWidgetItem(f"{index + 1}.  {title}\n     {subtitle}")
-            item.setSizeHint(item.sizeHint().expandedTo(self._step_list.sizeHint()))
+            item.setSizeHint(QSize(220, 56))
             self._step_list.addItem(item)
         self._step_list.currentRowChanged.connect(self._on_step_changed)
         body.addWidget(self._step_list)
@@ -336,7 +337,20 @@ class SetupWizard(QDialog):
             "ocr_scan_enabled": self._enable_ocr,
         }
 
+    def _center_on_screen(self) -> None:
+        """Place the dialog in the middle of the screen so it cannot open off-screen."""
+
+        screen = self.screen()
+        if screen is None:
+            return
+        geometry = self.frameGeometry()
+        geometry.moveCenter(screen.availableGeometry().center())
+        self.move(geometry.topLeft())
+
     def show_and_wait(self) -> bool:
         """Run modally and return True when the user completed the wizard."""
 
+        self._center_on_screen()
+        self.raise_()
+        self.activateWindow()
         return self.exec() == QDialog.DialogCode.Accepted

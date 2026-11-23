@@ -21,6 +21,7 @@ WIRED_UI_ATTRS: Final[tuple[str, ...]] = (
     "back_button",
     "bind_library_action",
     "change_workspace_action",
+    "run_setup_action",
     "close_button",
     "detail_page",
     "download_map_extension_action",

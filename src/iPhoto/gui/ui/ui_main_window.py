@@ -146,6 +146,7 @@ class Ui_MainWindow(object):
         self.rebuild_links_action = self.main_header.rebuild_links_action
         self.bind_library_action = self.main_header.bind_library_action
         self.change_workspace_action = self.main_header.change_workspace_action
+        self.run_setup_action = self.main_header.run_setup_action
         self.download_map_extension_action = self.main_header.download_map_extension_action
         self.toggle_filmstrip_action = self.main_header.toggle_filmstrip_action
         self.toggle_face_names_action = self.main_header.toggle_face_names_action

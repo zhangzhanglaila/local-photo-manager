@@ -141,7 +141,7 @@ class ThumbnailJob(QRunnable):
             try:
                 _decode_started = time.monotonic()
                 image = self._render_media()
-                from ...utils.logging import diag
+                from ....utils.logging import diag
 
                 diag(
                     "[DIAG] thumb decode: %.0f ms rel=%s cached=%s",

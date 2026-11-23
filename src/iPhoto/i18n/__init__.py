@@ -353,6 +353,7 @@ _ZH: dict[str, str] = {
     "setup.summary_ai": "已启用：{items}",
     "setup.not_set": "未设置",
     "setup.ai_none": "无（稍后再启用）",
+    "action.run_setup_wizard": "运行初始设置向导…",
 }
 
 _EN: dict[str, str] = {
@@ -690,6 +691,7 @@ _EN: dict[str, str] = {
     "setup.summary_ai": "Enabled: {items}",
     "setup.not_set": "not set",
     "setup.ai_none": "none (enable later)",
+    "action.run_setup_wizard": "Run Setup Wizard…",
 }
 
 
