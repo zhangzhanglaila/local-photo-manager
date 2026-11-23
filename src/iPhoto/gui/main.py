@@ -457,63 +457,15 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
     # UI; the splash covers the import phase and the window appears already loaded.
     if splash is None:
         overlay.show_overlay()
-        window.show()
-        _bring_to_front()
-    else:
-        # Keep the window hidden behind the splash and reveal them in the same tick:
-        # showing the window early put two UIs on screen, and closing the splash before
-        # the first paint left a blank gap.
-        waited = {"ms": 0}
-
-        def _content_ready() -> bool:
-            try:
-                view = getattr(window.ui.gallery_page, "grid_view", None)
-                model = view.model() if view is not None else None
-                return model is not None and model.rowCount() > 0
-            except (AttributeError, RuntimeError):
-                return False
-
-        dropped = {"done": False}
-
-        def _drop_splash() -> None:
-            if dropped["done"]:
-                return
-            dropped["done"] = True
-            try:
-                window.repaint()
-                _bring_to_front()
-                splash.close()
-            except (RuntimeError, AttributeError):
-                _logger.debug("could not close the splash", exc_info=True)
-
-        def _finish() -> None:
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-            window.show()
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
-            window.show()
-            _bring_to_front()
-            # QWindow has no exposedChanged signal; poll isExposed() instead so the
-            # splash leaves exactly when the compositor presents the window.
-            def _wait_exposed(remaining: int = 25) -> None:
-                handle = window.windowHandle()
-                if handle is not None and handle.isExposed():
-                    QTimer.singleShot(120, _drop_splash)
-                    return
-                if remaining <= 0:
-                    _drop_splash()
-                    return
-                QTimer.singleShot(100, lambda: _wait_exposed(remaining - 1))
-
-            QTimer.singleShot(80, _wait_exposed)
-
-        def _poll() -> None:
-            waited["ms"] += 150
-            if _content_ready() or waited["ms"] >= 12000:
-                _finish()
-                return
-            QTimer.singleShot(150, _poll)
-
-        _poll()
+    window.show()
+    _bring_to_front()
+    if splash is not None:
+        # The splash covers module import only; waiting for gallery data made startup
+        # take 20s+ because the first rows arrive long after the window is usable.
+        try:
+            splash.close()
+        except (RuntimeError, AttributeError):
+            _logger.debug("could not close the splash", exc_info=True)
     if splash is not None:
         try:
             import time as _time
