@@ -1,1 +1,1 @@
-﻿"""Semantic search use cases and support types."""
+"""Semantic search use cases and support types."""
