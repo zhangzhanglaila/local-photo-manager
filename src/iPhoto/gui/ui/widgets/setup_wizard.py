@@ -305,11 +305,15 @@ class SetupWizard(QDialog):
         layout.addSpacing(18)
 
         card = QWidget(page)
+        # Scope the border to the card itself: an unscoped stylesheet applies to every
+        # child widget, which drew a line under each checkbox.
+        card.setObjectName("formCard")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(20, 20, 20, 20)
         card_layout.addWidget(body)
         card.setStyleSheet(
-            f"background: white; border: 1px solid {BORDER}; border-radius: 12px;"
+            f"QWidget#formCard {{ background: white; border: 1px solid {BORDER}; "
+            f"border-radius: 12px; }}"
         )
         layout.addWidget(card)
         layout.addStretch(1)
