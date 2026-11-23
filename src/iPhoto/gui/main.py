@@ -457,8 +457,10 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
         window.show()
         _bring_to_front()
     else:
-        # Keep the window hidden while the splash is up: showing both at once put the
-        # splash card on top of an empty main window.
+        # Render the main window *behind* the top-most splash and keep the splash up
+        # until the gallery really has content: closing it earlier left a visible gap
+        # where neither UI was on screen.
+        window.show()
         waited = {"ms": 0}
 
         def _content_ready() -> bool:
@@ -469,11 +471,7 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
             except (AttributeError, RuntimeError):
                 return False
 
-        def _reveal() -> None:
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-            window.show()
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
-            window.show()
+        def _finish() -> None:
             _bring_to_front()
             try:
                 splash.close()
@@ -482,8 +480,8 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
 
         def _poll() -> None:
             waited["ms"] += 150
-            if _content_ready() or waited["ms"] >= 6000:
-                QTimer.singleShot(350, _reveal)
+            if _content_ready() or waited["ms"] >= 25000:
+                QTimer.singleShot(400, _finish)
                 return
             QTimer.singleShot(150, _poll)
 
