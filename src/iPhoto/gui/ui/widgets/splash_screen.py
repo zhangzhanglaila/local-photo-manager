@@ -86,10 +86,9 @@ class SplashScreen(QWidget):
         inner.addWidget(self._status)
 
         self._bar = QProgressBar(card)
-        self._bar.setRange(0, 100)
+        self._bar.setRange(0, 0)
         self._bar.setTextVisible(False)
         self._bar.setFixedHeight(4)
-        self._bar.setValue(8)
         self._bar.setStyleSheet(
             f"QProgressBar {{ background: {PANEL}; border: none; border-radius: 2px; }}"
             f"QProgressBar::chunk {{ background: {ACCENT}; border-radius: 2px; }}"
@@ -114,7 +113,7 @@ class SplashScreen(QWidget):
     def set_progress(self, percent: int, text: str | None = None) -> None:
         """Advance the bar to a known milestone (determinate, so it never looks stuck)."""
 
-        self._bar.setValue(max(0, min(100, int(percent))))
+        # Indeterminate bar: the animation is the progress indicator.
         if text:
             self._status.setText(text)
         from PySide6.QtWidgets import QApplication

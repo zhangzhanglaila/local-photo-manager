@@ -454,8 +454,40 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
     # UI; the splash covers the import phase and the window appears already loaded.
     if splash is None:
         overlay.show_overlay()
-    window.show()
-    _bring_to_front()
+        window.show()
+        _bring_to_front()
+    else:
+        # Keep the window hidden while the splash is up: showing both at once put the
+        # splash card on top of an empty main window.
+        waited = {"ms": 0}
+
+        def _content_ready() -> bool:
+            try:
+                view = getattr(window.ui.gallery_page, "grid_view", None)
+                model = view.model() if view is not None else None
+                return model is not None and model.rowCount() > 0
+            except (AttributeError, RuntimeError):
+                return False
+
+        def _reveal() -> None:
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            window.show()
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+            window.show()
+            _bring_to_front()
+            try:
+                splash.close()
+            except (RuntimeError, AttributeError):
+                _logger.debug("could not close the splash", exc_info=True)
+
+        def _poll() -> None:
+            waited["ms"] += 150
+            if _content_ready() or waited["ms"] >= 6000:
+                QTimer.singleShot(350, _reveal)
+                return
+            QTimer.singleShot(150, _poll)
+
+        _poll()
     if splash is not None:
         try:
             import time as _time
