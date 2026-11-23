@@ -450,25 +450,41 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
             except Exception:  # noqa: BLE001 - best effort only
                 _logger.debug("could not force the window to the foreground", exc_info=True)
 
-    # With the branded splash on screen the in-window overlay would be a second loading
-    # UI; the splash covers the import phase and the window appears already loaded.
+    # With the splash on screen the in-window overlay would be a second loading UI.
+    # The main window stays hidden until the gallery actually has rows to show, so the
+    # user never sees an empty black grid; the splash covers that whole period.
     if splash is None:
         overlay.show_overlay()
-    window.show()
-    _bring_to_front()
-    if splash is not None:
-        try:
-            import time as _time
+        window.show()
+        _bring_to_front()
+    else:
+        waited = {"ms": 0}
 
-            shown_at = getattr(splash, "_splash_shown_at", None)
-            elapsed = _time.monotonic() - shown_at if shown_at else 0.0
-            remaining_ms = max(0, int((1.2 - elapsed) * 1000))
-            if remaining_ms:
-                QTimer.singleShot(remaining_ms, splash.close)
-            else:
+        def _content_ready() -> bool:
+            try:
+                view = getattr(window.ui.gallery_page, "grid_view", None)
+                model = view.model() if view is not None else None
+                return model is not None and model.rowCount() > 0
+            except (AttributeError, RuntimeError):
+                return False
+
+        def _reveal() -> None:
+            window.show()
+            _bring_to_front()
+            try:
                 splash.close()
-        except (RuntimeError, AttributeError):
-            _logger.debug("could not close the splash", exc_info=True)
+            except (RuntimeError, AttributeError):
+                _logger.debug("could not close the splash", exc_info=True)
+
+        def _poll() -> None:
+            waited["ms"] += 150
+            if _content_ready() or waited["ms"] >= 6000:
+                # Give the view one frame to paint the first tiles before it appears.
+                QTimer.singleShot(350, _reveal)
+                return
+            QTimer.singleShot(150, _poll)
+
+        _poll()
 
     # Break the heavy startup into multiple event-loop steps so the overlay
     # can repaint between each step (prevents "未响应" appearance).
