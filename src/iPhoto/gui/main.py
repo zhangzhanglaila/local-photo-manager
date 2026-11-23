@@ -473,24 +473,38 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
             except (AttributeError, RuntimeError):
                 return False
 
-        def _finish() -> None:
-            # Raise the window while the splash still covers the screen: top-most is the
-            # one flag Windows honours for a process that is not in the foreground.
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-            window.show()
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
-            window.show()
-            _bring_to_front()
-            # Let the window paint behind the splash, then drop the splash in one go.
-            QTimer.singleShot(300, _drop_splash)
+        dropped = {"done": False}
 
         def _drop_splash() -> None:
+            if dropped["done"]:
+                return
+            dropped["done"] = True
             try:
                 window.repaint()
                 _bring_to_front()
                 splash.close()
             except (RuntimeError, AttributeError):
                 _logger.debug("could not close the splash", exc_info=True)
+
+        def _finish() -> None:
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            window.show()
+            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
+            window.show()
+            _bring_to_front()
+            # QWindow has no exposedChanged signal; poll isExposed() instead so the
+            # splash leaves exactly when the compositor presents the window.
+            def _wait_exposed(remaining: int = 25) -> None:
+                handle = window.windowHandle()
+                if handle is not None and handle.isExposed():
+                    QTimer.singleShot(120, _drop_splash)
+                    return
+                if remaining <= 0:
+                    _drop_splash()
+                    return
+                QTimer.singleShot(100, lambda: _wait_exposed(remaining - 1))
+
+            QTimer.singleShot(80, _wait_exposed)
 
         def _poll() -> None:
             waited["ms"] += 150
