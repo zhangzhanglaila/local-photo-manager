@@ -193,11 +193,13 @@ class RuntimeContext:
 
             library_path = wizard.library_path()
             current_root = self.library.root()
-            if library_path is not None and library_path != current_root:
+            for chosen in wizard.library_paths():
+                if chosen == current_root:
+                    continue
                 try:
-                    self.library.add_root(library_path)
+                    self.library.add_root(chosen)
                 except OSError as exc:
-                    _logger.warning("could not add the chosen library: %s", exc)
+                    _logger.warning("could not add the chosen library %s: %s", chosen, exc)
 
             workspace_base = wizard.workspace_base()
             self.settings.set("workspace_base", str(workspace_base) if workspace_base else None)

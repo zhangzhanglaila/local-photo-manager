@@ -54,7 +54,7 @@ class SetupWizard(QDialog):
         self.resize(860, 580)
         self.setModal(True)
 
-        self._library_path: Optional[Path] = initial_library
+        self._library_paths: list[Path] = [initial_library] if initial_library else []
         self._workspace_base: Optional[Path] = initial_workspace
         self._enable_clip = True
         self._enable_face = True
@@ -163,14 +163,25 @@ class SetupWizard(QDialog):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self._library_edit = QLineEdit(self)
-        self._library_edit.setPlaceholderText(tr("setup.library_placeholder"))
-        if self._library_path is not None:
-            self._library_edit.setText(str(self._library_path))
+        # A library can span several folders, so collect a list instead of one path.
+        self._library_list = QListWidget(self)
+        self._library_list.setMinimumHeight(150)
+        for path in self._library_paths:
+            self._library_list.addItem(str(path))
+        layout.addWidget(self._library_list)
 
+        buttons = QHBoxLayout()
+        add = QPushButton(tr("setup.add_folder"), body)
+        add.clicked.connect(self._add_library_folder)
+        remove = QPushButton(tr("setup.remove_folder"), body)
+        remove.clicked.connect(self._remove_library_folder)
         detect = QPushButton(tr("setup.detect"), body)
         detect.clicked.connect(self._detect_library)
-        layout.addWidget(self._path_row(self._library_edit, extra=detect))
+        buttons.addWidget(add)
+        buttons.addWidget(remove)
+        buttons.addWidget(detect)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
 
         hint = QLabel(tr("setup.library_hint"), body)
         hint.setWordWrap(True)
@@ -248,14 +259,27 @@ class SetupWizard(QDialog):
         if chosen:
             edit.setText(chosen)
 
+    def _add_library_folder(self) -> None:
+        chosen = QFileDialog.getExistingDirectory(self, tr("setup.add_folder"), str(Path.home()))
+        if chosen and all(
+            self._library_list.item(i).text() != chosen
+            for i in range(self._library_list.count())
+        ):
+            self._library_list.addItem(chosen)
+
+    def _remove_library_folder(self) -> None:
+        for item in self._library_list.selectedItems():
+            self._library_list.takeItem(self._library_list.row(item))
+
     def _detect_library(self) -> None:
-        candidates = [Path.home() / "Pictures"]
-        appdata = Path.home() / "AppData" / "Local"
-        for candidate in (Path("D:/APPLE"), appdata / "iPhoto"):
-            candidates.append(candidate)
-        for candidate in candidates:
+        for candidate in (Path("D:/APPLE"), Path.home() / "Pictures"):
             if candidate.is_dir():
-                self._library_edit.setText(str(candidate))
+                existing = {
+                    self._library_list.item(i).text()
+                    for i in range(self._library_list.count())
+                }
+                if str(candidate) not in existing:
+                    self._library_list.addItem(str(candidate))
                 return
 
     def _reset_workspace_default(self) -> None:
@@ -290,8 +314,10 @@ class SetupWizard(QDialog):
     def _capture_step(self) -> None:
         row = self._step_list.currentRow()
         if row == 1:
-            text = self._library_edit.text().strip()
-            self._library_path = Path(text) if text else None
+            self._library_paths = [
+                Path(self._library_list.item(i).text())
+                for i in range(self._library_list.count())
+            ]
         elif row == 2:
             text = self._workspace_edit.text().strip()
             self._workspace_base = Path(text) if text else None
@@ -308,7 +334,10 @@ class SetupWizard(QDialog):
 
     def _summary_text(self) -> str:
         parts = [
-            tr("setup.summary_library", path=str(self._library_path or tr("setup.not_set"))),
+            tr(
+                "setup.summary_library",
+                path=", ".join(str(p) for p in self._library_paths) or tr("setup.not_set"),
+            ),
             tr("setup.summary_workspace", path=str(self._workspace_base or tr("setup.not_set"))),
         ]
         enabled = [
@@ -324,8 +353,11 @@ class SetupWizard(QDialog):
         return "\n".join(parts)
 
     # ----------------------------------------------------------------- results
+    def library_paths(self) -> list[Path]:
+        return list(self._library_paths)
+
     def library_path(self) -> Optional[Path]:
-        return self._library_path
+        return self._library_paths[0] if self._library_paths else None
 
     def workspace_base(self) -> Optional[Path]:
         return self._workspace_base
