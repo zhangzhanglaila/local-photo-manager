@@ -815,7 +815,14 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
 
     QTimer.singleShot(0, _advance)
 
-    return app.exec()
+    exit_code = app.exec()
+    # Background workers (scan, thumbnails) are Python threads and can outlive the event
+    # loop, which kept the process alive after the window closed. Give them a moment,
+    # then end the process explicitly.
+    from PySide6.QtCore import QThreadPool
+
+    QThreadPool.globalInstance().waitForDone(1500)
+    os._exit(exit_code)
 
 
 if __name__ == "__main__":  # pragma: no cover - manual launch

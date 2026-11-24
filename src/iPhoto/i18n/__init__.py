@@ -356,6 +356,11 @@ _ZH: dict[str, str] = {
     "action.run_setup_wizard": "运行初始设置向导…",
     "setup.add_folder": "添加文件夹…",
     "setup.remove_folder": "移除所选",
+    "dialog.close_title": "关闭 iPhoto",
+    "dialog.close_prompt": "要最小化到任务栏，还是退出程序？",
+    "dialog.close_minimise": "最小化",
+    "dialog.close_quit": "退出程序",
+    "dialog.close_cancel": "取消",
 }
 
 _EN: dict[str, str] = {
@@ -696,6 +701,11 @@ _EN: dict[str, str] = {
     "action.run_setup_wizard": "Run Setup Wizard…",
     "setup.add_folder": "Add Folder…",
     "setup.remove_folder": "Remove Selected",
+    "dialog.close_title": "Close iPhoto",
+    "dialog.close_prompt": "Minimise to the taskbar, or quit the application?",
+    "dialog.close_minimise": "Minimise",
+    "dialog.close_quit": "Quit",
+    "dialog.close_cancel": "Cancel",
 }
 
 

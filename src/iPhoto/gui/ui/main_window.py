@@ -56,13 +56,54 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # QWidget overrides
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Tear down background services before the window closes."""
+        """Ask whether to minimise or quit, then tear down background services."""
 
+        if getattr(self, "_force_quit", False):
+            self._teardown()
+            super().closeEvent(event)
+            return
+
+        choice = self._ask_close_action()
+        if choice == "minimise":
+            event.ignore()
+            self.showMinimized()
+            return
+        if choice == "cancel":
+            event.ignore()
+            return
+
+        self._force_quit = True
+        self._teardown()
+        super().closeEvent(event)
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.instance().quit()
+
+    def _teardown(self) -> None:
         if self.window_manager is not None:
             self.window_manager.cleanup()
         if self.coordinator:
             self.coordinator.shutdown()
-        super().closeEvent(event)
+
+    def _ask_close_action(self) -> str:
+        """Return ``"minimise"``, ``"quit"`` or ``"cancel"``."""
+
+        from ...i18n import tr
+
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("dialog.close_title"))
+        box.setText(tr("dialog.close_prompt"))
+        minimise = box.addButton(tr("dialog.close_minimise"), QMessageBox.ButtonRole.AcceptRole)
+        quit_button = box.addButton(tr("dialog.close_quit"), QMessageBox.ButtonRole.DestructiveRole)
+        cancel = box.addButton(tr("dialog.close_cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(minimise)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is quit_button:
+            return "quit"
+        if clicked is cancel:
+            return "cancel"
+        return "minimise"
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
