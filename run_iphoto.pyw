@@ -33,45 +33,35 @@ def _ensure_streams() -> None:
 def main() -> int:
     _ensure_streams()
 
-    # The splash must animate while the heavy modules (Qt plugins, torch, ONNX) import.
-    # A blocking import freezes the event loop, which looked like a stuck progress bar,
-    # so the import runs on a worker thread while this thread keeps pumping events.
+    # A Qt splash cannot appear before PySide6 is imported, which on a cold boot takes
+    # up to a minute. Draw a plain Win32 window first (ctypes only), then swap in Qt.
+    native = None
+    try:
+        from iPhoto.gui.ui.widgets.native_splash import show_native_splash
+
+        native = show_native_splash()
+    except Exception:  # noqa: BLE001 - cosmetic only
+        native = None
+
     from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
+    splash = native
+    if splash is None:
+        try:
+            from iPhoto.gui.ui.widgets.splash_screen import SplashScreen
 
-    splash = None
-    try:
-        from iPhoto.gui.ui.widgets.splash_screen import SplashScreen
+            splash = SplashScreen()
+            splash.show()
+            splash.raise_()
+            splash.activateWindow()
+            app.processEvents()
+        except Exception:  # noqa: BLE001 - never block startup on cosmetics
+            splash = None
 
-        splash = SplashScreen()
-        splash.show()
-        splash.raise_()
-        splash.activateWindow()
-        app.processEvents()
-    except Exception:  # noqa: BLE001 - never block startup on cosmetics
-        splash = None
+    from iPhoto.gui.main import main as gui_main
 
-    import threading
-    import time
-
-    loaded: dict[str, object] = {}
-
-    def _load() -> None:
-        from iPhoto.gui.main import main as gui_main
-
-        loaded["main"] = gui_main
-
-    worker = threading.Thread(target=_load, name="iPhoto-import", daemon=True)
-    worker.start()
-    while worker.is_alive():
-        app.processEvents()
-        time.sleep(0.008)
-
-    gui_main = loaded.get("main")
-    if gui_main is None:  # pragma: no cover
-        raise SystemExit(1)
-    return gui_main(app=app, splash=splash)  # type: ignore[operator]
+    return gui_main(app=app, splash=splash)
 
 
 if __name__ == "__main__":
