@@ -457,10 +457,6 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
     # UI; the splash covers the import phase and the window appears already loaded.
     if splash is None:
         overlay.show_overlay()
-    window.show()
-    # Windows ignores SetForegroundWindow for a process that is not already in front, so
-    # pin the window above everything for a moment: that always brings it up, and the
-    # flag is removed again so it does not stay on top of other applications.
     def _pin_topmost() -> None:
         try:
             window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
@@ -478,14 +474,57 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
         except RuntimeError:
             pass
 
-    _pin_topmost()
-    if splash is not None:
-        # The splash covers module import only; waiting for gallery data made startup
-        # take 20s+ because the first rows arrive long after the window is usable.
+    def _tiles_visible() -> bool:
+        """True once the viewport shows real thumbnails rather than empty black tiles."""
+
         try:
-            splash.close()
-        except (RuntimeError, AttributeError):
-            _logger.debug("could not close the splash", exc_info=True)
+            view = getattr(window.ui.gallery_page, "grid_view", None)
+            if view is None:
+                return False
+            model = view.model()
+            if model is None or model.rowCount() <= 0:
+                return False
+            pixmap = view.viewport().grab()
+            if pixmap.isNull():
+                return False
+            small = pixmap.toImage().scaled(24, 24)
+            total = 0
+            for y in range(24):
+                for x in range(24):
+                    color = small.pixelColor(x, y)
+                    total += (color.red() + color.green() + color.blue()) // 3
+            return (total / 576) > 28  # black tiles average ~0-10
+        except (AttributeError, RuntimeError):
+            return False
+
+    waited = {"ms": 0}
+
+    def _wait_tiles() -> None:
+        waited["ms"] += 200
+        if _tiles_visible() or waited["ms"] >= 15000:
+            window.show()
+            _pin_topmost()
+            QTimer.singleShot(250, _drop_splash_if_any)
+            return
+        QTimer.singleShot(200, _wait_tiles)
+
+    def _drop_splash_if_any() -> None:
+        if splash is not None:
+            try:
+                splash.close()
+            except (RuntimeError, AttributeError):
+                _logger.debug("could not close the splash", exc_info=True)
+
+    if splash is None:
+        overlay.show_overlay()
+        window.show()
+        _pin_topmost()
+    else:
+        # The splash covers the whole load: the window is only shown once thumbnails are
+        # actually painted, so it never appears full of empty black tiles.
+        _wait_tiles()
+
+
     if splash is not None:
         try:
             import time as _time
