@@ -22,6 +22,7 @@ from ...people.status import (
     normalize_face_status,
 )
 from ...utils.logging import get_logger
+from iPhoto.ai.scan_gate import serialized_scan
 
 LOGGER = get_logger()
 
@@ -101,6 +102,8 @@ class FaceScanWorker(QThread):
             self._current_batch_idle_ms = self._base_batch_idle_ms  # 恢复1秒
             self.statusChanged.emit("正在扫描人脸...")
             LOGGER.info("Face scan resumed after video playback")
+
+    @serialized_scan
 
     def run(self) -> None:
         try:

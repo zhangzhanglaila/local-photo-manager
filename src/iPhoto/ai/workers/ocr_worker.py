@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QRunnable, QThread, Signal, Slot
 
 from ..config import OCR_BATCH_SIZE, OCR_IMAGE_EXTENSIONS
+from iPhoto.ai.scan_gate import serialized_scan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,6 +95,8 @@ class OCRWorker(QRunnable):
     def cancel(self) -> None:
         """Cancel processing."""
         self._cancelled = True
+
+    @serialized_scan
 
     def run(self) -> None:
         """Process all queued images for OCR."""
