@@ -132,6 +132,9 @@ class NativeSplash:
         self._class_name = "iPhotoNativeSplash"
         self._hicon = None
         self._phase = 0
+        self._scale = 1.0
+        self._w = WIDTH
+        self._h = HEIGHT
 
     # ------------------------------------------------------------------ public API
     def start(self) -> "NativeSplash":
@@ -168,7 +171,31 @@ class NativeSplash:
             user32.TranslateMessage(ctypes.byref(message))
             user32.DispatchMessageW(ctypes.byref(message))
 
+    def _enable_dpi_awareness(self) -> None:
+        """Declare DPI awareness so the window is not scaled a second time by Windows."""
+
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # per-monitor aware
+            return
+        except (AttributeError, OSError):
+            pass
+        try:
+            user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            pass
+
+    def _work_area(self) -> tuple[int, int, int, int]:
+        rect = wintypes.RECT()
+        if user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+            return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+        return 0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+
     def _create_window(self) -> None:
+        self._enable_dpi_awareness()
+        try:
+            self._scale = max(1.0, user32.GetDpiForSystem() / 96.0)
+        except (AttributeError, OSError):
+            self._scale = 1.0
         instance = ctypes.windll.kernel32.GetModuleHandleW(None)
         wc = _WNDCLASS()
         wc.style = _CS_HREDRAW | _CS_VREDRAW
@@ -189,17 +216,19 @@ class NativeSplash:
                 _LR_LOADFROMFILE | _LR_DEFAULTSIZE,
             )
 
-        screen_w = user32.GetSystemMetrics(0)
-        screen_h = user32.GetSystemMetrics(1)
+        area_x, area_y, area_w, area_h = self._work_area()
+        width = int(WIDTH * self._scale)
+        height = int(HEIGHT * self._scale)
+        self._w, self._h = width, height
         self._hwnd = user32.CreateWindowExW(
             _WS_EX_TOPMOST | _WS_EX_TOOLWINDOW,
             self._class_name,
             "iPhoto",
             _WS_POPUP | _WS_VISIBLE,
-            (screen_w - WIDTH) // 2,
-            (screen_h - HEIGHT) // 2,
-            WIDTH,
-            HEIGHT,
+            area_x + (area_w - width) // 2,
+            area_y + (area_h - height) // 2,
+            width,
+            height,
             None,
             None,
             instance,
@@ -239,7 +268,7 @@ class NativeSplash:
         )
         old = gdi32.SelectObject(hdc, font)
         gdi32.SetTextColor(hdc, color)
-        rect = wintypes.RECT(x, y, WIDTH - 36, y + size + 14)
+        rect = wintypes.RECT(x, y, self._w - int(36 * self._scale), y + size + 14)
         user32.DrawTextW(
             hdc, text, -1, ctypes.byref(rect),
             _DT_LEFT | _DT_SINGLELINE | _DT_VCENTER | _DT_NOPREFIX,
@@ -253,28 +282,29 @@ class NativeSplash:
         try:
             gdi32.SetBkMode(hdc, _TRANSPARENT)
 
-            left = 36
-            top = 34
+            s = self._scale
+            left = int(36 * s)
+            top = int(34 * s)
             if self._hicon:
-                user32.DrawIconEx(hdc, left, top, self._hicon, 56, 56, 0, None, _DI_NORMAL)
-            top += 64
+                user32.DrawIconEx(hdc, left, top, self._hicon, int(56 * s), int(56 * s), 0, None, _DI_NORMAL)
+            top += int(64 * s)
 
-            self._text(hdc, "iPhoto", left, top, 30, 0x1F1F1F, bold=True)
-            top += 44
-            self._text(hdc, "本地照片库", left, top, 15, 0x3B5E7B, bold=True)
-            top += 30
-            self._text(hdc, "正在启动…", left, top, 13, 0x8C857C)
+            self._text(hdc, "iPhoto", left, top, int(30 * s), 0x1F1F1F, bold=True)
+            top += int(44 * s)
+            self._text(hdc, "本地照片库", left, top, int(15 * s), 0x3B5E7B, bold=True)
+            top += int(30 * s)
+            self._text(hdc, "正在启动…", left, top, int(13 * s), 0x8C857C)
 
             # Thin progress bar: a rounded track with a segment sweeping across it.
-            bar_y = HEIGHT - 58
-            bar_h = 4
+            bar_y = self._h - int(58 * s)
+            bar_h = max(3, int(4 * s))
             track = gdi32.CreateSolidBrush(0xE9EFEF)
             old_brush = gdi32.SelectObject(hdc, track)
-            gdi32.RoundRect(hdc, left, bar_y, WIDTH - left, bar_y + bar_h, 4, 4)
+            gdi32.RoundRect(hdc, left, bar_y, self._w - left, bar_y + bar_h, 4, 4)
             gdi32.SelectObject(hdc, old_brush)
             gdi32.DeleteObject(track)
 
-            span = WIDTH - 2 * left
+            span = self._w - 2 * left
             chunk = span // 4
             position = int((span - chunk) * (self._phase / 39.0))
             fill = gdi32.CreateSolidBrush(0x3B5E7B)
@@ -283,7 +313,7 @@ class NativeSplash:
             gdi32.SelectObject(hdc, old_brush)
             gdi32.DeleteObject(fill)
 
-            self._text(hdc, "数据仅在本机处理，不上传服务器", left, HEIGHT - 40, 11, 0xA09A90)
+            self._text(hdc, "数据仅在本机处理，不上传服务器", left, self._h - int(40 * s), int(11 * s), 0xA09A90)
         finally:
             user32.EndPaint(hwnd, ctypes.byref(ps))
 
