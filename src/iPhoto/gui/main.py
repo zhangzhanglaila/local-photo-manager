@@ -453,50 +453,43 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
             except Exception:  # noqa: BLE001 - best effort only
                 _logger.debug("could not force the window to the foreground", exc_info=True)
 
-    # With the branded splash on screen the in-window overlay would be a second loading
-    # UI; the splash covers the import phase and the window appears already loaded.
+    def _win32_topmost(enabled: bool) -> None:
+        """Change Z-order via SetWindowPos.
+
+        `window.setWindowFlag(...)` makes Qt destroy and recreate the native window,
+        which showed up as the window flashing away and back during startup.
+        """
+
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+
+            HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+            SWP_NOMOVE, SWP_NOSIZE = 0x0002, 0x0001
+            ctypes.windll.user32.SetWindowPos(
+                int(window.winId()),
+                HWND_TOPMOST if enabled else HWND_NOTOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE,
+            )
+        except Exception:  # noqa: BLE001 - cosmetic only
+            _logger.debug("could not change the window Z-order", exc_info=True)
+
+    def _unpin_topmost() -> None:
+        _win32_topmost(False)
+        _bring_to_front()
+
     if splash is None:
         overlay.show_overlay()
     window.show()
-    # Windows ignores SetForegroundWindow for a process that is not already in front, so
-    # pin the window above everything for a moment: that always brings it up, and the
-    # flag is removed again so it does not stay on top of other applications.
-    def _pin_topmost() -> None:
-        try:
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-            window.show()
-            _bring_to_front()
-            QTimer.singleShot(1800, _unpin_topmost)
-        except RuntimeError:
-            pass
+    _win32_topmost(True)
+    _bring_to_front()
+    QTimer.singleShot(1800, _unpin_topmost)
 
-    def _unpin_topmost() -> None:
-        try:
-            window.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
-            window.show()
-            _bring_to_front()
-        except RuntimeError:
-            pass
-
-    _pin_topmost()
     if splash is not None:
-        # The splash covers module import only; waiting for gallery data made startup
-        # take 20s+ because the first rows arrive long after the window is usable.
         try:
             splash.close()
-        except (RuntimeError, AttributeError):
-            _logger.debug("could not close the splash", exc_info=True)
-    if splash is not None:
-        try:
-            import time as _time
-
-            shown_at = getattr(splash, "_splash_shown_at", None)
-            elapsed = _time.monotonic() - shown_at if shown_at else 0.0
-            remaining_ms = max(0, int((1.2 - elapsed) * 1000))
-            if remaining_ms:
-                QTimer.singleShot(remaining_ms, splash.close)
-            else:
-                splash.close()
         except (RuntimeError, AttributeError):
             _logger.debug("could not close the splash", exc_info=True)
 
