@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 
-DEFAULT_AI_THREAD_LIMIT = 4
+DEFAULT_AI_THREAD_LIMIT = 2
 THREAD_LIMIT_ENV = "IPHOTO_FACE_THREADS"
 
 

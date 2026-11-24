@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 
 BUDGET_ENV = "IPHOTO_MAX_BACKGROUND_THREADS"
-DEFAULT_BUDGET = 4
+DEFAULT_BUDGET = 2
 
 #: Environment variables read by BLAS/OpenMP runtimes at import time. They must
 #: be set before NumPy/OpenCV are imported, which is why the GUI entry point calls
