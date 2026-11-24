@@ -228,7 +228,8 @@ def _install_global_exception_hook() -> None:
         from ..utils.pathutils import get_custom_workspace_base
         custom_base = get_custom_workspace_base()
         if custom_base is not None:
-            crash_path = custom_base / "crash.log"
+            # Keep logs out of the workspace root: it is the user's chosen folder.
+            crash_path = custom_base / "logs" / "crash.log"
         else:
             crash_path = Path.home() / ".iPhoto" / "crash.log"
         try:
