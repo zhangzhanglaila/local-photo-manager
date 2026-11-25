@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QPushButton, QS
 
 from ..icon import load_icon
 from .gallery_grid_view import GalleryGridView
+from .home_page import HomePage
 from .main_window_metrics import HEADER_BUTTON_SIZE, HEADER_ICON_GLYPH_SIZE
 
 
@@ -125,20 +126,33 @@ class GalleryPageWidget(QWidget):
         self._search_results_header.hide()
         layout.addWidget(self._search_results_header)
 
-        # Stacked widget: grid view + loading view
+        # Stacked widget: home view + grid view + loading view. The home view is
+        # the landing page shown at startup; the grid is the photo browser, and
+        # the loading view is an overlay used by search/indexing.
         self._stack = QStackedWidget()
         layout.addWidget(self._stack)
 
-        # Grid view (index 0)
+        # Home view (index 0)
+        self.home_page = HomePage()
+        self._stack.addWidget(self.home_page)
+
+        # Grid view (index 1)
         self.grid_view = GalleryGridView()
         self.grid_view.setObjectName("galleryGridView")
         self._stack.addWidget(self.grid_view)
 
-        # Loading view (index 1)
+        # Loading view (index 2)
         self._loading_widget = self._create_loading_view()
         self._stack.addWidget(self._loading_widget)
 
-        self._stack.setCurrentWidget(self.grid_view)
+        # The view to return to once a loading phase finishes. Loading panels are
+        # always part of the grid flow, so ``show_grid``/``show_home`` move this
+        # pointer while a background rebuild must never move it implicitly.
+        # The page starts on Home: that is the landing view, and it is the only
+        # content that can be drawn before a library finishes loading.
+        self._base_view: QWidget = self.home_page
+
+        self._stack.setCurrentWidget(self.home_page)
 
         # Loading timer (ETA estimate only; elapsed seconds are not shown).
         self._loading_start_time = 0
@@ -272,6 +286,40 @@ class GalleryPageWidget(QWidget):
 
     # --- Public API ---
 
+    def show_home(self) -> None:
+        """Present the Home landing view.
+
+        The Home view is a sibling of the grid inside this page rather than a
+        separate top-level page: routing it here keeps the main view stack (and
+        the header/contract that describe it) untouched.
+        """
+
+        self._base_view = self.home_page
+        # A loading panel belongs to the grid flow; drop it so Home is not
+        # covered by a search/indexing overlay that is still running.
+        self._stop_timer()
+        self._loading_phase = ""
+        self._spinner.stop()
+        self._progress_widget.hide()
+        self._stack.setCurrentWidget(self.home_page)
+
+    def show_grid(self) -> None:
+        """Present the photo grid and make it the view loading returns to."""
+
+        self._base_view = self.grid_view
+        self._stack.setCurrentWidget(self.grid_view)
+
+    def is_home_visible(self) -> bool:
+        """Return whether the Home view is currently presented."""
+
+        return self._stack.currentWidget() is self.home_page
+
+    def _show_loading_panel(self) -> None:
+        """Show the loading overlay, remembering that the grid owns it."""
+
+        self._base_view = self.grid_view
+        self._stack.setCurrentWidget(self._loading_widget)
+
     def show_search_loading(self, query: str) -> None:
         """Show search loading state."""
         self._spinner.show()
@@ -284,7 +332,7 @@ class GalleryPageWidget(QWidget):
         self._hint_label.hide()
         self._loading_phase = "search"
         self._start_timer()
-        self._stack.setCurrentWidget(self._loading_widget)
+        self._show_loading_panel()
 
     def show_model_loading(self, elapsed: int = 0) -> None:
         """Show model loading phase."""
@@ -299,7 +347,7 @@ class GalleryPageWidget(QWidget):
         self._hint_label.show()
         self._loading_phase = "model"
         self._start_timer()
-        self._stack.setCurrentWidget(self._loading_widget)
+        self._show_loading_panel()
 
     def show_indexing_progress(self, current: int, total: int) -> None:
         """Show indexing progress with a thin progress bar."""
@@ -325,7 +373,7 @@ class GalleryPageWidget(QWidget):
         self._continue_btn.show()
         self._retry_btn.hide()
         self._hint_label.hide()
-        self._stack.setCurrentWidget(self._loading_widget)
+        self._show_loading_panel()
 
     def show_error(self, title: str, message: str) -> None:
         """Show error state with retry button."""
@@ -339,22 +387,27 @@ class GalleryPageWidget(QWidget):
         self._hint_label.hide()
         self._loading_phase = "error"
         self._stop_timer()
-        self._stack.setCurrentWidget(self._loading_widget)
+        self._show_loading_panel()
 
     def show_done(self, count: int) -> None:
-        """Show completion and switch to grid."""
+        """Show completion and return to the view the loading panel covered."""
         self.hide_loading()
 
     def hide_loading(self) -> None:
-        """Hide loading view and show grid."""
+        """Hide the loading view and return to the underlying view.
+
+        The target is whichever view owned the page before the loading panel was
+        shown (the grid for searches/indexing, Home when the user had not left
+        it). Returning unconditionally to the grid would yank a user who is
+        reading Home into the photo browser whenever a background task finished.
+        """
         self._stop_timer()
         self._loading_phase = ""
         self._spinner.stop()
         self._progress_widget.hide()
-        # ⭐ 强制切换到 grid_view，加载完成后立即显示照片
-        # 即使 _loading_widget 因某种原因被显示，也强制回到 grid_view
-        if self._stack.currentWidget() is not self.grid_view:
-            self._stack.setCurrentWidget(self.grid_view)
+        target = self._base_view
+        if self._stack.currentWidget() is not target:
+            self._stack.setCurrentWidget(target)
         # ⭐ 通知 grid view 清除加载状态
         if hasattr(self.grid_view, "dismiss_loading_state"):
             self.grid_view.dismiss_loading_state()

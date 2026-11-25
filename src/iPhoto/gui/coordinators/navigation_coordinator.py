@@ -54,6 +54,11 @@ class NavigationCoordinator(QObject):
         self._suppress_tree_refresh = False
         self._tree_refresh_suppression_reason: Optional[Literal["edit", "operation"]] = None
         self._pending_detail_return: Path | None = None
+        # True while the Home landing view owns the content area. Home lives
+        # inside the gallery page, so the router still reports "gallery" as the
+        # active view; the flag keeps refresh shortcuts from mistaking a Home
+        # click for re-opening the album that happens to be loaded underneath.
+        self._home_active = False
 
         self._connect_signals()
 
@@ -63,6 +68,7 @@ class NavigationCoordinator(QObject):
     def _connect_signals(self) -> None:
         self._sidebar.albumSelected.connect(self.open_album)
         self._sidebar.pinnedItemSelected.connect(self.open_pinned_item)
+        self._sidebar.homeSelected.connect(self.open_home)
         self._sidebar.allPhotosSelected.connect(self.open_all_photos)
         self._sidebar.staticNodeSelected.connect(self._handle_static_node)
         self._sidebar.bindLibraryRequested.connect(self._handle_bind_library)
@@ -183,6 +189,22 @@ class NavigationCoordinator(QObject):
             item_id=pinned_item.item_id,
             library_root=library_root,
         )
+
+    def open_home(self) -> None:
+        """Return to the Home landing view."""
+
+        self._leave_search_view()
+        self._reset_playback()
+        page = self._router.gallery_page()
+        if page is not None:
+            # Home is not a cluster gallery, so the back chrome that belongs to
+            # that mode must not stay pinned above the landing page.
+            set_cluster_mode = getattr(page, "set_cluster_gallery_mode", None)
+            if callable(set_cluster_mode):
+                set_cluster_mode(False)
+            page.show_home()
+        self._router.show_gallery()
+        self._home_active = True
 
     def open_all_photos(self) -> None:
         import logging
@@ -457,6 +479,10 @@ class NavigationCoordinator(QObject):
         )
 
     def _should_treat_as_refresh(self, path: Path) -> bool:
+        # Home is a landing view, not the gallery: clicking an album from it must
+        # always navigate even when that album is still loaded underneath.
+        if self._home_active:
+            return False
         static_selection = self._gallery_vm.static_selection.value
         if static_selection is not None:
             return False
@@ -467,6 +493,14 @@ class NavigationCoordinator(QObject):
     def _begin_navigation(self) -> None:
         """Common preamble for leaving the current view."""
 
+        self._home_active = False
+        page = self._router.gallery_page()
+        if page is not None:
+            # Any navigation that lives in the gallery moves the content area
+            # back to the grid; the Home view must not swallow the destination.
+            show_grid = getattr(page, "show_grid", None)
+            if callable(show_grid):
+                show_grid()
         self._leave_search_view()
         self._reset_playback()
 
