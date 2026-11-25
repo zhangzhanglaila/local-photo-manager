@@ -30,6 +30,45 @@ except ImportError:
     pass
 
 
+def _preferred_device_and_dtype(torch):
+    """Return ``(device, dtype)`` for this machine.
+
+    The CUDA build of torch still runs on CPU when no device is present, and
+    ``IPHOTO_DISABLE_CUDA=1`` forces the CPU path for testing or for machines
+    where the driver is broken.
+    """
+
+    import os
+
+    disabled = os.environ.get("IPHOTO_DISABLE_CUDA", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    try:
+        if not disabled and torch.cuda.is_available():
+            # Half precision halves VRAM and is faster on every RTX part; the
+            # cosine drift versus fp32 is ~1e-3.
+            return "cuda", torch.float16
+    except Exception:  # pragma: no cover - driver problems must not break loading
+        pass
+    return "cpu", torch.float32
+
+
+def _move_inputs(inputs, device, dtype):
+    """Move processor/tokenizer tensors onto *device* with *dtype* when floating."""
+
+    moved = {}
+    for key, value in inputs.items():
+        if hasattr(value, "to"):
+            target_dtype = dtype if getattr(value, "is_floating_point", lambda: False)() else None
+            moved[key] = value.to(device, target_dtype) if target_dtype is not None else value.to(device)
+        else:
+            moved[key] = value
+    return moved
+
+
 class CLIPEmbeddingService:
     """CLIP embedding service using transformers.
 
@@ -54,6 +93,10 @@ class CLIPEmbeddingService:
         # Text vectors are deterministic; caching them keeps repeated searches and
         # the label vocabulary from re-encoding the same strings.
         self._text_cache: dict[str, np.ndarray] = {}
+        # Chosen on load: GPU when a CUDA device is present, otherwise CPU. The
+        # model file is the same either way, only precision/batch differ.
+        self._device = "cpu"
+        self._dtype = None
 
     def _ensure_loaded(self) -> bool:
         """Load the CLIP model if not already loaded."""
@@ -71,11 +114,18 @@ class CLIPEmbeddingService:
 
                     _LOGGER.info("Loading CLIP model from %s", self._model_dir)
 
+                    device, dtype = _preferred_device_and_dtype(torch)
+                    _LOGGER.info(
+                        "CLIP device=%s dtype=%s", device, getattr(dtype, "__name__", dtype)
+                    )
                     # Load model with optimizations
                     self._model = CLIPModel.from_pretrained(
                         str(self._model_dir),
-                        torch_dtype=torch.float32,  # Use float32 for CPU
+                        torch_dtype=dtype,
                     )
+                    self._model.to(device)
+                    self._device = device
+                    self._dtype = dtype
                     self._processor = CLIPProcessor.from_pretrained(str(self._model_dir))
                     self._tokenizer = CLIPTokenizer.from_pretrained(str(self._model_dir))
 
@@ -106,6 +156,7 @@ class CLIPEmbeddingService:
 
             # Process image
             inputs = self._processor(images=image, return_tensors="pt")
+            inputs = _move_inputs(inputs, self._device, self._dtype)
 
             # Generate embedding using vision model
             with torch.no_grad():
@@ -114,7 +165,7 @@ class CLIPEmbeddingService:
                 image_embeds = self._model.visual_projection(image_embeds)
 
             # Normalize
-            embedding = image_embeds[0].numpy()
+            embedding = image_embeds[0].float().cpu().numpy()
             embedding = embedding / np.linalg.norm(embedding)
 
             return embedding.astype(np.float32)
@@ -157,11 +208,12 @@ class CLIPEmbeddingService:
             if not batch_images:
                 return
             try:
-                inputs = self._processor(images=list(batch_images), return_tensors="pt")
+                inputs = {key: torch.stack([item[key] for item in batch_images]) for key in batch_images[0]}
+                inputs = _move_inputs(inputs, self._device, self._dtype)
                 with torch.no_grad():
                     outputs = self._model.vision_model(**inputs)
                     embeds = self._model.visual_projection(outputs.pooler_output)
-                array = embeds.numpy()
+                array = embeds.float().cpu().numpy()
                 norms = np.linalg.norm(array, axis=1, keepdims=True)
                 norms[norms == 0] = 1.0
                 array = array / norms
@@ -173,18 +225,27 @@ class CLIPEmbeddingService:
                 batch_images.clear()
                 batch_slots.clear()
 
-        # Decoding dominates on CPU (JPEG/HEIC -> 224x224 tensor), so decode ahead
-        # in a small thread pool while the model works on the previous batch.
+        # Decoding *and* preprocessing dominate (JPEG/HEIC -> 224x224 tensor is
+        # ~85% of the wall time for CLIP B/32), and both release the GIL, so they
+        # run in a thread pool while the GPU computes the previous batch.
         from concurrent.futures import ThreadPoolExecutor
 
         def load(path: Path):
             try:
-                return Image.open(path).convert("RGB")
+                image = Image.open(path)
+                # JPEG decoders can decode at a reduced scale; skipping the full
+                # 4000px decode is the single biggest win on phone photos.
+                try:
+                    image.draft("RGB", (256, 256))
+                except Exception:
+                    pass
+                prepared = self._processor(images=image.convert("RGB"), return_tensors="pt")
+                return {key: value[0] for key, value in prepared.items()}
             except Exception as exc:
                 _LOGGER.warning("Failed to load image %s: %s", path, exc)
                 return None
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=8) as pool:
             for slot, image in zip(range(len(image_paths)), pool.map(load, image_paths)):
                 if image is None:
                     continue
@@ -206,6 +267,7 @@ class CLIPEmbeddingService:
 
             # Process text
             inputs = self._tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+            inputs = _move_inputs(inputs, self._device, self._dtype)
 
             # Generate embedding using text model
             with torch.no_grad():
@@ -214,7 +276,7 @@ class CLIPEmbeddingService:
                 text_embeds = self._model.text_projection(text_embeds)
 
             # Normalize
-            embedding = text_embeds[0].numpy()
+            embedding = text_embeds[0].float().cpu().numpy()
             embedding = embedding / np.linalg.norm(embedding)
 
             return embedding.astype(np.float32)

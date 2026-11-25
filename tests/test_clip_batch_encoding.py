@@ -15,20 +15,23 @@ from iPhoto.agent.infrastructure.clip_embedding import CLIPEmbeddingService
 
 
 def _service(batch_calls: list[int]):
-    """Build a service whose model/processor are stubs that record batch sizes."""
+    """Build a service whose model is a stub that records model batch sizes."""
 
     import torch
 
     service = CLIPEmbeddingService.__new__(CLIPEmbeddingService)
     service._loaded = True
     service._ensure_loaded = lambda: True  # type: ignore[method-assign]
+    service._device = "cpu"
+    service._dtype = torch.float32
 
     def processor(*, images, return_tensors):
-        batch_calls.append(len(images))
-        return {"pixel_values": torch.zeros(len(images), 3, 4, 4)}
+        # The pipeline preprocesses one image per worker thread.
+        return {"pixel_values": torch.zeros(1, 3, 4, 4)}
 
     def vision_model(**kwargs):
         count = int(kwargs["pixel_values"].shape[0])
+        batch_calls.append(count)
         return SimpleNamespace(pooler_output=torch.arange(count * 4, dtype=torch.float32).reshape(count, 4))
 
     service._processor = processor  # type: ignore[assignment]
@@ -84,3 +87,30 @@ def test_empty_input_is_a_no_op(tmp_path: Path) -> None:
 
     assert service.encode_images([]) == []
     assert calls == []
+
+
+def test_device_selection_prefers_cuda_but_can_be_disabled(monkeypatch):
+    import torch
+
+    from iPhoto.agent.infrastructure.clip_embedding import _preferred_device_and_dtype
+
+    class _Cuda:
+        @staticmethod
+        def is_available():
+            return True
+
+    fake = SimpleNamespace(cuda=_Cuda(), float16="fp16", float32="fp32")
+
+    monkeypatch.delenv("IPHOTO_DISABLE_CUDA", raising=False)
+    assert _preferred_device_and_dtype(fake) == ("cuda", "fp16")
+
+    monkeypatch.setenv("IPHOTO_DISABLE_CUDA", "1")
+    assert _preferred_device_and_dtype(fake) == ("cpu", "fp32")
+
+    class _NoCuda:
+        @staticmethod
+        def is_available():
+            return False
+
+    monkeypatch.delenv("IPHOTO_DISABLE_CUDA", raising=False)
+    assert _preferred_device_and_dtype(SimpleNamespace(cuda=_NoCuda(), float32="fp32")) == ("cpu", "fp32")
