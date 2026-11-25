@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMenu,
     QMenuBar,
     QSizePolicy,
     QSpacerItem,
@@ -76,11 +75,11 @@ class SearchInput(QLineEdit):
         if text:
             self.search_submitted.emit(text)
 
-    def focusInEvent(self, event) -> None:  # noqa: N802
-        super().focusInEvent(event)
-        self.popup_requested.emit()
-
     def mousePressEvent(self, event) -> None:  # noqa: N802
+        # Opening the suggestion list is tied to a deliberate click (or Ctrl+F).
+        # Focus alone is not intent: hiding the view that owned focus hands it
+        # back to this field — e.g. clicking "People" — and the dropdown used to
+        # pop open every time that happened.
         super().mousePressEvent(event)
         self.popup_requested.emit()
 
@@ -193,77 +192,27 @@ class MainHeaderWidget(QWidget):
         self._synchronise_palettes()
         self._create_actions(main_window)
         self._populate_menus()
-        self._install_compact_menu_button()
+        # No in-window menu bar: the entries live in the Settings window, which
+        # is opened from the sidebar's pinned row.
+        self.menu_bar.setVisible(False)
 
     def attach_window_controls(self, controls: QWidget) -> None:
-        """Host the traffic lights in the header row.
+        """Host the caption buttons at the trailing edge of the header row.
 
-        macOS keeps window controls and toolbar items on one row; a separate title
-        bar above the toolbar is what makes the window look like a Windows app.
+        The reference title bar keeps the minimise / maximise / close controls on
+        the right, after every toolbar action, instead of the macOS traffic
+        lights on the left.
         """
 
         controls.setParent(self)
         layout = self.layout()
         if layout is not None:
-            layout.insertWidget(
-                0,
+            layout.addWidget(
                 controls,
                 0,
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             )
         self._window_controls = controls
-
-    def _install_compact_menu_button(self) -> None:
-        """Replace the in-window menu bar with a single "⋯" toolbar button.
-
-        macOS puts application menus in the system menu bar, so showing
-        File/View/Settings as an in-window menu bar is what makes the window read
-        as a Windows/Linux app. The actions themselves stay on the window, which
-        keeps their shortcuts working; only the presentation changes.
-        """
-
-        self.more_button = QToolButton(self)
-        self.more_button.setObjectName("moreMenuButton")
-        self.more_button.setAutoRaise(True)
-        self.more_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.more_button.setIcon(load_icon("ellipsis.svg", size=(18, 18)))
-        self.more_button.setIconSize(QSize(18, 18))
-        self.more_button.setFixedSize(QSize(30, 28))
-        self.more_button.setToolTip(tr("menu.more", default="More"))
-        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.more_button.setStyleSheet(
-            "QToolButton#moreMenuButton {"
-            "  border: none;"
-            "  border-radius: 7px;"
-            "  background: transparent;"
-            "}"
-            "QToolButton#moreMenuButton:hover {"
-            "  background-color: rgba(0, 0, 0, 0.07);"
-            "}"
-            "QToolButton#moreMenuButton:pressed,"
-            "QToolButton#moreMenuButton:open {"
-            "  background-color: rgba(0, 0, 0, 0.12);"
-            "}"
-        )
-
-        # Populate eagerly: building the menu from ``aboutToShow`` produced an
-        # empty popup, because Qt sizes the popup before that signal.
-        #
-        # The menus are *reused* (``addMenu(QMenu)``) rather than copied action by
-        # action. Copying the actions into fresh menus destroyed the originals:
-        # sharing a menu's child actions between two menus makes Qt tear down the
-        # source menus, which then broke ``retranslate()`` and the menu bar.
-        self.more_menu = QMenu(self.more_button)
-        for menu_action in self.menu_bar.actions():
-            source = menu_action.menu()
-            if source is not None:
-                self.more_menu.addMenu(source)
-        self.more_button.setMenu(self.more_menu)
-
-        self.menu_bar.setVisible(False)
-        layout = self.layout()
-        if layout is not None:
-            layout.insertWidget(0, self.more_button)
 
     def _synchronise_palettes(self) -> None:
         """Ensure the container and menu bar share the same opaque background."""
@@ -634,8 +583,6 @@ class MainHeaderWidget(QWidget):
                 self._share_menu.setTitle(tr("menu.share_action"))
             if hasattr(self, '_language_menu') and self._language_menu is not None:
                 self._language_menu.setTitle(tr("menu.language"))
-            # The compact "⋯" menu reuses these very QMenu objects, so their
-            # titles update automatically.
         except RuntimeError:
             # Menu objects may have been deleted
             pass
