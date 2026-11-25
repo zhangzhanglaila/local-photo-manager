@@ -31,8 +31,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ....agent.services import search_models
 from ....i18n import tr
 from ..icon import load_icon
+from .search_model_dialog import (
+    SearchModelDialog,
+    current_device_label,
+    model_summary,
+    model_title,
+)
 
 _ACCELERATOR_RE = re.compile(r"\s*\(&[A-Za-z0-9]\)\s*$")
 
@@ -492,6 +499,37 @@ class SettingsDialog(QDialog):
         combo.setCurrentIndex(checked)
         combo.currentIndexChanged.connect(lambda index: actions[index].trigger())
         return combo
+
+    def _search_model_value(self) -> QLabel:
+        """Show the active search model plus the device that will run it."""
+
+        spec = search_models.active_model()
+        label = QLabel(
+            f"{model_title(spec)} · {model_summary(spec)} · {current_device_label()}",
+            self,
+        )
+        label.setObjectName("settingsPathLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        label.setWordWrap(False)
+        return label
+
+    def _switch_model_action(self) -> QAction:
+        action = QAction(tr("search.model.switch"), self)
+
+        def _run() -> None:
+            dialog = SearchModelDialog(self, current_key=search_models.active_model_key())
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            key = dialog.selected_key()
+            if key == search_models.active_model_key():
+                return
+            if self._settings is not None:
+                self._settings.set(search_models.SETTINGS_KEY, key)
+            else:  # pragma: no cover - settings are always present in the app
+                search_models.set_active_model(key)
+
+        action.triggered.connect(_run)
+        return action
 
     def _close_action_combo(self) -> QComboBox:
         """Let the remembered close action be changed or cleared.

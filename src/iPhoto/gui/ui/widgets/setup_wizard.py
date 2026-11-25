@@ -28,8 +28,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ....agent.services import search_models
 from ....i18n import tr
 from ....utils.pathutils import get_custom_workspace_base
+from .search_model_dialog import SearchModelDialog, model_summary, model_title
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -404,10 +406,24 @@ class SetupWizard(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
+        self._search_model_key = search_models.active_model_key()
         self._clip_check = QCheckBox(
             tr("setup.ai_clip", mb=CLIP_MODEL_MB), body
         )
         self._clip_check.setChecked(True)
+        self._clip_check.toggled.connect(self._sync_model_row)
+        self._model_label = QLabel("", body)
+        self._model_label.setStyleSheet("color: #6b7280;")
+        self._model_button = QPushButton(tr("search.model.choose"), body)
+        self._model_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._model_button.clicked.connect(self._choose_search_model)
+        self._model_row = QWidget(body)
+        model_row_layout = QHBoxLayout(self._model_row)
+        model_row_layout.setContentsMargins(24, 0, 0, 0)
+        model_row_layout.setSpacing(8)
+        model_row_layout.addWidget(self._model_label, 1)
+        model_row_layout.addWidget(self._model_button, 0)
+        self._sync_model_row()
         self._face_check = QCheckBox(
             tr("setup.ai_face", mb=FACE_MODEL_MB), body
         )
@@ -418,6 +434,8 @@ class SetupWizard(QDialog):
         self._ocr_check.setChecked(True)
         for box in (self._clip_check, self._face_check, self._ocr_check):
             layout.addWidget(box)
+            if box is self._clip_check:
+                layout.addWidget(self._model_row)
 
         hint = QLabel(tr("setup.ai_hint"), body)
         hint.setWordWrap(True)
@@ -425,6 +443,24 @@ class SetupWizard(QDialog):
         layout.addWidget(hint)
         layout.addStretch(1)
         return self._card(tr("setup.step_ai"), tr("setup.step_ai_sub"), body)
+
+    def _sync_model_row(self) -> None:
+        """Show the chosen model next to the semantic-search toggle."""
+
+        enabled = self._clip_check.isChecked()
+        self._model_row.setVisible(enabled)
+        spec = search_models.resolve_spec(self._search_model_key)
+        self._model_label.setText(
+            tr("search.model.current", name=model_title(spec))
+            + "  ·  "
+            + model_summary(spec)
+        )
+
+    def _choose_search_model(self) -> None:
+        dialog = SearchModelDialog(self, current_key=self._search_model_key)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._search_model_key = dialog.selected_key()
+            self._sync_model_row()
 
     def _page_done(self) -> QWidget:
         body = QWidget(self)
@@ -523,6 +559,7 @@ class SetupWizard(QDialog):
             self._enable_clip = self._clip_check.isChecked()
             self._enable_face = self._face_check.isChecked()
             self._enable_ocr = self._ocr_check.isChecked()
+            self.search_model_key = self._search_model_key
 
     def _sync_navigation(self) -> None:
         row = self._step_list.currentRow()
@@ -559,6 +596,9 @@ class SetupWizard(QDialog):
 
     def workspace_base(self) -> Optional[Path]:
         return self._workspace_base
+
+    def selected_search_model(self) -> str:
+        return self._search_model_key
 
     def ai_options(self) -> dict[str, bool]:
         return {

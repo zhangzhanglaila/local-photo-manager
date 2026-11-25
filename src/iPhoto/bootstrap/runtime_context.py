@@ -216,6 +216,12 @@ class RuntimeContext:
 
             for key, value in wizard.ai_options().items():
                 self.settings.set(f"ai.{key}", bool(value))
+            selected_model = wizard.selected_search_model()
+            if selected_model:
+                from ..agent.services import search_models
+
+                self.settings.set(search_models.SETTINGS_KEY, selected_model)
+                search_models.set_active_model(selected_model)
             self.settings.set("setup.completed", True)
 
             _logger.info(

@@ -767,6 +767,16 @@ class MainCoordinator(QObject):
 
         # Language Switching
         ui.language_zh.triggered.connect(lambda: self._context.settings.set("ui.language", "zh"))
+        # The search model can be changed from the wizard or the settings window;
+        # both only write the setting, and this keeps the runtime in sync.
+        from iPhoto.agent.services import search_models as _search_models
+
+        self._context.settings.settingsChanged.connect(
+            self._on_search_model_setting_changed
+        )
+        _search_models.set_active_model(
+            self._context.settings.get(_search_models.SETTINGS_KEY, None)
+        )
         ui.language_en.triggered.connect(lambda: self._context.settings.set("ui.language", "en"))
 
         current_lang = self._context.settings.get("ui.language", "zh")
@@ -1900,6 +1910,62 @@ class MainCoordinator(QObject):
             self._status_bar.show_message(
                 tr("agent.disabled", default="Semantic search disabled")
             )
+
+    def _on_search_model_setting_changed(self, key: str, value: object) -> None:
+        """React to a model change made by the wizard or the settings window."""
+
+        from iPhoto.agent.services import search_models
+
+        if key != search_models.SETTINGS_KEY:
+            return
+        spec = search_models.set_active_model(str(value) if value else None)
+        self._logger.info("search model switched to %s", spec.key)
+        session = getattr(self._context, "library_session", None)
+        reset = getattr(session, "reset_embedding_service", None)
+        if callable(reset):
+            reset()
+        _SEARCH_EMBEDDINGS_CACHE.clear()
+        if not search_models.is_installed(spec):
+            self._status_bar.show_message(
+                tr("search.model.missing", mb=spec.download_mb), 8000
+            )
+            self._download_search_model_then_index(spec)
+            return
+        # Vectors from the previous model stay on disk (so switching back is
+        # instant) but search ignores them; fill in the new model's rows.
+        self._start_embedding_generation_silent()
+
+    def _download_search_model_then_index(self, spec) -> None:
+        """Fetch missing weights in the background, then index with them."""
+
+        from PySide6.QtCore import QRunnable, QThreadPool
+
+        from iPhoto.agent.infrastructure.search_model_download import (
+            download_search_model,
+        )
+
+        coordinator = self
+
+        class _DownloadWorker(QRunnable):
+            def run(self) -> None:
+                try:
+                    download_search_model(
+                        spec,
+                        progress=lambda message: coordinator._status_bar.show_message(
+                            message, 5000
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                    coordinator._status_bar.show_message(
+                        f"{tr('search.model.download_failed')}: {exc}", 15000
+                    )
+                    return
+                coordinator._status_bar.show_message(
+                    tr("search.model.download_done", name=spec.dir_name), 5000
+                )
+                coordinator._start_embedding_generation_silent()
+
+        QThreadPool.globalInstance().start(_DownloadWorker())
 
     def _ensure_embedding_index(self) -> None:
         """Start semantic-index generation once, if it is missing."""

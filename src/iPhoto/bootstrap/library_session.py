@@ -153,6 +153,11 @@ class LibrarySession:
             logger.warning("Failed to initialize search service: %s", e)
             return None
 
+    def reset_embedding_service(self) -> None:
+        """Forget the loaded encoder so the next call loads the active model."""
+
+        self._embedding_service = None
+
     def get_embedding_repository(self):
         """Get or initialize the embedding repository."""
         if self._embedding_repository is not None:
