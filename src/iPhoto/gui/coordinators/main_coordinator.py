@@ -767,6 +767,8 @@ class MainCoordinator(QObject):
 
         # Language Switching
         ui.language_zh.triggered.connect(lambda: self._context.settings.set("ui.language", "zh"))
+        ui.language_en.triggered.connect(lambda: self._context.settings.set("ui.language", "en"))
+
         # The search model can be changed from the wizard or the settings window;
         # both only write the setting, and this keeps the runtime in sync.
         from iPhoto.agent.services import search_models as _search_models
@@ -777,8 +779,6 @@ class MainCoordinator(QObject):
         _search_models.set_active_model(
             self._context.settings.get(_search_models.SETTINGS_KEY, None)
         )
-        ui.language_en.triggered.connect(lambda: self._context.settings.set("ui.language", "en"))
-
         current_lang = self._context.settings.get("ui.language", "zh")
         if current_lang == "en":
             ui.language_en.setChecked(True)
