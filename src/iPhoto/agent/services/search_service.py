@@ -84,8 +84,12 @@ class SearchService:
             _LOGGER.warning("Failed to generate embedding for query: %s", query)
             return []
 
-        # Get all stored embeddings
-        all_embeddings = self._embedding_repository.get_all_embeddings()
+        # Only vectors from the active model: other models live in another space.
+        from . import search_models
+
+        all_embeddings = self._embedding_repository.get_all_embeddings(
+            model_name=search_models.active_model().dir_name
+        )
         _LOGGER.info("Loaded %d embeddings in %.3f seconds", len(all_embeddings), time.time() - start_time)
 
         if not all_embeddings:

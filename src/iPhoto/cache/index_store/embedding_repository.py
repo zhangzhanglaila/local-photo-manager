@@ -117,32 +117,43 @@ class EmbeddingRepository:
         conn.commit()
         self._cache_dirty = True  # Invalidate cache
 
-    def get_all_embeddings(self) -> List[dict]:
-        """Get all stored embeddings (with in-memory cache)."""
-        # Return cached results if available
-        if not self._cache_dirty and self._cache is not None:
-            return self._cache
+    def get_all_embeddings(self, model_name: str | None = None) -> List[dict]:
+        """Get stored embeddings, optionally only those from *model_name*.
 
-        conn = self._get_conn()
-        cursor = conn.execute("SELECT asset_id, embedding, dimension FROM embeddings")
+        Vectors from different models live in different spaces; comparing them
+        yields meaningless scores, so search always filters by the active model.
+        """
+        # The cache always holds *every* row; filtering by model happens in memory
+        # so one model's query cannot poison the cache for another model.
+        if self._cache_dirty or self._cache is None:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "SELECT asset_id, embedding, dimension, model_name FROM embeddings"
+            )
+            results = []
+            for asset_id, embedding_bytes, dimension, stored_model in cursor:
+                embedding = np.frombuffer(embedding_bytes, dtype=np.float32).copy()
+                results.append(
+                    {
+                        "asset_id": asset_id,
+                        "embedding": embedding,
+                        "model_name": stored_model,
+                    }
+                )
+            self._cache = results
+            self._cache_dirty = False
 
-        results = []
-        for row in cursor:
-            asset_id, embedding_bytes, dimension = row
-            embedding = np.frombuffer(embedding_bytes, dtype=np.float32).copy()
-            results.append({
-                "asset_id": asset_id,
-                "embedding": embedding,
-            })
+        if model_name:
+            return [row for row in self._cache if row.get("model_name") == model_name]
+        return self._cache
 
-        # Update cache
-        self._cache = results
-        self._cache_dirty = False
+    def get_asset_ids_without_embeddings(
+        self,
+        asset_ids: List[str],
+        model_name: str | None = None,
+    ) -> List[str]:
+        """Get asset IDs that have no embedding from *model_name* yet."""
 
-        return results
-
-    def get_asset_ids_without_embeddings(self, asset_ids: List[str]) -> List[str]:
-        """Get asset IDs that don't have embeddings yet."""
         if not asset_ids:
             return []
 
@@ -153,10 +164,16 @@ class EmbeddingRepository:
         for i in range(0, len(asset_ids), chunk_size):
             chunk = asset_ids[i:i + chunk_size]
             placeholders = ",".join("?" * len(chunk))
-            cursor = conn.execute(
-                f"SELECT asset_id FROM embeddings WHERE asset_id IN ({placeholders})",
-                chunk,
-            )
+            if model_name:
+                cursor = conn.execute(
+                    f"SELECT asset_id FROM embeddings WHERE model_name = ? AND asset_id IN ({placeholders})",
+                    [model_name, *chunk],
+                )
+            else:
+                cursor = conn.execute(
+                    f"SELECT asset_id FROM embeddings WHERE asset_id IN ({placeholders})",
+                    chunk,
+                )
             existing.update(row[0] for row in cursor)
 
         return [aid for aid in asset_ids if aid not in existing]

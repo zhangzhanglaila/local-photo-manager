@@ -56,6 +56,49 @@ def _preferred_device_and_dtype(torch):
     return "cpu", torch.float32
 
 
+def _classes_for_family(family: str):
+    """Return ``(model_cls, processor_cls, tokenizer_cls)`` for *family*."""
+
+    if family == "siglip":
+        from transformers import AutoProcessor, SiglipModel
+
+        return SiglipModel, AutoProcessor, None
+    if family == "chinese_clip":
+        from transformers import ChineseCLIPModel, ChineseCLIPProcessor
+
+        return ChineseCLIPModel, ChineseCLIPProcessor, None
+
+    from transformers import CLIPModel, CLIPProcessor, CLIPTokenizer
+
+    return CLIPModel, CLIPProcessor, CLIPTokenizer
+
+
+def _image_features(model, inputs):
+    """Return the projected image features of *model* as a tensor."""
+
+    getter = getattr(model, "get_image_features", None)
+    if callable(getter):
+        try:
+            return getter(**inputs)
+        except TypeError:
+            pass
+    outputs = model.vision_model(**inputs)
+    return model.visual_projection(outputs.pooler_output)
+
+
+def _text_features(model, inputs):
+    """Return the projected text features of *model* as a tensor."""
+
+    getter = getattr(model, "get_text_features", None)
+    if callable(getter):
+        try:
+            return getter(**inputs)
+        except TypeError:
+            pass
+    outputs = model.text_model(**inputs)
+    return model.text_projection(outputs.pooler_output)
+
+
 def _move_inputs(inputs, device, dtype):
     """Move processor/tokenizer tensors onto *device* with *dtype* when floating."""
 
@@ -76,15 +119,20 @@ class CLIPEmbeddingService:
     images and text into embeddings.
     """
 
-    def __init__(self, model_dir: Path) -> None:
-        """Initialize the CLIP embedding service.
+    def __init__(self, model_dir: Path, family: str = "clip") -> None:
+        """Initialize the embedding service.
 
         Parameters
         ----------
         model_dir : Path
             Directory containing the model files.
+        family : str
+            ``"clip"``, ``"siglip"`` or ``"chinese_clip"``. The three families differ
+            in class names, tokenizer padding and output dimension, not in how the
+            app uses the vectors.
         """
         self._model_dir = Path(model_dir)
+        self._family = family if family in {"clip", "siglip", "chinese_clip"} else "clip"
         self._model = None
         self._processor = None
         self._tokenizer = None
@@ -110,24 +158,31 @@ class CLIPEmbeddingService:
             with _LOAD_LOCK:
                 try:
                     import torch
-                    from transformers import CLIPModel, CLIPProcessor, CLIPTokenizer
 
-                    _LOGGER.info("Loading CLIP model from %s", self._model_dir)
+                    _LOGGER.info(
+                        "Loading %s model from %s", self._family, self._model_dir
+                    )
 
                     device, dtype = _preferred_device_and_dtype(torch)
                     _LOGGER.info(
                         "CLIP device=%s dtype=%s", device, getattr(dtype, "__name__", dtype)
                     )
+                    model_cls, processor_cls, tokenizer_cls = _classes_for_family(
+                        self._family
+                    )
                     # Load model with optimizations
-                    self._model = CLIPModel.from_pretrained(
+                    self._model = model_cls.from_pretrained(
                         str(self._model_dir),
                         torch_dtype=dtype,
                     )
                     self._model.to(device)
                     self._device = device
                     self._dtype = dtype
-                    self._processor = CLIPProcessor.from_pretrained(str(self._model_dir))
-                    self._tokenizer = CLIPTokenizer.from_pretrained(str(self._model_dir))
+                    self._processor = processor_cls.from_pretrained(str(self._model_dir))
+                    if tokenizer_cls is not None:
+                        self._tokenizer = tokenizer_cls.from_pretrained(str(self._model_dir))
+                    else:
+                        self._tokenizer = getattr(self._processor, "tokenizer", None)
 
                     # Set to eval mode and optimize
                     self._model.eval()
@@ -158,11 +213,9 @@ class CLIPEmbeddingService:
             inputs = self._processor(images=image, return_tensors="pt")
             inputs = _move_inputs(inputs, self._device, self._dtype)
 
-            # Generate embedding using vision model
+            # Generate embedding using the model's own image tower
             with torch.no_grad():
-                outputs = self._model.vision_model(**inputs)
-                image_embeds = outputs.pooler_output
-                image_embeds = self._model.visual_projection(image_embeds)
+                image_embeds = _image_features(self._model, inputs)
 
             # Normalize
             embedding = image_embeds[0].float().cpu().numpy()
@@ -211,8 +264,7 @@ class CLIPEmbeddingService:
                 inputs = {key: torch.stack([item[key] for item in batch_images]) for key in batch_images[0]}
                 inputs = _move_inputs(inputs, self._device, self._dtype)
                 with torch.no_grad():
-                    outputs = self._model.vision_model(**inputs)
-                    embeds = self._model.visual_projection(outputs.pooler_output)
+                    embeds = _image_features(self._model, inputs)
                 array = embeds.float().cpu().numpy()
                 norms = np.linalg.norm(array, axis=1, keepdims=True)
                 norms[norms == 0] = 1.0
@@ -265,15 +317,16 @@ class CLIPEmbeddingService:
         try:
             import torch
 
-            # Process text
-            inputs = self._tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+            # Process text. SigLIP has a fixed 64-token context and expects
+            # max-length padding; CLIP-family models take dynamic padding.
+            padding = "max_length" if self._family == "siglip" else True
+            processor = self._processor if self._family != "clip" else self._tokenizer
+            inputs = processor(text, return_tensors="pt", padding=padding, truncation=True)
             inputs = _move_inputs(inputs, self._device, self._dtype)
 
-            # Generate embedding using text model
+            # Generate embedding using the model's own text tower
             with torch.no_grad():
-                outputs = self._model.text_model(**inputs)
-                text_embeds = outputs.pooler_output
-                text_embeds = self._model.text_projection(text_embeds)
+                text_embeds = _text_features(self._model, inputs)
 
             # Normalize
             embedding = text_embeds[0].float().cpu().numpy()

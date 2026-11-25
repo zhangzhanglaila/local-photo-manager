@@ -14,7 +14,16 @@ from typing import Any
 from ..cache.index_store.embedding_repository import get_embedding_repository
 
 
-def load_stored_embeddings(library_root: Path) -> list[dict[str, Any]]:
-    """Return every stored embedding row for *library_root*."""
+def load_stored_embeddings(
+    library_root: Path,
+    model_name: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return stored embedding rows for *library_root*.
 
-    return list(get_embedding_repository(library_root).get_all_embeddings())
+    When *model_name* is given only that model's vectors are returned: vectors
+    from another model live in a different space and must never be compared.
+    """
+
+    return list(
+        get_embedding_repository(library_root).get_all_embeddings(model_name=model_name)
+    )

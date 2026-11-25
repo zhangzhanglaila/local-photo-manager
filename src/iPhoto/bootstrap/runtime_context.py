@@ -94,6 +94,16 @@ class RuntimeContext:
     def __post_init__(self) -> None:
         self.theme = _create_theme_manager(self.settings)
         self.language = _create_language_store(self.settings)
+        # The chosen search model decides the encoder, the index's model_name and
+        # which vectors a search may compare; apply it before anything else runs.
+        try:
+            from ..agent.services import search_models
+
+            search_models.set_active_model(
+                self.settings.get(search_models.SETTINGS_KEY, None)
+            )
+        except Exception:  # pragma: no cover - never block startup on this
+            pass
         self.facade.bind_library(self.library)
 
         # 设置自定义工作目录基础路径

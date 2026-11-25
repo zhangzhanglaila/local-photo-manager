@@ -173,21 +173,22 @@ class LibrarySession:
 
         try:
             from ..agent.infrastructure.clip_embedding import CLIPEmbeddingService
-            from ..agent.infrastructure.clip_downloader import get_model_path, is_model_available, get_model_dir
+            from ..agent.services import search_models
 
-            model_dir = get_model_dir(self.library_root)
-            logger.info(f"Checking CLIP model at: {model_dir}")
+            spec = search_models.active_model()
+            model_dir = search_models.model_dir(spec)
+            logger.info("Checking search model %s at: %s", spec.key, model_dir)
 
-            # Check if model exists
-            if not is_model_available(model_dir):
-                logger.info(f"CLIP model not found at {model_dir}, showing download dialog")
+            if not search_models.is_installed(spec):
+                logger.info("Search model %s not installed at %s", spec.key, model_dir)
                 self._show_model_download_dialog(model_dir)
                 return None
 
-            # Load model
-            model_path = get_model_path(self.library_root)
-            logger.info(f"Loading CLIP model from: {model_path}")
-            self._embedding_service = CLIPEmbeddingService(model_dir=model_path)
+            logger.info("Loading %s model from: %s", spec.family, model_dir)
+            self._embedding_service = CLIPEmbeddingService(
+                model_dir=model_dir,
+                family=spec.family,
+            )
             return self._embedding_service
         except Exception as e:
             logger.warning("Failed to initialize embedding service: %s", e)

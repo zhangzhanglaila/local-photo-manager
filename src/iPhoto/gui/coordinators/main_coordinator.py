@@ -79,8 +79,12 @@ _SEARCH_EMBEDDINGS_CACHE = EmbeddingCache()
 #: referenced prevents a live QThread from being destroyed during teardown.
 _ORPHANED_SEARCH_THREADS: list = []
 
-def _load_search_embeddings(library_root: Path) -> list:
-    """Return embeddings for *library_root*, reloading only when the DB changed."""
+def _load_search_embeddings(library_root: Path, model_name: str | None = None) -> list:
+    """Return embeddings for *library_root*, reloading only when the DB changed.
+
+    *model_name* keeps the cache key distinct per model: switching models must not
+    serve the previous model's vectors, which live in a different space.
+    """
 
     try:
         from iPhoto.utils.pathutils import resolve_work_dir
@@ -94,9 +98,9 @@ def _load_search_embeddings(library_root: Path) -> list:
     from iPhoto.bootstrap.embedding_index import load_stored_embeddings
 
     return _SEARCH_EMBEDDINGS_CACHE.get(
-        str(library_root),
+        f"{library_root}|{model_name or '*'}",
         mtime,
-        lambda: load_stored_embeddings(library_root),
+        lambda: load_stored_embeddings(library_root, model_name=model_name),
     )
 
 
@@ -1485,7 +1489,12 @@ class MainCoordinator(QObject):
                     self.progress.emit("AI 模型加载完成，正在加载索引...", 1, 3)
 
                     # 2. Load embeddings
-                    all_embeddings = _load_search_embeddings(self._library_root)
+                    from iPhoto.agent.services import search_models as _search_models
+
+                    all_embeddings = _load_search_embeddings(
+                        self._library_root,
+                        model_name=_search_models.active_model().dir_name,
+                    )
 
                     if not all_embeddings:
                         self.finished.emit(None, "没有找到照片索引，请先生成索引")

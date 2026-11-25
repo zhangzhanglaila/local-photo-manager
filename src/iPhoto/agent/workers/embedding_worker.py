@@ -45,6 +45,17 @@ class EmbeddingWorker(QRunnable):
 
         self.signals = EmbeddingWorkerSignals()
 
+    @staticmethod
+    def _model_name() -> str:
+        """Name stored with each vector: the active model's directory name."""
+
+        try:
+            from ..services import search_models
+
+            return search_models.active_model().dir_name
+        except Exception:  # pragma: no cover - keep indexing rather than fail
+            return "clip-vit-base-patch32"
+
     def cancel(self) -> None:
         """Cancel the embedding generation."""
         self._cancelled = True
@@ -84,7 +95,8 @@ class EmbeddingWorker(QRunnable):
             asset_ids_to_process = asset_ids
         else:
             asset_ids_to_process = self._embedding_repository.get_asset_ids_without_embeddings(
-                asset_ids
+                asset_ids,
+                model_name=self._model_name(),
             )
 
         if not asset_ids_to_process:
@@ -131,7 +143,7 @@ class EmbeddingWorker(QRunnable):
             to_store = []
             for (asset_id, _), embedding in zip(batch_paths, embeddings):
                 if embedding is not None:
-                    to_store.append((asset_id, embedding, "clip-vit-base-patch32"))
+                    to_store.append((asset_id, embedding, self._model_name()))
                     processed += 1
                 else:
                     failed += 1
