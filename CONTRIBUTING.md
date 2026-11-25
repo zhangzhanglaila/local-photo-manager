@@ -179,6 +179,11 @@ We follow a standard commit message format to ensure history is readable.
 *   **Body**:
     *   Wrap lines at 72 characters.
     *   Explain *what* and *why*, not *how*.
+*   **Granularity**:
+    *   Commit as soon as a feature (or a self-contained fix) is finished and
+      verified — one feature per commit. Do not leave finished work uncommitted
+      until the end of a session, so history stays reviewable and revertable.
+    *   Tests that cover the change ship in the same commit as the change.
 
 ## 11. Code Review Guidelines
 
