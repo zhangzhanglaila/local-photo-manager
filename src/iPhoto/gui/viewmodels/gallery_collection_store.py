@@ -452,10 +452,14 @@ class GalleryCollectionStore:
         # Direct mode already holds every DTO in memory, so grouping it costs a
         # single pass and no SQL at all. Query mode asks the index for one
         # aggregate instead of loading rows.
+        # Key on the query's *content*, not its id(): a new AssetQuery can reuse
+        # the id of a garbage-collected one, and with an unchanged total the rail
+        # then kept the previous view's years (an album showed the library's
+        # 1970/2021… ladder instead of its own 2024).
         cache_key: tuple = (
             ("direct", self._generation, self._total_count)
             if query is None
-            else (id(query), self._total_count)
+            else (repr(query), self._total_count)
         )
         if self._timeline_cache_key == cache_key:
             return list(self._timeline_buckets)
@@ -547,22 +551,27 @@ class GalleryCollectionStore:
         if not buckets:
             return []
 
+        # Aggregate per year first: the bucket query is month-ordered, but any
+        # non-contiguous same-year bucket (mixed sort order, a scan inserting an
+        # old row) used to create a second span for the same year, which the rail
+        # then drew as a repeated label ("2025" twice).
+        per_year: dict[int, int] = {}
+        for year, _month, count in buckets:
+            try:
+                key = int(year)
+            except (TypeError, ValueError):
+                continue
+            per_year[key] = per_year.get(key, 0) + max(0, int(count))
+        if not per_year:
+            return []
+
         result: list[tuple[int, int, int]] = []
         row = 0
-        current_year: int | None = None
-        year_count = 0
-        for year, _month, count in buckets:
-            if year != current_year:
-                if current_year is not None:
-                    result.append((current_year, first_row, year_count))
-                current_year = year
-                year_count = 0
-                first_row = min(row, max(0, self._total_count - 1))
-            increment = max(0, count)
-            year_count += increment
-            row += increment
-        if current_year is not None:
-            result.append((current_year, first_row, year_count))
+        for year in sorted(per_year, reverse=True):
+            count = per_year[year]
+            first_row = min(row, max(0, self._total_count - 1))
+            result.append((year, first_row, count))
+            row += count
         return result
 
     def year_start_rows(self) -> list[tuple[int, int]]:

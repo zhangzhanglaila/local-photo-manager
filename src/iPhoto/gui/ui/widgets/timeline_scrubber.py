@@ -53,7 +53,6 @@ class TimelineScrubber(QWidget):
         self._scrubbing = False
         self._current_y: float | None = None
         self.setFixedWidth(RAIL_WIDTH)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.hide()
@@ -64,8 +63,16 @@ class TimelineScrubber(QWidget):
     def set_spans(self, spans: list[tuple[int, int, int]]) -> None:
         """Set ``(year, first_row, count)`` triples ordered newest first."""
 
+        merged: dict[int, tuple[int, int]] = {}
+        for year, row, count in spans:
+            key = int(year)
+            previous = merged.get(key)
+            first_row = int(row) if previous is None else min(previous[0], int(row))
+            merged[key] = (first_row, max(0, int(count)) + (previous[1] if previous else 0))
+        # Newest year first and exactly one entry per year, so the rail can never
+        # print the same label twice.
         self._spans = [
-            (int(year), int(row), max(0, int(count))) for year, row, count in spans
+            (year, merged[year][0], merged[year][1]) for year in sorted(merged, reverse=True)
         ]
         if self._active_year is not None and not any(
             year == self._active_year for year, _row, _count in self._spans

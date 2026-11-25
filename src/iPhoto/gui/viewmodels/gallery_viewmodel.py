@@ -832,6 +832,8 @@ class GalleryViewModel(BaseViewModel):
             try:
                 rel = path.relative_to(library_root)
             except ValueError:
+                # A root of its own (a second library root): the index stores its
+                # assets under that absolute path, so filter on it verbatim.
                 return path.resolve().as_posix()
         rel_str = rel.as_posix()
         if rel_str in ("", "."):

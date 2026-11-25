@@ -80,10 +80,7 @@ class GalleryGridView(AssetGrid):
         vp = self.viewport()
         vp.setAutoFillBackground(True)
 
-        self._empty_label = QLabel(
-            "No media found. Click Rescan to scan this library.",
-            vp,
-        )
+        self._empty_label = QLabel(tr("empty.no_media"), vp)
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setWordWrap(True)
         self._empty_label.setStyleSheet("color: #86868b; font-size: 15px;")
@@ -95,7 +92,7 @@ class GalleryGridView(AssetGrid):
         self._loading_label.hide()
 
         # 扫描状态标签 - 显示扫描中状态
-        self._scanning_label = QLabel("正在扫描照片，请稍候...", vp)
+        self._scanning_label = QLabel(tr("empty.scanning"), vp)
         self._scanning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._scanning_label.setStyleSheet("color: #86868b; font-size: 15px;")
         self._scanning_label.hide()
@@ -894,9 +891,12 @@ class GalleryGridView(AssetGrid):
         self._do_update_empty_state()
 
     def set_scan_started(self) -> None:
-        """标记扫描开始 - 显示扫描中状态。"""
-        if self._scan_completed:
-            return  # don't override completed state
+        """标记扫描开始 - 显示扫描中状态。
+
+        这同样适用于「首次扫描已完成之后」的重新扫描：新增图库根目录或相册时，
+        该相册在索引写入完成前是空的，此时必须显示"正在扫描"，而不是
+        "No media found. Click Rescan"，否则用户会以为所选文件夹没有照片。
+        """
         self._is_scanning = True
         self._empty_state_timer.stop()
         self._do_update_empty_state()
@@ -955,10 +955,13 @@ class GalleryGridView(AssetGrid):
         # 图库…" next to "准备中...").
         # 优先级：正在扫描 > 正在加载查询 > 空状态
         if is_empty and self._is_scanning:
-            # 正在扫描 - 显示扫描中提示
+            # 正在扫描：展示进度提示。首次启动时这层会被启动遮罩盖住，不可见；
+            # 运行中追加根目录/相册的重扫则直接呈现给用户。
             self._empty_label.hide()
             self._loading_label.hide()
-            self._scanning_label.hide()
+            self._scanning_label.setText(tr("empty.scanning"))
+            self._scanning_label.show()
+            self._scanning_label.raise_()
         elif is_empty and self._query_loading:
             # 正在加载查询
             self._empty_label.hide()
@@ -985,6 +988,17 @@ class GalleryGridView(AssetGrid):
             self._loading_label.hide()
             self._scanning_label.hide()
             self._empty_label.hide()
+
+    def retranslate(self) -> None:
+        """Re-apply the placeholder texts after a language switch."""
+
+        if self._empty_mode is not None:
+            self._empty_label.setText(self._empty_message())
+        else:
+            self._empty_label.setText(tr("empty.no_media"))
+        self._loading_label.setText(tr("preview.loading"))
+        self._scanning_label.setText(tr("empty.scanning"))
+        self._update_empty_state()
 
     def set_empty_mode(self, mode: str | None) -> None:
         """Set the context for the empty-state message (e.g. 'favorites', 'videos').
@@ -1021,21 +1035,21 @@ class GalleryGridView(AssetGrid):
             # ⭐ 清除模式时立即隐藏标签并重置文本
             self._empty_label.hide()
             # ⭐ 重置标签文本为默认值，防止显示旧的错误消息
-            self._empty_label.setText("No media found. Click Rescan to scan this library.")
+            self._empty_label.setText(tr("empty.no_media"))
             self._update_empty_state()
 
     def _empty_message(self) -> str:
         """Return a context-aware empty-state message."""
         mode = self._empty_mode
         if mode == "favorites":
-            return "没有收藏"
+            return tr("empty.favorites")
         if mode == "videos":
-            return "没有视频"
+            return tr("empty.videos")
         if mode == "live":
-            return "没有实况照片"
+            return tr("empty.live")
         if mode == "no_library":
-            return "请选择照片文件夹"
-        return "没有照片"
+            return tr("empty.no_library")
+        return tr("empty.no_photos")
 
     # ------------------------------------------------------------------
     # Selection mode toggling

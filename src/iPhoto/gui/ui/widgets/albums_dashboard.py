@@ -147,7 +147,6 @@ class AlbumCard(QFrame):
         # 1. Container dimensions
         self.setFixedSize(260, 80)
         self.setObjectName("AlbumCard")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         # 2. Layout
         self.layout = QHBoxLayout(self)  # type: ignore[assignment]
@@ -664,7 +663,18 @@ class AlbumsDashboard(QWidget):
         except OSError:
             return
 
-        if scan_root == library_root or library_root in scan_root.parents:
+        extra_roots: list[Path] = []
+        try:
+            extra_roots = [Path(root).resolve() for root in self._library.roots()]
+        except Exception:
+            extra_roots = []
+        if (
+            scan_root == library_root
+            or library_root in scan_root.parents
+            or scan_root in extra_roots
+        ):
+            # Counts change when any root finishes scanning, including a second
+            # root that lives outside the primary one.
             self.refresh()
 
     def _show_card_menu(self, album_path: Path, global_pos) -> None:

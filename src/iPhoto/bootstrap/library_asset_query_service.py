@@ -260,9 +260,27 @@ class LibraryAssetQueryService:
         self._repository().update_location(rel, location)
 
     def album_path_for(self, root: Path) -> str | None:
-        """Return the album path used for index filtering."""
+        """Return the album path used for index filtering.
 
-        return compute_album_path(Path(root), self.library_root)
+        A path outside the library root is a root of its own (the app supports
+        several). The scanner indexes those assets under their absolute path, so
+        filtering has to use that same absolute path — returning ``None`` counted
+        the whole library for such a root.
+        """
+
+        candidate = Path(root)
+        rel = compute_album_path(candidate, self.library_root)
+        if rel is not None:
+            return rel
+        try:
+            resolved = candidate.resolve()
+            library_root = Path(self.library_root).resolve() if self.library_root else None
+        except OSError:
+            resolved = candidate
+            library_root = Path(self.library_root) if self.library_root else None
+        if library_root is not None and resolved == library_root:
+            return None
+        return resolved.as_posix()
 
     def _repository(self) -> AssetRepositoryPort:
         return self._repository_factory(self.library_root)
