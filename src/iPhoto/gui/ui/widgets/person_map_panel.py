@@ -46,7 +46,6 @@ class PersonCard(QFrame):
 
     def _setup_ui(self, name: str, thumbnail_path: Optional[Path]) -> None:
         self.setFixedSize(80, 100)
-        self.setCursor(Qt.PointingHandCursor)
         self._update_style(False)
 
         layout = QVBoxLayout(self)

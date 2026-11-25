@@ -21,7 +21,6 @@ class LiveBadge(QWidget):
         # can be treated as a replay target.
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self._icon: QIcon = load_icon("livephoto.svg", color="white")
         self._font = QFont(self.font())

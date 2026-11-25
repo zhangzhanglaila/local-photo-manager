@@ -53,7 +53,6 @@ class PeopleCard(QWidget):
         self._cover_cache_key: str | None = None
 
         self.setFixedSize(CARD_WIDTH, CARD_HEIGHT)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._apply_shadow(blur=28, offset_y=7, alpha=36)
         people_cover_cache().coverReady.connect(self._handle_cover_ready)
 

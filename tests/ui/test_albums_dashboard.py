@@ -54,7 +54,9 @@ def test_album_card_initialization(qapp):
     assert card.title_label.text() == "My Album"
     assert card.count_label.text() == "10"
     # Verify cursor
-    assert card.cursor().shape() == Qt.CursorShape.PointingHandCursor
+    # The app does not use hand cursors on non-button surfaces (a hand over the
+    # photo window reads as a foreign affordance), so cards keep the arrow.
+    assert card.cursor().shape() == Qt.CursorShape.ArrowCursor
     # Verify mouse tracking
     assert card.hasMouseTracking()
 
