@@ -123,14 +123,77 @@ class CLIPEmbeddingService:
             _LOGGER.warning("Failed to encode image %s: %s", image_path, e)
             return None
 
-    def encode_images(self, image_paths: List[Path]) -> List[Optional[np.ndarray]]:
-        """Generate embeddings for multiple images."""
+    def encode_images(
+        self,
+        image_paths: List[Path],
+        *,
+        batch_size: int = 16,
+    ) -> List[Optional[np.ndarray]]:
+        """Generate embeddings for multiple images in true batches.
+
+        Each image used to be a separate forward pass, which made indexing a
+        14k-photo library take hours. A batch of 16 costs barely more than one
+        image on CPU, and this is the path the background indexer uses.
+
+        A path that cannot be decoded yields ``None`` in its slot; it never
+        aborts the rest of the batch.
+        """
+
         if not self._ensure_loaded():
             return [None] * len(image_paths)
+        if not image_paths:
+            return []
 
-        results = []
-        for path in image_paths:
-            results.append(self.encode_image(path))
+        import torch
+        from PIL import Image
+
+        results: list[Optional[np.ndarray]] = [None] * len(image_paths)
+        batch_size = max(1, int(batch_size))
+
+        batch_images: list[object] = []
+        batch_slots: list[int] = []
+
+        def flush() -> None:
+            if not batch_images:
+                return
+            try:
+                inputs = self._processor(images=list(batch_images), return_tensors="pt")
+                with torch.no_grad():
+                    outputs = self._model.vision_model(**inputs)
+                    embeds = self._model.visual_projection(outputs.pooler_output)
+                array = embeds.numpy()
+                norms = np.linalg.norm(array, axis=1, keepdims=True)
+                norms[norms == 0] = 1.0
+                array = array / norms
+                for slot, vector in zip(batch_slots, array):
+                    results[slot] = vector.astype(np.float32)
+            except Exception as exc:  # pragma: no cover - model failure
+                _LOGGER.warning("Failed to encode image batch: %s", exc)
+            finally:
+                batch_images.clear()
+                batch_slots.clear()
+
+        # Decoding dominates on CPU (JPEG/HEIC -> 224x224 tensor), so decode ahead
+        # in a small thread pool while the model works on the previous batch.
+        from concurrent.futures import ThreadPoolExecutor
+
+        def load(path: Path):
+            try:
+                return Image.open(path).convert("RGB")
+            except Exception as exc:
+                _LOGGER.warning("Failed to load image %s: %s", path, exc)
+                return None
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for slot, image in zip(range(len(image_paths)), pool.map(load, image_paths)):
+                if image is None:
+                    continue
+                batch_images.append(image)
+                batch_slots.append(slot)
+                if len(batch_images) >= batch_size:
+                    flush()
+
+        flush()
         return results
 
     def encode_text(self, text: str) -> Optional[np.ndarray]:
