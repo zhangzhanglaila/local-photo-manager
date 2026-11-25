@@ -81,6 +81,39 @@ def test_margin_tolerance_none_disables_the_filter() -> None:
 def test_precision_params_fall_back_to_balanced() -> None:
     assert precision_params("strict")[0] == 0.25
     assert precision_params("unknown") == precision_params("balanced")
+    # Tiers also carry the per-query z-score cutoff.
+    assert precision_params("balanced")[3] == 2.0
+    assert precision_params("strict")[3] > precision_params("loose")[3]
+
+
+def test_zscore_keeps_only_the_tail_of_the_distribution() -> None:
+    """A library's CLIP scores cluster tightly; an absolute floor alone lets
+    almost everything through and the same generic images answer every query."""
+
+    # Mirrors a real CLIP library: scores sit in a narrow band around ~0.24,
+    # so the absolute floor alone admits a third of the collection.
+    rng = np.random.default_rng(7)
+    background = rng.normal(0.235, 0.018, size=2000).astype(np.float32)
+    matches = np.array([0.30, 0.295, 0.29], dtype=np.float32)
+    scores = np.concatenate([background, matches])
+
+    without_z = select_results(scores, floor=0.24, margin=0.06)
+    with_z = select_results(scores, floor=0.24, margin=0.06, zscore=2.0)
+
+    assert len(without_z) > 400, "the absolute floor alone is too permissive"
+    assert len(with_z) <= 120, with_z
+    assert len(with_z) < len(without_z) / 4
+    assert set(range(2000, 2003)).issubset(set(with_z))
+    cutoff = float(scores.mean()) + 2.0 * float(scores.std())
+    assert all(scores[index] >= cutoff for index in with_z)
+
+
+def test_zscore_is_ignored_for_a_flat_distribution() -> None:
+    scores = np.full(50, 0.26, dtype=np.float32)
+
+    kept = select_results(scores, floor=0.20, margin=0.06, zscore=2.0)
+    assert sorted(kept) == list(range(50))
+
 
 
 def test_text_vectors_are_cached_across_calls() -> None:

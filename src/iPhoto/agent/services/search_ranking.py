@@ -20,16 +20,22 @@ from typing import Iterable, Sequence
 
 import numpy as np
 
-#: ``(floor, margin, margin_tolerance)`` per precision tier.
+#: ``(floor, margin, margin_tolerance, zscore)`` per precision tier.
 #: There is deliberately no result cap: the cutoff decides what was found, and the
 #: gallery loads result windows lazily, so a large match set stays cheap to browse.
 #: ``margin_tolerance`` is the minimum ``sim(query) - max(sim(other animals))``;
 #: ``None`` disables the label filter (the "loose" tier is the old behaviour plus
 #: the relative cutoff).
-PRECISION_TIERS: dict[str, tuple[float, float, float | None]] = {
-    "strict": (0.25, 0.04, 0.0),
-    "balanced": (0.24, 0.06, -0.01),
-    "loose": (0.23, 0.08, -0.02),
+#:
+#: ``zscore`` is the standard-deviation cutoff. CLIP text/image cosines on a real
+#: library cluster in a narrow band (0.21-0.30 for *any* query), so an absolute
+#: floor let 70-95% of the library through and the same few "generic" images
+#: (screenshots, flat backgrounds) appeared for every search. Keeping only the
+#: tail of each query's own distribution makes the cutoff query-relative.
+PRECISION_TIERS: dict[str, tuple[float, float, float | None, float]] = {
+    "strict": (0.25, 0.04, 0.0, 2.2),
+    "balanced": (0.24, 0.06, -0.01, 2.0),
+    "loose": (0.23, 0.08, -0.02, 1.6),
 }
 
 DEFAULT_PRECISION = "balanced"
@@ -183,8 +189,10 @@ QUERY_LABEL_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
 )
 
 
-def precision_params(tier: str | None) -> tuple[float, float, float | None]:
-    """Return ``(floor, margin, margin_tolerance)`` for *tier*."""
+def precision_params(
+    tier: str | None,
+) -> tuple[float, float, float | None, float]:
+    """Return ``(floor, margin, margin_tolerance, zscore)`` for *tier*."""
 
     return PRECISION_TIERS.get(tier or "", PRECISION_TIERS[DEFAULT_PRECISION])
 
@@ -219,12 +227,16 @@ def select_results(
     margin: float,
     margins: Sequence[float] | np.ndarray | None = None,
     margin_tolerance: float | None = None,
+    zscore: float | None = None,
 ) -> list[int]:
     """Return indices worth showing, strongest first.
 
     Keeps scores within *margin* of the best match but never below *floor*, and
     drops results whose contrastive margin is below *margin_tolerance* (when
-    provided). No fixed result limit: a larger match set is intentional.
+    provided). When *zscore* is given the cutoff also has to clear
+    ``mean + zscore * std`` of this query's scores, which is what stops a query
+    from returning most of the library. No fixed result limit: a larger match set
+    is intentional.
     """
 
     scores_array = np.asarray(scores, dtype=np.float32)
@@ -232,6 +244,11 @@ def select_results(
         return []
 
     cutoff = max(float(floor), float(scores_array.max()) - float(margin))
+    if zscore is not None:
+        std = float(scores_array.std())
+        if std > 1e-6:
+            tail_cutoff = float(scores_array.mean()) + float(zscore) * std
+            cutoff = max(cutoff, tail_cutoff)
     keep = scores_array >= cutoff
 
     if margins is not None and margin_tolerance is not None:

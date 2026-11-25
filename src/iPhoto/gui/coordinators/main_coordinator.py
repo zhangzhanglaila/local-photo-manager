@@ -1579,7 +1579,7 @@ class MainCoordinator(QObject):
                             return
 
                         sim_scores = matrix @ query_embedding
-                        floor, margin, margin_tolerance = precision_params(
+                        floor, margin, margin_tolerance, zscore = precision_params(
                             self._precision
                         )
                         try:
@@ -1621,6 +1621,7 @@ class MainCoordinator(QObject):
                             margin=margin,
                             margins=margins,
                             margin_tolerance=margin_tolerance,
+                            zscore=zscore,
                         )
 
                     results = [
