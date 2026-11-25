@@ -33,6 +33,16 @@ def _ensure_streams() -> None:
 def main() -> int:
     _ensure_streams()
 
+    # Claim the taskbar identity before any window exists (the native splash
+    # below is a window too): without it Windows groups the process under
+    # Python and keeps the interpreter's icon on the taskbar button.
+    try:
+        from iPhoto.utils.win32_appid import set_app_user_model_id
+
+        set_app_user_model_id()
+    except Exception:  # noqa: BLE001 - cosmetic only
+        pass
+
     # A Qt splash cannot appear before PySide6 is imported, which on a cold boot takes
     # up to a minute. Draw a plain Win32 window first (ctypes only), then swap in Qt.
     native = None

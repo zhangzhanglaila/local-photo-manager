@@ -269,17 +269,23 @@ def _resolve_app_icon():
 
     from pathlib import Path
 
+    # Windows' taskbar and Alt-Tab read the .ico; a PNG is scaled from a single
+    # bitmap and looks soft. Prefer the ICO there, and the PNG elsewhere.
+    icon_suffixes = (".ico", ".png") if sys.platform == "win32" else (".png", ".ico")
+
     candidates = []
     local = os.environ.get("LOCALAPPDATA")
     if local:
-        candidates.append(Path(local) / "iPhoto" / "app.png")
-        candidates.append(Path(local) / "iPhoto" / "app.ico")
+        for suffix in icon_suffixes:
+            candidates.append(Path(local) / "iPhoto" / f"app{suffix}")
     module_path = Path(__file__).resolve()
     # source checkout: <repo>/src/iPhoto/gui/main.py -> parents[3] = <repo>
     for depth in (3, 4):
         try:
-            candidates.append(module_path.parents[depth] / "packaging" / "app.png")
-            candidates.append(module_path.parents[depth] / "packaging" / "app.ico")
+            for suffix in icon_suffixes:
+                candidates.append(
+                    module_path.parents[depth] / "packaging" / f"app{suffix}"
+                )
         except IndexError:
             continue
     for candidate in candidates:
@@ -320,6 +326,12 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
         "qt.qpa.opengl*=false;qt.opengl*=false"
     )
     if app is None:
+        # Must run before the first window exists: Windows captures the identity
+        # when the taskbar button is created. (The .pyw launcher already did it
+        # for its own path, before the native splash.)
+        from iPhoto.utils.win32_appid import set_app_user_model_id
+
+        set_app_user_model_id()
         app = QApplication(arguments)
 
     # The taskbar / Alt-Tab icon comes from the *window* icon, and a process started as
@@ -733,12 +745,17 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
             # ⭐ 检查是否已绑定图库
             library_root = context.library.root()
             if library_root is None:
-                # 没有绑定图库，显示友好提示
-                _logger.info("startup step 5: no library bound, showing empty state")
-                # 设置空状态提示
+                # 没有绑定图库：仍然停在首页，侧边栏保持与已绑定状态一致的骨架
+                # （静态分类 + 相册分组），避免启动首帧看起来像另一个未完成的窗口。
+                _logger.info("startup step 5: no library bound, landing on Home")
                 grid_view = getattr(window.ui.gallery_page, "grid_view", None)
                 if grid_view and hasattr(grid_view, "set_empty_mode"):
                     grid_view.set_empty_mode("no_library")
+                try:
+                    window.ui.sidebar.select_home(emit_signal=False)
+                except Exception:
+                    _logger.debug("sidebar select_home failed (non-critical)", exc_info=True)
+                coordinator._navigation.open_home()
                 coordinator.finish_startup()
                 overlay.dismiss()
                 _logger.info("startup complete (no library)")
@@ -748,27 +765,30 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
                 _logger.info("startup step 5: opening album from CLI argument %s", valid_path_arg)
                 coordinator.open_album_from_path(valid_path_arg)
             else:
-                _logger.info("startup step 5: selecting All Photos")
+                _logger.info("startup step 5: loading All Photos and landing on Home")
                 diag("[DIAG] _step5: library_root=%s", library_root)
                 diag("[DIAG] _step5: store.count before open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
                 diag("[DIAG] _step5: asset_query_service=%s", coordinator._asset_query_service() if hasattr(coordinator, "_asset_query_service") else "no_method")
                 # ⭐ 关键修复：直接调用 navigation_coordinator.open_all_photos()
                 # 而不是通过 sidebar 信号链（sidebar signal chain 可能在 sidebar model 还没 refresh 时失效）
+                # All Photos 仍然载入到 gallery store，这样网格、搜索和缩略图预热
+                # 在用户第一次点进图库时就已经有数据；界面本身停在 Home。
                 coordinator._navigation.open_all_photos()
-                # ⭐ 关键修复：强制刷新 sidebar model，确保 "All Photos" 节点存在
-                # 否则 select_all_photos 会因为 index 无效而失败
+                # ⭐ 关键修复：强制刷新 sidebar model，确保静态节点存在
+                # 否则 select_home 会因为 index 无效而失败
                 try:
                     sidebar_model = window.ui.sidebar._model
                     if sidebar_model is not None:
-                        diag("[DIAG] _step5: forcing sidebar model refresh before select_all_photos")
+                        diag("[DIAG] _step5: forcing sidebar model refresh before select_home")
                         sidebar_model.refresh()
                 except Exception:
                     _logger.debug("sidebar model refresh failed", exc_info=True)
-                # 仍然尝试更新 sidebar UI 选择状态（不影响加载逻辑）
+                # 默认选中 Home，内容区切到首页
                 try:
-                    window.ui.sidebar.select_all_photos(emit_signal=False)
+                    window.ui.sidebar.select_home(emit_signal=False)
                 except Exception:
-                    _logger.debug("sidebar select_all_photos failed (non-critical)", exc_info=True)
+                    _logger.debug("sidebar select_home failed (non-critical)", exc_info=True)
+                coordinator._navigation.open_home()
                 diag("[DIAG] _step5: store.count after open_all_photos=%s", coordinator._gallery_store.count() if hasattr(coordinator, "_gallery_store") else "no_store")
 
             coordinator.finish_startup()
@@ -782,10 +802,10 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
                 grid_view = getattr(gallery_page, "grid_view", None)
                 if grid_view and hasattr(grid_view, "dismiss_loading_state"):
                     grid_view.dismiss_loading_state()
-                # 同时强制 stack 切换到 grid_view，避免 _loading_widget 残留
-                if hasattr(gallery_page, "_stack") and hasattr(gallery_page, "grid_view"):
-                    if gallery_page._stack.currentWidget() is not gallery_page.grid_view:
-                        gallery_page._stack.setCurrentWidget(gallery_page.grid_view)
+                # 同时让 stack 离开 _loading_widget；hide_loading 会回到当前
+                # 基础视图（Home 或网格），不会把首页顶掉。
+                if hasattr(gallery_page, "hide_loading"):
+                    gallery_page.hide_loading()
 
             # ⭐ 启动缓存预热：在后台预加载可见区域的缩略图
             # 这可以显著改善首次浏览时的流畅度
