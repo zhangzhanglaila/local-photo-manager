@@ -773,6 +773,9 @@ class MainCoordinator(QObject):
 
         self._context.language.languageChanged.connect(lambda _lang: ui.main_header.retranslate())
         self._context.language.languageChanged.connect(lambda _lang: ui.sidebar.retranslate())
+        self._context.language.languageChanged.connect(
+            lambda _lang: ui.grid_view.retranslate()
+        )
 
         # Note: keyboard shortcuts are now managed centrally by
         # AppShortcutManager, which is created in __init__ after all
@@ -1707,6 +1710,9 @@ class MainCoordinator(QObject):
     def _display_search_results_raw(self, results: list, query: str) -> None:
         """Display search results."""
         ui = self._window.ui
+        # Search results live in the grid; make sure it is the view the page
+        # returns to, even when the search was started from the Home view.
+        ui.gallery_page.show_grid()
         ui.gallery_page.hide_loading()
         if not results:
             self._status_bar.show_message(f"未找到与 '{query}' 相关的照片")
@@ -1774,6 +1780,11 @@ class MainCoordinator(QObject):
         state = self._search_state
         if state is None:
             return
+        # The search panel and its results belong to the grid view; leaving Home
+        # as the page's base view would hide them once loading finishes.
+        page = getattr(self._window.ui, "gallery_page", None)
+        if page is not None and hasattr(page, "show_grid"):
+            page.show_grid()
         self._view_router.show_gallery()
         if not state.get("done"):
             self._show_search_loading(state["query"])
@@ -2164,14 +2175,14 @@ class MainCoordinator(QObject):
         QThreadPool.globalInstance().start(worker)
 
         self._status_bar.show_message(
-            tr("organize.searching_duplicates", default="Searching for duplicates...")
+            tr("organize.searching_duplicates")
         )
 
     def _display_duplicates(self, duplicates: list) -> None:
         """Display duplicate photos in the gallery."""
         if not duplicates:
             self._status_bar.show_message(
-                tr("organize.no_duplicates", default="No duplicates found")
+                tr("organize.no_duplicates")
             )
             return
 
@@ -2186,8 +2197,11 @@ class MainCoordinator(QObject):
         total_groups = len(duplicates)
         total_photos = len(all_asset_ids)
         self._status_bar.show_message(
-            tr("organize.duplicates_found",
-               default=f"Found {total_groups} duplicate groups ({total_photos} photos)")
+            tr(
+                "organize.duplicates_found",
+                groups=total_groups,
+                photos=total_photos,
+            )
         )
 
     def _handle_create_smart_album(self, group_by: str) -> None:
@@ -2254,14 +2268,17 @@ class MainCoordinator(QObject):
         QThreadPool.globalInstance().start(worker)
 
         self._status_bar.show_message(
-            tr("organize.creating_albums", default=f"Creating smart albums by {group_by}...")
+            tr(
+                "organize.creating_albums",
+                group_by=tr(f"organize.group.{group_by}"),
+            )
         )
 
     def _display_smart_albums(self, albums: list, group_by: str) -> None:
         """Display smart album suggestions."""
         if not albums:
             self._status_bar.show_message(
-                tr("organize.no_albums", default="No smart albums to create")
+                tr("organize.no_albums")
             )
             return
 

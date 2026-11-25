@@ -12,6 +12,7 @@ from PySide6.QtGui import QIcon
 
 from ....library.runtime_controller import LibraryRuntimeController
 from ....library.tree import AlbumNode
+from ....config import HOME_TITLE
 from ....i18n import tr
 from ...services.pinned_items_service import PinnedItemsService, PinnedSidebarItem
 from ...services.people_service_resolver import resolve_people_service
@@ -89,6 +90,7 @@ class AlbumTreeModel(QAbstractItemModel):
     """Tree model describing the Basic Library hierarchy."""
 
     STATIC_NODES: tuple[str, ...] = (
+        HOME_TITLE,
         "All Photos",
         "Videos",
         "Live Photos",
@@ -99,10 +101,24 @@ class AlbumTreeModel(QAbstractItemModel):
 
     TRAILING_STATIC_NODES: tuple[str, ...] = ("Recently Deleted",)
 
+    # Static nodes keep their English identity (dispatch compares these strings);
+    # only the label shown in the tree is translated.
+    _STATIC_TITLE_KEYS: dict[str, str] = {
+        HOME_TITLE: "sidebar.home",
+        "All Photos": "sidebar.all_photos",
+        "Videos": "sidebar.videos",
+        "Live Photos": "sidebar.live_photos",
+        "Favorites": "sidebar.favorites",
+        "People": "sidebar.people",
+        "Location": "sidebar.location",
+        "Recently Deleted": "sidebar.recently_deleted",
+    }
+
     # Store the icon *base* names so the delegate can decide whether to append
     # the ``.fill`` suffix depending on the selection state. This keeps the
     # model responsible only for supplying the default, unselected icon.
     _STATIC_ICON_MAP: dict[str, str] = {
+        HOME_TITLE.casefold(): "house",
         "all photos": "photo.on.rectangle",
         "videos": "video",
         "live photos": "livephoto",
@@ -164,6 +180,10 @@ class AlbumTreeModel(QAbstractItemModel):
             return None
         item = self._item_from_index(index)
         if role == Qt.ItemDataRole.DisplayRole:
+            if item.node_type is NodeType.STATIC:
+                key = self._STATIC_TITLE_KEYS.get(item.title)
+                if key is not None:
+                    return tr(key)
             return item.title
         if role == Qt.ItemDataRole.ToolTipRole and item.album is not None:
             return str(item.album.path)
@@ -285,29 +305,37 @@ class AlbumTreeModel(QAbstractItemModel):
         self._pinned_map.clear()
         library_root = self._library.root()
         if library_root is None:
-            placeholder = AlbumTreeItem("Bind Basic Library…", NodeType.ACTION)
-            self._root_item.add_child(placeholder)
+            # Startup shows the same chrome as a bound library before the paths
+            # resolve: a bare "Bind Basic Library…" row made the first frame look
+            # like a different, unfinished window. Only the album list is
+            # genuinely missing, so the rest of the skeleton is built here and the
+            # section header's "+" still offers binding.
+            self._search_item = None
+            self._add_static_nodes(self._root_item, add_separator=False)
+            self._root_item.add_child(AlbumTreeItem("──────────", NodeType.SEPARATOR))
+            self._root_item.add_child(
+                AlbumTreeItem(
+                    tr("sidebar.albums"),
+                    NodeType.HEADER,
+                    icon_name="folder.svg",
+                    header_action="bind_library",
+                )
+            )
+            self._add_trailing_static_nodes(self._root_item)
             self.endResetModel()
             return
 
-        header = AlbumTreeItem(
-            "Basic Library",
-            NodeType.HEADER,
-            icon_name="photo.on.rectangle.svg",
-        )
         if self._search_query is not None:
             self._search_item = AlbumTreeItem(self._search_title(), NodeType.SEARCH)
             self._root_item.add_child(self._search_item)
             self._root_item.add_child(AlbumTreeItem("──────────", NodeType.SEPARATOR))
         else:
             self._search_item = None
-        self._root_item.add_child(header)
-        # The smart collections belong directly under the "Basic Library" header,
-        # however they do not require an inline separator anymore because the
-        # divider is now rendered at the root level (see below). Therefore we
-        # suppress the trailing separator that :meth:`_add_static_nodes` used to
-        # inject automatically.
-        self._add_static_nodes(header, add_separator=False)
+        # The smart collections sit flat at the top level. The sidebar already
+        # carries a "Basic Library" section title above the tree, so repeating it
+        # as a bold header row pushed every entry one indent in and read as a
+        # second, redundant heading.
+        self._add_static_nodes(self._root_item, add_separator=False)
 
         # Insert the separator as a root-level item so the break between the
         # system smart albums and the user-created collections stays exactly where
@@ -454,8 +482,8 @@ class AlbumTreeModel(QAbstractItemModel):
                 return item
         return self._root_item
 
-    def _add_static_nodes(self, header: AlbumTreeItem, *, add_separator: bool = True) -> None:
-        """Populate *header* with the built-in smart collections.
+    def _add_static_nodes(self, parent: AlbumTreeItem, *, add_separator: bool = True) -> None:
+        """Populate *parent* with the built-in smart collections.
 
         The ``add_separator`` flag controls whether a separator row should be
         appended after the smart albums. Callers can disable it when the
@@ -464,9 +492,9 @@ class AlbumTreeModel(QAbstractItemModel):
         """
 
         for title in self.STATIC_NODES:
-            header.add_child(AlbumTreeItem(title, NodeType.STATIC))
+            parent.add_child(AlbumTreeItem(title, NodeType.STATIC))
         if add_separator and self.STATIC_NODES:
-            header.add_child(AlbumTreeItem("──────────", NodeType.SEPARATOR))
+            parent.add_child(AlbumTreeItem("──────────", NodeType.SEPARATOR))
 
     def _add_trailing_static_nodes(self, parent: AlbumTreeItem) -> None:
         """Append the trailing static entries (e.g. "Recently Deleted")."""
@@ -603,19 +631,18 @@ class AlbumTreeModel(QAbstractItemModel):
         if item.node_type == NodeType.SEARCH:
             return load_icon(
                 "magnifyingglass.svg",
-                color=SIDEBAR_ICON_COLOR_HEX,
+                color=color or SIDEBAR_ICON_COLOR_HEX,
                 stroke_width=stroke_width,
             )
         if item.node_type == NodeType.STATIC:
             icon_name = self._STATIC_ICON_MAP.get(item.title.casefold())
             if icon_name:
-                # Static entries mirror the macOS sidebar styling, so we tint the
-                # SF Symbols inspired SVGs with the shared blue accent colour. We
-                # defer fill selection to the delegate, therefore the base icon is
-                # always loaded without the ".fill" suffix at this stage.
+                # The caller supplies the tint that matches the row's state (muted
+                # grey, or the accent colour when selected); the blue is only the
+                # fallback for consumers that render the icon outside the sidebar.
                 return load_icon(
                     f"{icon_name}.svg",
-                    color=SIDEBAR_ICON_COLOR_HEX,
+                    color=color or SIDEBAR_ICON_COLOR_HEX,
                     stroke_width=stroke_width,
                 )
         if item.node_type in {NodeType.ALBUM, NodeType.SUBALBUM}:

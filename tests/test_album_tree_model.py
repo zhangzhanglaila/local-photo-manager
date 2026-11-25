@@ -11,6 +11,7 @@ from PySide6.QtCore import QModelIndex
 from PySide6.QtWidgets import QApplication
 
 from iPhoto.gui.services.pinned_items_service import PinnedItemsService
+from iPhoto.config import HOME_TITLE
 from iPhoto.i18n import tr
 from iPhoto.gui.ui.models.album_tree_model import AlbumTreeModel, AlbumTreeRole, NodeType
 from iPhoto.library.runtime_controller import LibraryRuntimeController
@@ -47,14 +48,30 @@ def _find_child(model: AlbumTreeModel, parent_index, title: str):
     return None
 
 
-def test_placeholder_when_unbound(qapp: QApplication) -> None:
+def test_skeleton_when_unbound(qapp: QApplication) -> None:
+    """An unbound library still renders the full sidebar skeleton.
+
+    The first frame used to be a single "Bind Basic Library…" row, which made the
+    window look like a different, unfinished app until the library resolved. Only
+    the album list is genuinely missing before binding.
+    """
+
     manager = LibraryRuntimeController()
     model = AlbumTreeModel(manager)
     qapp.processEvents()
-    assert model.rowCount() == 1
-    index = model.index(0, 0)
-    assert model.data(index) == "Bind Basic Library…"
-    assert model.data(index, AlbumTreeRole.NODE_TYPE) == NodeType.ACTION
+
+    titles = [model.data(model.index(row, 0)) for row in range(model.rowCount())]
+    assert titles[:2] == [tr("sidebar.home"), tr("sidebar.all_photos")]
+    assert tr("sidebar.videos") in titles and tr("sidebar.location") in titles
+    assert tr("sidebar.albums") in titles
+    assert tr("sidebar.recently_deleted") in titles
+
+    albums_index = _find_child(model, QModelIndex(), tr("sidebar.albums"))
+    assert albums_index is not None
+    assert model.data(albums_index, AlbumTreeRole.NODE_TYPE) == NodeType.HEADER
+    # The "+" on the section header is how an unbound library gets bound.
+    assert model.data(albums_index, AlbumTreeRole.HEADER_ACTION) == "bind_library"
+    assert model.rowCount(albums_index) == 0, "no albums before the library is bound"
 
 
 def test_model_populates_albums(tmp_path: Path, qapp: QApplication) -> None:
@@ -67,19 +84,23 @@ def test_model_populates_albums(tmp_path: Path, qapp: QApplication) -> None:
     model = AlbumTreeModel(manager)
     qapp.processEvents()
 
-    header_index = model.index(0, 0)
-    assert model.data(header_index) == "Basic Library"
-    people_index = _find_child(model, header_index, "People")
-    location_index = _find_child(model, header_index, "Location")
+    # The smart collections are a flat list at the root level: the sidebar's own
+    # "Basic Library" section title already labels them, so a bold header row
+    # would be a second, redundant heading.
+    root_titles = [model.data(model.index(row, 0)) for row in range(model.rowCount())]
+    assert "Basic Library" not in root_titles
+    assert root_titles[0] == tr("sidebar.home")
+    people_index = _find_child(model, QModelIndex(), tr("sidebar.people"))
+    location_index = _find_child(model, QModelIndex(), tr("sidebar.location"))
     assert people_index is not None
     assert location_index is not None
     assert people_index.row() < location_index.row()
 
-    # Albums is now promoted to a header-level entry, therefore it must be
-    # discovered directly under the root model index instead of under the
-    # "Basic Library" header. Keeping the test explicit ensures the hierarchy
-    # change remains intentional and prevents regressions back to the nested
-    # layout when the model refresh logic evolves.
+    # Albums is promoted to a section header, so it must be discovered directly
+    # under the root model index rather than nested inside the smart collections.
+    # Keeping the test explicit ensures the hierarchy change remains intentional
+    # and prevents regressions back to the nested layout when the model refresh
+    # logic evolves.
     albums_index = _find_child(model, QModelIndex(), tr("sidebar.albums"))
     assert albums_index is not None
     # Validating the node type ensures the delegate will render the correct font
@@ -89,8 +110,7 @@ def test_model_populates_albums(tmp_path: Path, qapp: QApplication) -> None:
     albums_item = model.item_from_index(albums_index)
     assert albums_item is not None
     # The Albums header must reference the dedicated folder SVG so the sidebar
-    # renders the platform-consistent icon instead of the generic bookshelf used
-    # by the "Basic Library" header.
+    # renders the platform-consistent icon instead of a generic glyph.
     assert albums_item.icon_name == "folder.svg"
     # Each bound library is itself a node under "Albums", so its albums hang one
     # level lower and sub-albums one lower again.
