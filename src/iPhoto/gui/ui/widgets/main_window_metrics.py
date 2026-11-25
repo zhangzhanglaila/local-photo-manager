@@ -46,6 +46,13 @@ WINDOW_CONTROL_BUTTON_SIZE = QSize(18, 18)
 TITLE_BAR_HEIGHT = WINDOW_CONTROL_BUTTON_SIZE.height() + 16
 """Fixed vertical extent for the custom title bar including padding."""
 
+# Caption buttons (minimise / maximise / close) follow the reference sidebar's
+# title bar: a wide 36x28 hit target with a 14 px glyph and a 6 px radius.
+TITLE_CONTROL_BUTTON_SIZE = QSize(36, 28)
+TITLE_CONTROL_GLYPH_SIZE = QSize(14, 14)
+TITLE_CONTROL_BUTTON_RADIUS = 6
+TITLE_CONTROL_CLOSE_HOVER_BACKGROUND = "#E5484D"
+
 __all__ = [
     "HEADER_ICON_GLYPH_SIZE",
     "HEADER_BUTTON_SIZE",
@@ -59,4 +66,8 @@ __all__ = [
     "WINDOW_CONTROL_GLYPH_SIZE",
     "WINDOW_CONTROL_BUTTON_SIZE",
     "TITLE_BAR_HEIGHT",
+    "TITLE_CONTROL_BUTTON_SIZE",
+    "TITLE_CONTROL_GLYPH_SIZE",
+    "TITLE_CONTROL_BUTTON_RADIUS",
+    "TITLE_CONTROL_CLOSE_HOVER_BACKGROUND",
 ]

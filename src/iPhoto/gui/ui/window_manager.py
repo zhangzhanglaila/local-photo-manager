@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .icon import load_icon
 from .styles import modern_scrollbar_style
 from .widgets.custom_tooltip import FloatingToolTip, ToolTipEventFilter
 from .window_shell import RoundedWindowShell
@@ -176,6 +175,10 @@ class FramelessWindowManager(QObject):
 
         if event.type() == QEvent.Type.WindowTitleChange:
             self._update_title_bar()
+        elif event.type() == QEvent.Type.WindowStateChange:
+            # Maximise/restore also arrives through the window manager's caption
+            # button, but the system menu and snapping change state too.
+            self._update_window_control_icons()
         elif event.type() == QEvent.Type.PaletteChange:
             self._rounded_shell.update()
             self._apply_menu_styles()
@@ -285,7 +288,7 @@ class FramelessWindowManager(QObject):
 
         self._immersive_active = True
         self._window.showFullScreen()
-        self._update_fullscreen_button_icon()
+        self._update_window_control_icons()
         self._schedule_playback_resume(
             expect_immersive=True, resume=resume_after_transition
         )
@@ -345,7 +348,7 @@ class FramelessWindowManager(QObject):
                     self._ui.toggle_filmstrip_action.isChecked()
                 )
 
-        self._update_fullscreen_button_icon()
+        self._update_window_control_icons()
         self._schedule_playback_resume(
             expect_immersive=False, resume=resume_after_transition
         )
@@ -418,15 +421,24 @@ class FramelessWindowManager(QObject):
     def _configure_window_controls(self) -> None:
         self._ui.minimize_button.clicked.connect(self._window.showMinimized)
         self._ui.close_button.clicked.connect(self._window.close)
-        # Title bar green button (must connect via title_bar directly because
-        # ui.fullscreen_button gets overwritten by detail_page.fullscreen_button
-        # later in setupUi).
-        self._ui.title_bar.fullscreen_button.clicked.connect(self.toggle_fullscreen)
+        # The title bar's middle caption button maximises like the reference
+        # title bar; immersive full screen keeps its own entry points (detail
+        # page, F11, the image viewer).
+        self._ui.title_bar.maximize_button.clicked.connect(self.toggle_maximized)
         # Detail page fullscreen button
         self._ui.detail_page.fullscreen_button.clicked.connect(self.toggle_fullscreen)
         self._ui.image_viewer.fullscreenToggleRequested.connect(self.toggle_fullscreen)
         self._ui.image_viewer.fullscreenExitRequested.connect(self.exit_fullscreen)
         self._ui.video_area.fullscreenExitRequested.connect(self.exit_fullscreen)
+
+    def toggle_maximized(self) -> None:
+        """Maximise or restore the window from the caption button."""
+
+        if self._window.isMaximized():
+            self._window.showNormal()
+        else:
+            self._window.showMaximized()
+        self._update_window_control_icons()
 
     def _configure_drag_sources(self) -> None:
         # The traffic lights moved into the header row, so the header is now the
@@ -648,13 +660,18 @@ class FramelessWindowManager(QObject):
                 screen = handle.screen()
         return screen
 
-    def _update_fullscreen_button_icon(self) -> None:
-        if self._immersive_active:
-            self._ui.fullscreen_button.setIcon(load_icon("green.restore.circle.svg"))
-            self._ui.fullscreen_button.setToolTip("Exit Full Screen")
+    def _update_window_control_icons(self) -> None:
+        """Sync the caption glyph with the window's maximised state."""
+
+        button = getattr(self._ui.title_bar, "maximize_button", None)
+        if button is None:
+            return
+        if self._window.isMaximized():
+            button.set_glyph("window.restore.svg")
+            button.setToolTip("Restore")
         else:
-            self._ui.fullscreen_button.setIcon(load_icon("green.maximum.circle.svg"))
-            self._ui.fullscreen_button.setToolTip("Enter Full Screen")
+            button.set_glyph("window.maximize.svg")
+            button.setToolTip("Maximize")
 
     def _update_title_bar(self) -> None:
         self._ui.window_title_label.setText(self._window.windowTitle())

@@ -185,6 +185,12 @@ class Ui_MainWindow(object):
         self.window_shell_layout.addWidget(self.menu_bar_container)
 
         self.sidebar = AlbumSidebar(library, MainWindow)
+        # The toolbar no longer carries a "⋯" button: every application option
+        # lives in the Settings window opened from the sidebar's pinned row.
+        self._library = library
+        self._main_window = MainWindow
+        self._settings_dialog = None
+        self.sidebar.settingsRequested.connect(self._open_settings)
         self.preview_window = PreviewWindow(MainWindow)
         self.map_view = PhotoMapView(
             map_runtime=getattr(library, "map_runtime", None),
@@ -312,6 +318,33 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         QMetaObject.connectSlotsByName(MainWindow)
+
+    def _open_settings(self) -> None:
+        """Open (or re-focus) the standalone settings window."""
+
+        from .widgets.settings_dialog import SettingsDialog
+
+        dialog = self._settings_dialog
+        if dialog is not None:
+            try:
+                if dialog.isVisible():
+                    dialog.raise_()
+                    dialog.activateWindow()
+                    return
+            except RuntimeError:
+                # The window deleted itself when it was closed.
+                self._settings_dialog = None
+        self._settings_dialog = SettingsDialog(
+            self.main_header,
+            self._library,
+            self._main_window,
+            settings=getattr(
+                getattr(self._main_window, "_context", None), "settings", None
+            ),
+        )
+        self._settings_dialog.show()
+        self._settings_dialog.raise_()
+        self._settings_dialog.activateWindow()
 
     def retranslateUi(self, MainWindow: QMainWindow) -> None:  # noqa: N802 - Qt style
         """Apply translatable strings to the window."""
