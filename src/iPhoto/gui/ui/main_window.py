@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QCloseEvent, QKeyEvent, QResizeEvent
-from PySide6.QtWidgets import QMainWindow, QMenuBar
+from PySide6.QtWidgets import QApplication, QMainWindow, QMenuBar, QSystemTrayIcon
 
 from ...application.contracts.runtime_entry_contract import RuntimeEntryContract
 
 from .media import require_multimedia
 from .ui_main_window import ChromeStatusBar, Ui_MainWindow
+from .widgets.tray_icon import AppTrayIcon
 from .window_manager import FramelessWindowManager
 # MainController import removed; logic is now in MainCoordinator via self.coordinator
+
+_logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -23,6 +27,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         require_multimedia()
 
+        self._context = context
         self.ui = Ui_MainWindow()
 
         # ``setupUi`` triggers a handful of ``QEvent`` instances while it
@@ -40,6 +45,20 @@ class MainWindow(QMainWindow):
 
         # The controller (now coordinator) is assigned via setter or set later.
         self.coordinator = None
+
+        # Tray presence: the app keeps running when the window is hidden, and the
+        # tray menu is how the window comes back (or how the app is quit).
+        self._tray: AppTrayIcon | None = None
+        self._tray_available = QSystemTrayIcon.isSystemTrayAvailable()
+        if self._tray_available:
+            self._tray = AppTrayIcon(self, self.windowIcon(), "iPhoto")
+            self._tray.show_requested.connect(self.restore_from_tray)
+            self._tray.settings_requested.connect(self.ui._open_settings)
+            self._tray.quit_requested.connect(self.quit_from_tray)
+            self._tray.show()
+            _logger.info("tray icon created")
+        else:
+            _logger.info("system tray unavailable; minimising falls back to the taskbar")
 
         # Retain the behaviour where clicking the chrome gives the window focus
         # so global shortcuts continue to function when no child widget is
@@ -66,7 +85,7 @@ class MainWindow(QMainWindow):
         choice = self._ask_close_action()
         if choice == "minimise":
             event.ignore()
-            self.showMinimized()
+            self.minimise_to_tray()
             return
         if choice == "cancel":
             event.ignore()
@@ -75,35 +94,75 @@ class MainWindow(QMainWindow):
         self._force_quit = True
         self._teardown()
         super().closeEvent(event)
-        from PySide6.QtWidgets import QApplication
-
         QApplication.instance().quit()
 
+    def minimise_to_tray(self) -> None:
+        """Hide the window but keep the process (tray icon stays reachable)."""
+
+        if self._tray is None:
+            # No tray on this desktop: fall back to an ordinary minimised window
+            # so the app cannot become unreachable.
+            self.showMinimized()
+            return
+        self.hide()
+        self._tray.show_message("iPhoto", "已最小化到托盘，右键托盘图标可退出。")
+
+    def restore_from_tray(self) -> None:
+        """Show and focus the window, restoring it if it was minimised."""
+
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def quit_from_tray(self) -> None:
+        """Quit through the normal close path so teardown still runs."""
+
+        self._force_quit = True
+        self.close()
+
     def _teardown(self) -> None:
+        if self._tray is not None:
+            self._tray.hide()
         if self.window_manager is not None:
             self.window_manager.cleanup()
         if self.coordinator:
             self.coordinator.shutdown()
 
     def _ask_close_action(self) -> str:
-        """Return ``"minimise"``, ``"quit"`` or ``"cancel"``."""
+        """Return ``"minimise"``, ``"quit"`` or ``"cancel"``.
 
-        from ...i18n import tr
+        A previously remembered choice skips the prompt entirely; the Settings
+        window exposes the same preference so the choice stays reversible.
+        """
 
-        box = QMessageBox(self)
-        box.setWindowTitle(tr("dialog.close_title"))
-        box.setText(tr("dialog.close_prompt"))
-        minimise = box.addButton(tr("dialog.close_minimise"), QMessageBox.ButtonRole.AcceptRole)
-        quit_button = box.addButton(tr("dialog.close_quit"), QMessageBox.ButtonRole.DestructiveRole)
-        cancel = box.addButton(tr("dialog.close_cancel"), QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(minimise)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is quit_button:
-            return "quit"
-        if clicked is cancel:
-            return "cancel"
-        return "minimise"
+        settings = getattr(self._context, "settings", None)
+        remembered = None
+        if settings is not None:
+            try:
+                remembered = settings.get("ui.close_action", None)
+            except Exception:  # noqa: BLE001 - a bad value must not block closing
+                remembered = None
+        if remembered in {"minimise", "quit"}:
+            return remembered
+
+        from .widgets.close_dialog import CloseDialog
+
+        dialog = CloseDialog(self)
+        dialog.exec()
+        choice = dialog.choice
+        if (
+            dialog.remember
+            and choice in {"minimise", "quit"}
+            and settings is not None
+        ):
+            try:
+                settings.set("ui.close_action", choice)
+            except Exception:  # noqa: BLE001 - persistence is best effort
+                pass
+        return choice
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -114,6 +173,9 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowIconChange and self._tray is not None:
+            # The application icon is applied after this window is constructed.
+            self._tray.set_icon(self.windowIcon())
         if self.window_manager is not None:
             self.window_manager.handle_change_event(event)
 
