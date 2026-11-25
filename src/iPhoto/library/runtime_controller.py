@@ -139,6 +139,21 @@ class LibraryRuntimeController(
     def roots(self) -> list[Path]:
         return list(self._roots)
 
+    def _sync_workspace_roots(self) -> None:
+        """Teach the path helpers which folders are library roots.
+
+        Without this, opening an album allocated a whole workspace directory for
+        it (``<workspace>/<album name>/global_index.db``), which is what turned a
+        shared workspace into a pile of near-empty folders.
+        """
+
+        try:
+            from ..utils.pathutils import set_known_library_roots
+
+            set_known_library_roots(self._roots)
+        except Exception:  # pragma: no cover - never block binding on this
+            LOGGER.debug("could not register library roots for the workspace", exc_info=True)
+
     def add_root(self, path: Path) -> None:
         """Add a library root without replacing existing roots."""
         normalized = path.expanduser().resolve()
@@ -158,6 +173,7 @@ class LibraryRuntimeController(
         # Conversely, a new parent root subsumes roots nested inside it.
         self._roots = [root for root in self._roots if not self._is_within(root, normalized)]
         self._roots.append(normalized)
+        self._sync_workspace_roots()
         self._refresh_tree()
         self._rebuild_watches()
         self.treeUpdated.emit()
@@ -188,6 +204,7 @@ class LibraryRuntimeController(
                 return root == resolved
 
         self._roots = [r for r in self._roots if not _matches(r)]
+        self._sync_workspace_roots()
         self._refresh_tree()
         self._rebuild_watches()
         self.treeUpdated.emit()
@@ -252,6 +269,7 @@ class LibraryRuntimeController(
                     self.bind_people_service(session.people)
         self._geotagged_assets_cache = None
         self._geotagged_assets_cache_root = None
+        self._sync_workspace_roots()
         LOGGER.debug("bind_path: normalized root=%s", normalized)
         self._initialize_deleted_dir()
         self._refresh_tree()

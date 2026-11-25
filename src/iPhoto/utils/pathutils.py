@@ -18,6 +18,44 @@ from ..config import ALL_WORK_DIR_NAMES, RECENTLY_DELETED_DIR_NAME, WORK_DIR_NAM
 LOGGER = logging.getLogger(__name__)
 _WARNED_WORK_DIR_CONFLICTS: set[Path] = set()
 _CUSTOM_WORKSPACE_BASE: Optional[Path] = None
+# Library roots known to the running application. Work files for an album must
+# live in its library's workspace: allocating one workspace directory per album
+# turned ``D:\iPhotronWorkspace`` into a pile of near-empty folders.
+_KNOWN_LIBRARY_ROOTS: tuple[Path, ...] = ()
+
+
+def set_known_library_roots(roots: Iterable[Path] | None) -> None:
+    """Register the library roots so album paths map to their library workspace."""
+
+    global _KNOWN_LIBRARY_ROOTS
+    resolved: list[Path] = []
+    for root in roots or ():
+        try:
+            candidate = Path(root).resolve()
+        except OSError:
+            candidate = Path(root)
+        if candidate not in resolved:
+            resolved.append(candidate)
+    _KNOWN_LIBRARY_ROOTS = tuple(resolved)
+
+
+def get_known_library_roots() -> tuple[Path, ...]:
+    return _KNOWN_LIBRARY_ROOTS
+
+
+def workspace_owner(path: Path) -> Path:
+    """Return the library root that owns *path* (itself when nothing matches)."""
+
+    try:
+        candidate = Path(path).resolve()
+    except OSError:
+        candidate = Path(path)
+    best: Path | None = None
+    for root in _KNOWN_LIBRARY_ROOTS:
+        if candidate == root or root in candidate.parents:
+            if best is None or len(root.parts) > len(best.parts):
+                best = root
+    return best or candidate
 
 
 def set_custom_workspace_base(base: Path | None) -> None:
@@ -64,7 +102,24 @@ def get_custom_workspace_dir(library_root: Path) -> Path | None:
     if base is None:
         return None
 
-    library_name = _generate_library_name(library_root)
+    owner = workspace_owner(library_root)
+    library_name = _generate_library_name(owner)
+    try:
+        resolved_root = Path(library_root).resolve()
+        resolved_owner = Path(owner).resolve()
+    except OSError:
+        resolved_root = Path(library_root)
+        resolved_owner = Path(owner)
+    if resolved_root != resolved_owner:
+        # An album inside a library: give it its own subdirectory so two albums
+        # never share one manifest/backup file, while keeping the workspace's
+        # top level limited to the library roots.
+        try:
+            relative = resolved_root.relative_to(resolved_owner).as_posix()
+        except ValueError:
+            relative = ""
+        if relative:
+            return base / library_name / "albums" / Path(relative)
     # The workspace is a *separate* directory tree from the photos, so the extra
     # `.iPhoto` level was redundant: `<workspace>/<library>/.iPhoto/<db|thumbs|...>`
     # nested one level too deep. Work files now live directly under
