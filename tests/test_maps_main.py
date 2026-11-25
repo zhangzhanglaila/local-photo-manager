@@ -20,6 +20,7 @@ def test_choose_default_map_source_prefers_obf_when_native_runtime_is_usable_wit
     tmp_path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr("maps.main.prefer_osmand_native_widget", lambda: True)
     package_root = tmp_path / "maps"
     monkeypatch.setattr("maps.main.has_usable_osmand_native_widget", lambda root: root == package_root)
     monkeypatch.setattr("maps.main.has_usable_osmand_default", lambda root: False)
@@ -83,6 +84,7 @@ def test_choose_default_map_source_falls_back_to_legacy_when_only_native_is_avai
 
 
 def test_choose_native_widget_class_uses_native_only_when_runtime_probe_succeeds(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("maps.main.prefer_osmand_native_widget", lambda: True)
     package_root = tmp_path / "maps"
     monkeypatch.setattr("maps.main.has_usable_osmand_native_widget", lambda root: root == package_root)
     monkeypatch.setattr("maps.main.probe_native_widget_runtime", lambda root: (True, None))
@@ -94,6 +96,7 @@ def test_choose_native_widget_class_uses_native_only_when_runtime_probe_succeeds
 
 
 def test_choose_native_widget_class_still_uses_native_when_generic_opengl_probe_failed(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("maps.main.prefer_osmand_native_widget", lambda: True)
     package_root = tmp_path / "maps"
     monkeypatch.setattr("maps.main.has_usable_osmand_native_widget", lambda root: root == package_root)
     monkeypatch.setattr("maps.main.probe_native_widget_runtime", lambda root: (True, None))
@@ -106,6 +109,7 @@ def test_choose_native_widget_class_still_uses_native_when_generic_opengl_probe_
 
 
 def test_choose_native_widget_class_falls_back_when_runtime_probe_fails(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("maps.main.prefer_osmand_native_widget", lambda: True)
     package_root = tmp_path / "maps"
     monkeypatch.setattr("maps.main.has_usable_osmand_native_widget", lambda root: root == package_root)
     monkeypatch.setattr(
@@ -427,6 +431,7 @@ def test_choose_launch_configuration_can_force_python_obf_backend(tmp_path, monk
 
 
 def test_choose_launch_configuration_auto_prefers_native_widget_when_runtime_is_available(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("maps.main.prefer_osmand_native_widget", lambda: True)
     package_root = tmp_path / "maps"
 
     monkeypatch.setattr("maps.main.has_usable_osmand_native_widget", lambda root: root == package_root)

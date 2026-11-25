@@ -101,9 +101,14 @@ _FALSE_ENV_VALUES = {"0", "false", "no", "off"}
 def prefer_osmand_native_widget() -> bool:
     """Return whether auto-selection should prefer the native OsmAnd widget.
 
-    The native widget stays enabled by default so packaged builds can use the
-    fully OpenGL-backed OBF renderer. Set
-    ``IPHOTO_PREFER_OSMAND_NATIVE_WIDGET=0`` to force the Python OBF path.
+    The native widget renders OBF tiles through an OpenGL surface inside the
+    frameless window. On Windows that combination crashes the process with an
+    access violation as soon as the local map is shown (typically right after an
+    online style fails and the view falls back to the local map), so Windows
+    defaults to the Python OBF path.
+
+    Set ``IPHOTO_PREFER_OSMAND_NATIVE_WIDGET=1`` to opt back in on Windows, or
+    ``=0`` to force the Python path everywhere.
     """
 
     raw_value = os.environ.get(ENV_PREFER_OSMAND_NATIVE_WIDGET, "").strip().lower()
@@ -111,7 +116,9 @@ def prefer_osmand_native_widget() -> bool:
         return True
     if raw_value in _FALSE_ENV_VALUES:
         return False
-    return True
+    # The packaged native widget is the Linux helper; on Windows the OpenGL
+    # surface it creates is what took the app down, so keep it opt-in only.
+    return not sys.platform.startswith("win")
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,7 @@ from pathlib import Path
 
 from maps import map_sources
 from maps.map_sources import (
+    prefer_osmand_native_widget,
     DEFAULT_HELPER_RELATIVE_PATHS,
     DEFAULT_NATIVE_WIDGET_RELATIVE_PATHS,
     ENV_OSMAND_EXTENSION_ROOT,
@@ -529,3 +530,27 @@ def test_sdk_roots_returns_empty_when_neither_exists(tmp_path) -> None:
     roots = _sdk_roots(repo_root)
 
     assert roots == ()
+
+
+def test_native_osmand_widget_is_off_by_default_on_windows(monkeypatch):
+    """The OpenGL native widget crashed Windows when the local map was shown."""
+
+    from maps import map_sources
+
+    monkeypatch.delenv("IPHOTO_PREFER_OSMAND_NATIVE_WIDGET", raising=False)
+    monkeypatch.setattr(map_sources.sys, "platform", "win32")
+    assert prefer_osmand_native_widget() is False
+
+    monkeypatch.setattr(map_sources.sys, "platform", "linux")
+    assert prefer_osmand_native_widget() is True
+
+
+def test_native_osmand_widget_can_be_opted_in(monkeypatch):
+    from maps import map_sources
+
+    monkeypatch.setattr(map_sources.sys, "platform", "win32")
+    monkeypatch.setenv("IPHOTO_PREFER_OSMAND_NATIVE_WIDGET", "1")
+    assert prefer_osmand_native_widget() is True
+
+    monkeypatch.setenv("IPHOTO_PREFER_OSMAND_NATIVE_WIDGET", "0")
+    assert prefer_osmand_native_widget() is False

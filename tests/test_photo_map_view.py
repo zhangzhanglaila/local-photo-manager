@@ -728,6 +728,7 @@ def test_photo_map_view_uses_widget_overlay_when_post_render_is_unsupported(
 
 
 def test_choose_map_widget_backend_prefers_native_when_runtime_files_are_available(monkeypatch) -> None:
+    monkeypatch.setattr(map_widget_factory_module, "prefer_osmand_native_widget", lambda: True)
     monkeypatch.setattr(map_widget_factory_module, "has_usable_osmand_native_widget", lambda root: True)
     monkeypatch.setattr(map_widget_factory_module, "has_usable_osmand_default", lambda root: False)
     monkeypatch.setattr(map_widget_factory_module, "_has_resolved_osmand_assets", lambda source: True)
@@ -766,6 +767,7 @@ def test_choose_map_widget_backend_uses_runtime_package_root_for_default_source(
 
 
 def test_choose_map_widget_backend_still_prefers_native_when_generic_opengl_probe_failed(monkeypatch) -> None:
+    monkeypatch.setattr(map_widget_factory_module, "prefer_osmand_native_widget", lambda: True)
     monkeypatch.setattr(map_widget_factory_module, "has_usable_osmand_native_widget", lambda root: True)
     monkeypatch.setattr(map_widget_factory_module, "has_usable_osmand_default", lambda root: False)
     monkeypatch.setattr(map_widget_factory_module, "_has_resolved_osmand_assets", lambda source: True)
