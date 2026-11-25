@@ -6,14 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QUrl
-from PySide6.QtGui import QDesktopServices, QPalette
-from PySide6.QtWidgets import (
-    QApplication,
-    QInputDialog,
-    QMenu,
-    QTreeView,
-    QWidget,
-)
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QMenu, QTreeView, QWidget
 
 from ..widgets import dialogs
 from ....errors import LibraryError
@@ -33,66 +27,14 @@ def _apply_main_window_menu_style(menu: QMenu, anchor: QWidget | None) -> None:
 def _create_styled_input_dialog(
     parent: QWidget, title: str, label: str, text: str = ""
 ) -> tuple[str, bool]:
-    """Create an input dialog for album operations.
+    """Prompt for a single line of text using the app-styled input card.
 
-    This helper used to enforce a light theme but now inherits the application-wide
-    theme settings to support both Light and Dark modes.
-
-    Args:
-        parent: Parent widget for the dialog
-        title: Dialog window title
-        label: Prompt label text
-        text: Default input text value
-
-    Returns:
-        Tuple of (user_input_text, accepted_bool)
+    Kept as a module-level helper because callers and tests patch it by name.
     """
-    dialog = QInputDialog(parent)
-    dialog.setWindowTitle(title)
-    dialog.setLabelText(label)
-    dialog.setTextValue(text)
 
-    # Retrieve the application-wide palette to ensure the dialog respects the active theme.
-    # While inheritance usually handles this, we explicitly query the global state to
-    # guarantee the correct colors are applied regardless of the parent widget's styling.
-    palette = QApplication.palette()
-    bg = palette.color(QPalette.ColorRole.Window).name()
-    text_col = palette.color(QPalette.ColorRole.WindowText).name()
-    base = palette.color(QPalette.ColorRole.Base).name()
-    text_input = palette.color(QPalette.ColorRole.Text).name()
-    button = palette.color(QPalette.ColorRole.Button).name()
-    button_text = palette.color(QPalette.ColorRole.ButtonText).name()
+    from ..widgets.input_dialog import prompt_text
 
-    stylesheet = f"""
-        QInputDialog {{
-            background-color: {bg};
-            color: {text_col};
-        }}
-        QLabel {{
-            color: {text_col};
-        }}
-        QLineEdit {{
-            background-color: {base};
-            color: {text_input};
-            border: 1px solid {text_col};
-            padding: 4px;
-        }}
-        QPushButton {{
-            background-color: {button};
-            color: {button_text};
-            border: 1px solid {text_col};
-            padding: 6px 16px;
-            min-width: 60px;
-        }}
-        QPushButton:hover {{
-            background-color: {base};
-        }}
-    """
-    dialog.setStyleSheet(stylesheet)
-
-    # Execute dialog and return result
-    accepted = dialog.exec()
-    return (dialog.textValue(), accepted == QInputDialog.DialogCode.Accepted)
+    return prompt_text(parent, title=title, label=label, text=text)
 
 
 class AlbumSidebarContextMenu(QMenu):

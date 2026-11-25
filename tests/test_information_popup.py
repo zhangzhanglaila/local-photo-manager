@@ -10,7 +10,7 @@ pytest.importorskip("PySide6", reason="PySide6 is required for GUI tests", exc_t
 pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets not available", exc_type=ImportError)
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from iPhoto.gui.ui.widgets.information_popup import InformationPopup
 
@@ -106,99 +106,66 @@ def test_close_button_icon_size_matches_main_window(qapp: QApplication) -> None:
     popup.close()
 
 
-def test_show_information_uses_information_popup(qapp: QApplication) -> None:
-    """``dialogs.show_information`` should create an ``InformationPopup``.
+def _no_exec(monkeypatch) -> None:
+    """Make the modal ``exec`` return immediately so tests do not block."""
 
-    Because ``show_information`` blocks via a local event loop, we schedule
-    a check-and-close via a single-shot timer.  The popup's properties are
-    captured before it is closed (``WA_DeleteOnClose`` destroys the C++
-    object on close).
-    """
+    from iPhoto.gui.ui.widgets.message_dialog import MessageDialog
 
-    from PySide6.QtCore import QTimer
+    monkeypatch.setattr(MessageDialog, "exec", lambda self: 0)
+
+
+def test_show_information_uses_the_styled_dialog(qapp: QApplication, monkeypatch) -> None:
+    """``dialogs.show_information`` must use the app-styled card, not ``QMessageBox``."""
+
     from PySide6.QtWidgets import QWidget
 
     from iPhoto.gui.ui.widgets import dialogs
+    from iPhoto.gui.ui.widgets.message_dialog import MessageDialog
 
+    _no_exec(monkeypatch)
     parent = QWidget()
-    captured: list[dict[str, str]] = []
-
-    def _check_and_close() -> None:
-        children = parent.findChildren(InformationPopup)
-        for child in children:
-            captured.append({"title": child.title(), "message": child.message()})
-            child.close()
-
-    QTimer.singleShot(50, _check_and_close)
     dialogs.show_information(parent, "Test message", title="Test Title")
 
-    assert len(captured) == 1
-    assert captured[0]["title"] == "Test Title"
-    assert captured[0]["message"] == "Test message"
+    dialog = parent.findChild(MessageDialog)
+    assert dialog is not None
+    assert dialog.title() == "Test Title"
+    assert dialog.message() == "Test message"
+    assert [b.text() for b in dialog.findChildren(QPushButton)] == ["确定"]
     parent.close()
 
 
-def test_show_warning_uses_information_popup(qapp: QApplication) -> None:
-    """``dialogs.show_warning`` should use the project-styled ``InformationPopup``."""
-
-    from PySide6.QtCore import QTimer
+def test_show_warning_uses_the_styled_dialog(qapp: QApplication, monkeypatch) -> None:
     from PySide6.QtWidgets import QWidget
 
     from iPhoto.gui.ui.widgets import dialogs
+    from iPhoto.gui.ui.widgets.message_dialog import MessageDialog
 
+    _no_exec(monkeypatch)
     parent = QWidget()
-    captured: list[dict[str, str]] = []
-
-    def _check_and_close() -> None:
-        children = parent.findChildren(InformationPopup)
-        for child in children:
-            captured.append({"title": child.title(), "message": child.message()})
-            child.close()
-
-    QTimer.singleShot(50, _check_and_close)
     dialogs.show_warning(parent, "Warning message", title="Warning Title")
 
-    assert len(captured) == 1
-    assert captured[0]["title"] == "Warning Title"
-    assert captured[0]["message"] == "Warning message"
+    dialog = parent.findChild(MessageDialog)
+    assert dialog is not None
+    assert dialog.title() == "Warning Title"
+    assert dialog.message() == "Warning message"
     parent.close()
 
 
-def test_show_information_centers_popup_on_main_window(qapp: QApplication) -> None:
-    """The themed popup should be centered on the top-level window, not a child widget."""
-
-    from PySide6.QtCore import QTimer
+def test_confirm_action_maps_the_chosen_button(qapp: QApplication, monkeypatch) -> None:
     from PySide6.QtWidgets import QWidget
 
     from iPhoto.gui.ui.widgets import dialogs
+    from iPhoto.gui.ui.widgets.message_dialog import MessageDialog
 
-    window = QWidget()
-    window.resize(520, 360)
-    window.move(180, 140)
+    parent = QWidget()
+    answers = iter(["yes", "no"])
 
-    child = QWidget(window)
-    child.setGeometry(48, 72, 160, 120)
+    def fake_exec(self):
+        self.result_key = next(answers)
+        return 0
 
-    captured: list[tuple[tuple[int, int], tuple[int, int]]] = []
+    monkeypatch.setattr(MessageDialog, "exec", fake_exec)
 
-    def _check_and_close() -> None:
-        children = child.findChildren(InformationPopup)
-        for popup in children:
-            popup_center = popup.frameGeometry().center()
-            window_center = window.frameGeometry().center()
-            captured.append(
-                (
-                    (popup_center.x(), popup_center.y()),
-                    (window_center.x(), window_center.y()),
-                )
-            )
-            popup.close()
-
-    window.show()
-    qapp.processEvents()
-    QTimer.singleShot(50, _check_and_close)
-    dialogs.show_information(child, "Centered message", title="Centered Title")
-
-    assert len(captured) == 1
-    assert captured[0][0] == captured[0][1]
-    window.close()
+    assert dialogs.confirm_action(parent, "Proceed?", yes_label="继续", no_label="取消") is True
+    assert dialogs.confirm_action(parent, "Proceed?", yes_label="继续", no_label="取消") is False
+    parent.close()

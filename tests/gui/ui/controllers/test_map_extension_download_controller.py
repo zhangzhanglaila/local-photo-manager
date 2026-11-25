@@ -77,10 +77,11 @@ def test_restart_failure_restores_hidden_windows(qapp: QApplication, tmp_path: P
         "iPhoto.gui.ui.controllers.map_extension_download_controller.QProcess.startDetached",
         return_value=False,
     ), patch(
-        "iPhoto.gui.ui.controllers.map_extension_download_controller.QMessageBox.critical",
-        return_value=0,
-    ):
+        "iPhoto.gui.ui.controllers.map_extension_download_controller.dialogs.show_error",
+    ) as show_error:
         controller._restart_application()
+
+    show_error.assert_called_once()
 
     assert floating.isVisible()
     floating.close()
@@ -105,7 +106,7 @@ def test_ready_does_not_prompt_restart_when_install_folder_is_not_verified(
         controller,
         "_handle_error",
     ) as handle_error, patch(
-        "iPhoto.gui.ui.controllers.map_extension_download_controller.QMessageBox.question",
+        "iPhoto.gui.ui.controllers.map_extension_download_controller.dialogs.confirm_action",
     ) as question:
         controller._handle_ready(
             MapExtensionDownloadResult(
@@ -141,6 +142,9 @@ def test_start_download_keeps_worker_alive_until_finished(
     with patch(
         "iPhoto.gui.ui.controllers.map_extension_download_controller.supports_map_extension_download",
         return_value=True,
+    ), patch(
+        "iPhoto.gui.ui.controllers.map_extension_download_controller.has_installed_osmand_extension",
+        return_value=False,
     ), patch(
         "iPhoto.gui.ui.controllers.map_extension_download_controller.MapExtensionDownloadWorker",
         _FakeWorker,
@@ -191,11 +195,9 @@ def test_startup_pending_install_is_recovered_and_verified(
         "iPhoto.gui.ui.controllers.map_extension_download_controller.verify_osmand_extension_install",
         return_value=True,
     ), patch(
-        "iPhoto.gui.ui.controllers.map_extension_download_controller.QMessageBox.information",
-        return_value=0,
+        "iPhoto.gui.ui.controllers.map_extension_download_controller.dialogs.show_information",
     ) as information, patch(
-        "iPhoto.gui.ui.controllers.map_extension_download_controller.QMessageBox.critical",
-        return_value=0,
+        "iPhoto.gui.ui.controllers.map_extension_download_controller.dialogs.show_error",
     ) as critical:
         controller.maybe_prompt_on_startup()
 
@@ -231,13 +233,12 @@ def test_startup_pending_install_reports_verification_failure(
         "iPhoto.gui.ui.controllers.map_extension_download_controller.verify_osmand_extension_install",
         return_value=False,
     ), patch(
-        "iPhoto.gui.ui.controllers.map_extension_download_controller.QMessageBox.critical",
-        return_value=0,
+        "iPhoto.gui.ui.controllers.map_extension_download_controller.dialogs.show_error",
     ) as critical:
         controller.maybe_prompt_on_startup()
 
     critical.assert_called_once()
-    message = critical.call_args.args[2]
+    message = critical.call_args.args[1]
     assert "pending map extension install" in message
     assert "Pending folder:" in message
     assert "Active extension folder:" in message

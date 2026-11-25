@@ -1,16 +1,21 @@
-"""Reusable dialog helpers for the desktop UI."""
+"""Reusable dialog helpers for the desktop UI.
+
+Every message and confirmation in the application goes through this module so
+they share one chrome (see :class:`~iPhoto.gui.ui.widgets.message_dialog.MessageDialog`)
+instead of falling back to native ``QMessageBox`` windows that ignore the app's
+styling. Only the directory picker stays native: file-system pickers are an OS
+affordance users expect to look like the OS.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication, QPalette
-from ..theme_mode import is_dark
-from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox, QWidget
+from PySide6.QtWidgets import QFileDialog, QWidget
 
-from ..theme_manager import DARK_THEME, LIGHT_THEME, ThemeColors
+from ....i18n import tr
+from .message_dialog import MessageDialog
 
 
 def select_directory(parent: QWidget, caption: str, start: Optional[Path] = None) -> Optional[Path]:
@@ -23,97 +28,30 @@ def select_directory(parent: QWidget, caption: str, start: Optional[Path] = None
     return Path(path)
 
 
-def _apply_theme(box: QMessageBox, parent: Optional[QWidget]) -> None:
-    """Apply the active theme colors to the message box."""
-    # Prioritize parent palette if available, otherwise fallback to app palette
-    if parent:
-        palette = parent.palette()
-    else:
-        palette = QApplication.palette()
-
-    bg_color = palette.color(QPalette.ColorRole.Window).name()
-    text_color = palette.color(QPalette.ColorRole.WindowText).name()
-
-    # Explicitly set the stylesheet to override any global application styles
-    # that might be forcing a dark/light background inconsistently.
-    stylesheet = (
-        f"QMessageBox {{ background-color: {bg_color}; color: {text_color}; }}"
-        f"QLabel {{ color: {text_color}; }}"
-    )
-    box.setStyleSheet(stylesheet)
-
-
-def _resolve_popup_palette_source(parent: Optional[QWidget]) -> QPalette:
-    """Return the most appropriate palette source for popup surfaces."""
-
-    theme_colors = _resolve_popup_theme_colors(parent)
-    if theme_colors is not None:
-        palette = QPalette(QApplication.palette())
-        palette.setColor(QPalette.ColorRole.Window, theme_colors.window_background)
-        palette.setColor(QPalette.ColorRole.WindowText, theme_colors.text_primary)
-        palette.setColor(QPalette.ColorRole.Base, theme_colors.window_background)
-        palette.setColor(QPalette.ColorRole.AlternateBase, theme_colors.window_background)
-        palette.setColor(QPalette.ColorRole.ToolTipBase, theme_colors.window_background)
-        palette.setColor(QPalette.ColorRole.ToolTipText, theme_colors.text_primary)
-        palette.setColor(QPalette.ColorRole.Text, theme_colors.text_primary)
-        palette.setColor(QPalette.ColorRole.Button, theme_colors.window_background)
-        palette.setColor(QPalette.ColorRole.ButtonText, theme_colors.text_primary)
-        palette.setColor(QPalette.ColorRole.Mid, theme_colors.border_color)
-        return palette
-
-    if parent is not None:
-        main_window = parent.window()
-        if main_window is not None:
-            return QPalette(main_window.palette())
-        return QPalette(parent.palette())
-    return QPalette(QApplication.palette())
-
-
-def _resolve_popup_theme_colors(parent: Optional[QWidget]) -> ThemeColors | None:
-    """Resolve theme colors using the shared theme-mode decision."""
-
-    return DARK_THEME if is_dark(parent) else LIGHT_THEME
-
-
 def show_error(parent: QWidget, message: str, *, title: str = "iPhoto") -> None:
     """Display a blocking error message."""
 
-    box = QMessageBox(QMessageBox.Icon.Critical, title, message, QMessageBox.StandardButton.Ok, parent)
-    _apply_theme(box, parent)
-    box.exec()
+    MessageDialog(
+        parent,
+        title=title,
+        message=message,
+        buttons=[(tr("dialog.ok"), "ok")],
+    ).exec()
 
 
 def show_information(parent: QWidget, message: str, *, title: str = "iPhoto") -> None:
-    """Display a blocking informational popup using :class:`InformationPopup`.
+    """Display a blocking informational message."""
 
-    The popup is centred over *parent* and reuses the main window's close
-    button for a consistent look and feel.  A local event loop keeps the
-    call blocking so that existing callers (e.g.
-    ``DialogController.prompt_for_basic_library()``) continue to work as
-    expected.
-    """
-
-    from PySide6.QtCore import QEventLoop
-
-    from .information_popup import InformationPopup
-
-    popup = InformationPopup(parent, title=title, message=message)
-    popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-    popup.setPalette(_resolve_popup_palette_source(parent))
-    popup.setBackgroundRole(QPalette.ColorRole.Window)
-    popup.center_on(parent)
-
-    loop = QEventLoop()
-    popup.destroyed.connect(loop.quit)
-    popup.show()
-    popup.setPalette(_resolve_popup_palette_source(parent))
-    popup.center_on(parent)
-    popup.raise_()
-    loop.exec()
+    MessageDialog(
+        parent,
+        title=title,
+        message=message,
+        buttons=[(tr("dialog.ok"), "ok")],
+    ).exec()
 
 
 def show_warning(parent: QWidget, message: str, *, title: str = "iPhoto") -> None:
-    """Display a blocking warning popup using the project-styled InformationPopup."""
+    """Display a blocking warning message."""
 
     show_information(parent, message, title=title)
 
@@ -123,20 +61,49 @@ def confirm_action(
     message: str,
     *,
     title: str = "Confirmation",
-    yes_label: str = "Yes",
-    no_label: str = "No",
+    yes_label: str | None = None,
+    no_label: str | None = None,
+    danger: bool = False,
 ) -> bool:
     """Ask the user to confirm an action.
 
     Returns:
         True if the user selected the affirmative option, False otherwise.
     """
-    box = QMessageBox(QMessageBox.Icon.Question, title, message, QMessageBox.StandardButton.NoButton, parent)
-    yes_btn = box.addButton(yes_label, QMessageBox.ButtonRole.YesRole)
-    box.addButton(no_label, QMessageBox.ButtonRole.NoRole)
 
-    _apply_theme(box, parent)
-    box.exec()
+    yes_label = yes_label or tr("dialog.ok")
+    no_label = no_label or tr("dialog.cancel")
+    dialog = MessageDialog(
+        parent,
+        title=title,
+        message=message,
+        buttons=[(no_label, "no"), (yes_label, "yes")],
+        primary_role="danger" if danger else "default",
+    )
+    dialog.exec()
+    return dialog.result_key == "yes"
 
-    clicked = box.clickedButton()
-    return clicked == yes_btn if clicked is not None else False
+
+def ask_choice(
+    parent: QWidget,
+    message: str,
+    *,
+    title: str,
+    choices: list[tuple[str, str]],
+) -> str:
+    """Show *choices* as buttons and return the chosen key (or ``"cancel"``)."""
+
+    dialog = MessageDialog(parent, title=title, message=message, buttons=choices)
+    dialog.exec()
+    return dialog.result_key
+
+
+__all__ = [
+    "MessageDialog",
+    "ask_choice",
+    "confirm_action",
+    "select_directory",
+    "show_error",
+    "show_information",
+    "show_warning",
+]

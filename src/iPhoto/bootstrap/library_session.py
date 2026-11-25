@@ -196,37 +196,29 @@ class LibrarySession:
     def _show_model_download_dialog(self, model_dir: Path) -> None:
         """Show dialog to user about missing CLIP model."""
         try:
-            from PySide6.QtWidgets import QMessageBox
             from ..agent.infrastructure.clip_downloader import get_download_instructions, download_model
+            from ..gui.ui.widgets import dialogs
 
             model_path = model_dir / "clip-vit-base-patch32"
 
-            msg = QMessageBox()
-            msg.setWindowTitle("语义搜索需要下载模型")
-            msg.setText(
-                "语义搜索功能需要下载 CLIP 模型（约 350MB）。\n\n"
-                f"模型目录: {model_path}\n\n"
-                "是否现在下载？"
+            choice = dialogs.ask_choice(
+                None,
+                (
+                    "语义搜索功能需要下载 CLIP 模型（约 350MB）。\n\n"
+                    f"模型目录: {model_path}\n\n"
+                    "是否现在下载？\n\n"
+                    "下载后可以搜索任意内容，如：\n"
+                    "- 黄鹤楼、海边、日落\n"
+                    "- 狗、猫、美食\n"
+                    "- 穿红衣服的人"
+                ),
+                title="语义搜索需要下载模型",
+                choices=[("取消", "cancel"), ("手动下载", "manual"), ("自动下载", "auto")],
             )
-            msg.setInformativeText(
-                "下载后可以搜索任意内容，如：\n"
-                "- 黄鹤楼、海边、日落\n"
-                "- 狗、猫、美食\n"
-                "- 穿红衣服的人"
-            )
 
-            # Add custom buttons
-            auto_button = msg.addButton("自动下载", QMessageBox.ButtonRole.AcceptRole)
-            manual_button = msg.addButton("手动下载", QMessageBox.ButtonRole.ActionRole)
-            cancel_button = msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-
-            msg.exec()
-
-            clicked = msg.clickedButton()
-
-            if clicked == auto_button:
+            if choice == "auto":
                 self._download_model(model_dir)
-            elif clicked == manual_button:
+            elif choice == "manual":
                 self._show_manual_download_instructions(model_dir)
 
         except Exception as e:
@@ -236,8 +228,8 @@ class LibrarySession:
         """Download CLIP model in background."""
         try:
             from PySide6.QtCore import QThread, Signal
-            from PySide6.QtWidgets import QProgressDialog
             from ..agent.infrastructure.clip_downloader import download_model
+            from ..gui.ui.widgets.progress_dialog import ProgressDialog
 
             class DownloadThread(QThread):
                 progress_updated = Signal(int, int, str)
@@ -257,13 +249,14 @@ class LibrarySession:
                     )
                     self.finished.emit(success)
 
-            # Create non-blocking progress dialog
-            progress = QProgressDialog("正在下载 CLIP 模型...", "后台下载", 0, 100)
-            progress.setWindowTitle("下载模型")
-            progress.setMinimumDuration(0)
-            progress.setValue(0)
-            progress.setAutoClose(False)
-            progress.setAutoReset(False)
+            # Non-blocking progress card in the application chrome.
+            progress = ProgressDialog(
+                None,
+                title="下载模型",
+                message="正在下载 CLIP 模型...",
+                dismiss_label="后台下载",
+            )
+            progress.set_progress(0, 100)
 
             # Create and start download thread
             self._download_thread = DownloadThread(model_dir)
@@ -271,8 +264,8 @@ class LibrarySession:
             # Connect signals
             self._download_thread.progress_updated.connect(
                 lambda current, total, msg: (
-                    progress.setValue(current),
-                    progress.setLabelText(msg)
+                    progress.set_progress(current, 100),
+                    progress.set_message(msg),
                 )
             )
 
@@ -291,14 +284,20 @@ class LibrarySession:
 
     def _on_download_finished(self, success: bool, progress, model_dir: Path = None) -> None:
         """Handle download completion."""
-        from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QTextEdit, QPushButton, QApplication, QLabel, QHBoxLayout
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QApplication, QLabel, QHBoxLayout
 
         if success:
-            progress.setLabelText("下载完成！")
-            progress.setValue(100)
-            QMessageBox.information(None, "下载完成", "CLIP 模型下载完成！\n\n请重新启动应用以使用语义搜索。")
+            progress.set_message("下载完成！")
+            progress.set_progress(100, 100)
+            from ..gui.ui.widgets import dialogs
+
+            dialogs.show_information(
+                None,
+                "CLIP 模型下载完成！\n\n请重新启动应用以使用语义搜索。",
+                title="下载完成",
+            )
         else:
-            progress.setLabelText("下载失败")
+            progress.set_message("下载失败")
 
             model_path = model_dir / "clip-vit-base-patch32" if model_dir else "项目目录/extension/models/clip-vit-base-patch32"
 

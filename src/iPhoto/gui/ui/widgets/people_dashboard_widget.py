@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QMenu,
     QScrollArea,
@@ -522,8 +521,12 @@ class PeopleDashboardWidget(QWidget):
         return menu
 
     def _rename_person(self, summary: PersonSummary) -> None:
+        from .input_dialog import prompt_text
+
         title = "Rename Person" if summary.name else "Name This Person"
-        text, accepted = QInputDialog.getText(self, title, "Name:", text=summary.name or "")
+        text, accepted = prompt_text(
+            self, title=title, label="Name:", text=summary.name or ""
+        )
         if not accepted:
             return
         self._service.rename_cluster(summary.person_id, text.strip() or None)
@@ -752,8 +755,12 @@ class PeopleDashboardWidget(QWidget):
         return self._pinned_service is not None and self._service.library_root() is not None
 
     def _prompt_required_person_name(self, summary: PersonSummary) -> str | None:
+        from .input_dialog import prompt_text
+
         title = "Name This Person"
-        text, accepted = QInputDialog.getText(self, title, "Name:", text=summary.name or "")
+        text, accepted = prompt_text(
+            self, title=title, label="Name:", text=summary.name or ""
+        )
         if not accepted:
             return None
         normalized = text.strip()

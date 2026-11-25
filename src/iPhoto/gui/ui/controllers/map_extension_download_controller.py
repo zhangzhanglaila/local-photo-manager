@@ -9,17 +9,16 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QProcess, QThreadPool, Qt
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
     QProgressBar,
     QVBoxLayout,
     QWidget,
 )
 
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
+from iPhoto.gui.ui.widgets import dialogs
 from iPhoto.gui.ui.tasks.map_extension_download_worker import (
     MapExtensionDownloadRequest,
     MapExtensionDownloadResult,
@@ -128,24 +127,23 @@ class MapExtensionDownloadController:
         if not bool(self._context.settings.get(_SHOW_STARTUP_PROMPT_KEY, True)):
             return
 
-        message_box = QMessageBox(self._parent)
-        message_box.setIcon(QMessageBox.Icon.Question)
-        message_box.setWindowTitle("Map Extension")
-        message_box.setText("Download the offline map extension now?")
-        message_box.setInformativeText(
-            "The map extension enables the bundled offline OsmAnd map runtime."
+        dialog = dialogs.MessageDialog(
+            self._parent,
+            title="Map Extension",
+            message=(
+                "Download the offline map extension now?\n\n"
+                "The map extension enables the bundled offline OsmAnd map runtime."
+            ),
+            buttons=[("Not Now", "later"), ("Download", "download")],
+            checkbox_text="Do not show again",
         )
-        download_button = message_box.addButton("Download", QMessageBox.ButtonRole.AcceptRole)
-        message_box.addButton("Not Now", QMessageBox.ButtonRole.RejectRole)
-        do_not_show_checkbox = QCheckBox("Do not show again", message_box)
-        message_box.setCheckBox(do_not_show_checkbox)
-        message_box.exec()
+        dialog.exec()
 
-        if message_box.clickedButton() is download_button:
+        if dialog.result_key == "download":
             self.start_download(source="startup")
             return
 
-        if do_not_show_checkbox.isChecked():
+        if dialog.checkbox_checked:
             self._context.settings.set(_SHOW_STARTUP_PROMPT_KEY, False)
 
     def set_package_root(self, package_root: Path | None) -> None:
@@ -182,18 +180,18 @@ class MapExtensionDownloadController:
         if has_installed_osmand_extension(self._package_root) or (
             has_installed_osmand_extension(None)
         ):
-            QMessageBox.information(
+            dialogs.show_information(
                 self._parent,
-                "Map Extension",
                 "The offline map extension is already installed.",
+                title="Map Extension",
             )
             return
 
         if not supports_map_extension_download():
-            QMessageBox.warning(
+            dialogs.show_warning(
                 self._parent,
-                "Map Extension",
                 "Map extension downloads are unavailable on this platform.",
+                title="Map Extension",
             )
             return
 
@@ -241,16 +239,16 @@ class MapExtensionDownloadController:
             self._progress_dialog.deleteLater()
             self._progress_dialog = None
 
-        restart_now = QMessageBox.question(
+        restart_now = dialogs.confirm_action(
             self._parent,
-            "Restart Required",
             "Map extension download finished. Restart now to activate it?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
+            title="Restart Required",
+            yes_label="立即重启",
+            no_label="稍后",
         )
-        if restart_now != QMessageBox.StandardButton.Yes:
+        if not restart_now:
             self._restore_temporarily_hidden_windows()
-        if restart_now == QMessageBox.StandardButton.Yes:
+        else:
             self._restart_application()
 
     def _handle_error(self, message: str) -> None:
@@ -260,10 +258,10 @@ class MapExtensionDownloadController:
             self._progress_dialog.deleteLater()
             self._progress_dialog = None
         self._restore_temporarily_hidden_windows()
-        QMessageBox.critical(
+        dialogs.show_error(
             self._parent,
-            "Map Extension",
             str(message) or "Failed to download the map extension.",
+            title="Map Extension",
         )
 
     def _handle_finished(self) -> None:
@@ -278,29 +276,29 @@ class MapExtensionDownloadController:
             apply_pending_osmand_extension_install(self._package_root)
         except Exception:
             LOGGER.warning("Failed to recover pending map extension install", exc_info=True)
-            QMessageBox.critical(
+            dialogs.show_error(
                 self._parent,
-                "Map Extension",
                 self._install_verification_failed_message(
                     "A pending map extension install exists, but it could not be activated."
                 ),
+                title="Map Extension",
             )
             return
 
         if verify_osmand_extension_install(self._package_root, platform=sys.platform):
-            QMessageBox.information(
+            dialogs.show_information(
                 self._parent,
-                "Map Extension",
                 "Map extension installation was completed. Restart the application to activate it.",
+                title="Map Extension",
             )
             return
 
-        QMessageBox.critical(
+        dialogs.show_error(
             self._parent,
-            "Map Extension",
             self._install_verification_failed_message(
                 "A pending map extension install was found, but the installed files could not be verified."
             ),
+            title="Map Extension",
         )
 
     def _install_verification_failed_message(self, prefix: str) -> str:
@@ -321,10 +319,10 @@ class MapExtensionDownloadController:
         program, arguments = self._restart_command(app)
         if not QProcess.startDetached(program, arguments):
             self._restore_temporarily_hidden_windows()
-            QMessageBox.critical(
+            dialogs.show_error(
                 self._parent,
-                "Restart Failed",
                 "Failed to relaunch the application automatically. Please restart it manually.",
+                title="Restart Failed",
             )
             return
 

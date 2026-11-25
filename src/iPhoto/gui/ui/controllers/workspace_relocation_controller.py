@@ -11,13 +11,13 @@ import logging
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog, QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 
 from ....bootstrap.workspace_relocation import RelocationError, relocate_workspace
 from ....i18n import tr
 from ....utils.pathutils import get_custom_workspace_base, get_custom_workspace_dir
 from ..widgets import dialogs
+from ..widgets.progress_dialog import ProgressDialog
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,26 +46,27 @@ def relocate_workspace_interactively(
         library_workspace.parent if library_workspace is not None else None
     )
     if current is None or not Path(current).is_dir():
-        QMessageBox.warning(
+        dialogs.show_warning(
             parent,
-            tr("dialog.workspace_relocate_title"),
             tr("dialog.workspace_relocate_no_workspace"),
+            title=tr("dialog.workspace_relocate_title"),
         )
         return False
 
     # Show where the data lives right now *before* asking for a new folder: the picker
     # alone gave no context, so it was impossible to tell what was being changed.
-    preview = QMessageBox(parent)
-    preview.setIcon(QMessageBox.Icon.Information)
-    preview.setWindowTitle(tr("dialog.workspace_relocate_title"))
-    preview.setText(tr("dialog.workspace_current_location", path=str(current)))
-    preview.setInformativeText(tr("dialog.workspace_change_prompt"))
-    change_button = preview.addButton(
-        tr("action.change_workspace"), QMessageBox.ButtonRole.AcceptRole
+    choice = dialogs.ask_choice(
+        parent,
+        "\n\n".join(
+            (
+                tr("dialog.workspace_current_location", path=str(current)),
+                tr("dialog.workspace_change_prompt"),
+            )
+        ),
+        title=tr("dialog.workspace_relocate_title"),
+        choices=[("取消", "cancel"), (tr("action.change_workspace"), "change")],
     )
-    preview.addButton(QMessageBox.StandardButton.Cancel)
-    preview.exec()
-    if preview.clickedButton() is not change_button:
+    if choice != "change":
         return False
 
     start = get_custom_workspace_base() or current.parent
@@ -77,35 +78,34 @@ def relocate_workspace_interactively(
 
     destination = Path(chosen)
     if destination == Path(current):
-        QMessageBox.information(
+        dialogs.show_information(
             parent,
-            tr("dialog.workspace_relocate_title"),
             tr("dialog.workspace_relocate_same"),
+            title=tr("dialog.workspace_relocate_title"),
         )
         return False
 
-    confirmed = QMessageBox.question(
+    confirmed = dialogs.confirm_action(
         parent,
-        tr("dialog.workspace_relocate_title"),
         tr("dialog.workspace_relocate_confirm", destination=str(destination)),
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        QMessageBox.StandardButton.No,
+        title=tr("dialog.workspace_relocate_title"),
+        yes_label="迁移",
+        no_label="取消",
     )
-    if confirmed != QMessageBox.StandardButton.Yes:
+    if not confirmed:
         return False
 
-    progress = QProgressDialog(
-        tr("dialog.workspace_relocate_copying"), "", 0, 100, parent
+    progress = ProgressDialog(
+        parent,
+        title=tr("dialog.workspace_relocate_title"),
+        message=tr("dialog.workspace_relocate_copying"),
     )
-    progress.setWindowTitle(tr("dialog.workspace_relocate_title"))
-    progress.setWindowModality(Qt.WindowModality.WindowModal)
-    progress.setCancelButton(None)
-    progress.setMinimumDuration(0)
-    progress.setValue(0)
+    progress.set_progress(0, 100)
+    progress.show()
 
     def on_progress(done: int, total: int) -> None:
         percent = int(done * 100 / total) if total else 0
-        progress.setValue(min(100, percent))
+        progress.set_progress(min(100, percent), 100)
         QApplication.processEvents()
 
     try:
@@ -114,14 +114,14 @@ def relocate_workspace_interactively(
         )
     except RelocationError as exc:
         progress.close()
-        QMessageBox.critical(
+        dialogs.show_error(
             parent,
-            tr("dialog.workspace_relocate_title"),
             tr("dialog.workspace_relocate_failed", error=str(exc)),
+            title=tr("dialog.workspace_relocate_title"),
         )
         return False
     finally:
-        progress.setValue(100)
+        progress.set_progress(100, 100)
         progress.close()
 
     # Verified copy succeeded; the old directory is only removed now.
@@ -135,12 +135,12 @@ def relocate_workspace_interactively(
     except Exception:
         _LOGGER.warning("could not persist the new workspace base", exc_info=True)
 
-    QMessageBox.information(
+    dialogs.show_information(
         parent,
-        tr("dialog.workspace_relocate_title"),
         tr(
             "dialog.workspace_relocate_done",
             destination=str(result.destination),
         ),
+        title=tr("dialog.workspace_relocate_title"),
     )
     return True

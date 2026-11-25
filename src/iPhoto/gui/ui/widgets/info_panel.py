@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -107,43 +106,6 @@ def _face_add_button_metrics() -> tuple[QSize, QSize]:
 
 
 _FACE_ADD_ICON_SIZE, _FACE_ADD_BUTTON_SIZE = _face_add_button_metrics()
-
-
-def _style_popup_input_dialog(dialog: QInputDialog, parent: QWidget | None) -> None:
-    palette = parent.palette() if parent is not None else QPalette()
-    bg = palette.color(QPalette.ColorRole.Window).name()
-    text_col = palette.color(QPalette.ColorRole.WindowText).name()
-    base = palette.color(QPalette.ColorRole.Base).name()
-    text_input = palette.color(QPalette.ColorRole.Text).name()
-    button = palette.color(QPalette.ColorRole.Button).name()
-    button_text = palette.color(QPalette.ColorRole.ButtonText).name()
-    dialog.setStyleSheet(
-        f"""
-        QInputDialog {{
-            background-color: {bg};
-            color: {text_col};
-        }}
-        QLabel {{
-            color: {text_col};
-        }}
-        QLineEdit, QComboBox, QListView {{
-            background-color: {base};
-            color: {text_input};
-            border: 1px solid {text_col};
-            padding: 4px;
-        }}
-        QPushButton {{
-            background-color: {button};
-            color: {button_text};
-            border: 1px solid {text_col};
-            padding: 6px 16px;
-            min-width: 60px;
-        }}
-        QPushButton:hover {{
-            background-color: {base};
-        }}
-        """
-    )
 
 
 def _uses_dark_theme(widget: QWidget | None) -> bool:
@@ -271,14 +233,14 @@ class _FaceAvatarWidget(QLabel):
 
     def _prompt_new_person(self) -> None:
         host = self.window() if isinstance(self.window(), QWidget) else self
-        dialog = QInputDialog(host)
-        dialog.setWindowTitle("New Person")
-        dialog.setLabelText("Person name:")
-        dialog.setTextValue("")
-        _style_popup_input_dialog(dialog, host)
-        if dialog.exec() != QInputDialog.DialogCode.Accepted:
+        from .input_dialog import prompt_text
+
+        text, accepted = prompt_text(
+            host, title="New Person", label="Person name:", placeholder="姓名"
+        )
+        if not accepted:
             return
-        new_name = dialog.textValue().strip()
+        new_name = text.strip()
         if not new_name:
             return
         self.newPersonRequested.emit(self._annotation, new_name)
