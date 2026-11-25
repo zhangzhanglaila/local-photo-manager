@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -11,24 +12,27 @@ from PySide6.QtCore import (
     QModelIndex,
     QPoint,
     QRect,
+    QRectF,
     QSize,
     Qt,
     QTimer,
     Signal,
 )
 from PySide6.QtGui import (
+    QColor,
     QCursor,
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
     QFont,
+    QPainter,
     QPalette,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFrame,
+    QHBoxLayout,
     QLabel,
-    QSizePolicy,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -36,8 +40,10 @@ from PySide6.QtWidgets import (
 
 from ....library.runtime_controller import LibraryRuntimeController
 from ....config import ALL_PHOTOS_TITLE as _ALL_PHOTOS_TITLE
+from ....config import HOME_TITLE as _HOME_TITLE
 from ....i18n import tr
 from ...services.pinned_items_service import PinnedItemsService, PinnedSidebarItem
+from ..icon import load_icon
 from ..models.album_tree_model import AlbumTreeModel, AlbumTreeRole, NodeType
 from ..delegates.album_sidebar_delegate import (
     AlbumSidebarDelegate,
@@ -46,18 +52,19 @@ from ..delegates.album_sidebar_delegate import (
 from ..menus.album_sidebar_menu import show_context_menu
 from ..styles import modern_scrollbar_style
 from ..palette import (
-    SIDEBAR_BACKGROUND_COLOR,
     SIDEBAR_BRANCH_CONTENT_GAP,
-    SIDEBAR_SECTION_TEXT_COLOR,
     SIDEBAR_SELECTED_BACKGROUND,
     SIDEBAR_ICON_COLOR,
     SIDEBAR_ICON_SIZE,
+    SIDEBAR_ICON_TEXT_GAP,
     SIDEBAR_INDENT_PER_LEVEL,
     SIDEBAR_INDICATOR_HOTZONE_MARGIN,
     SIDEBAR_INDICATOR_SIZE,
     SIDEBAR_LEFT_PADDING,
     SIDEBAR_LAYOUT_MARGIN,
     SIDEBAR_LAYOUT_SPACING,
+    SIDEBAR_ROW_HEIGHT,
+    SIDEBAR_ROW_RADIUS,
     SIDEBAR_TEXT_COLOR,
     SIDEBAR_TREE_MIN_WIDTH,
     SIDEBAR_TREE_STYLESHEET,
@@ -65,6 +72,16 @@ from ..palette import (
 from ....utils.logging import diag
 
 _logger = logging.getLogger(__name__)
+
+# Menu titles carry a keyboard accelerator ("设置(&S)"); a plain label shows the
+# mnemonic verbatim, so it is stripped for the footer row.
+_MENU_ACCELERATOR_RE = re.compile(r"\s*\(&[A-Za-z0-9]\)\s*$")
+
+
+def _strip_menu_accelerator(text: str) -> str:
+    """Return *text* without a trailing ``(&X)`` mnemonic."""
+
+    return _MENU_ACCELERATOR_RE.sub("", text)
 
 
 class _DropAwareTree(QTreeView):
@@ -164,19 +181,160 @@ class _DropAwareTree(QTreeView):
         return QPoint()
 
 
+class _SidebarHairline(QWidget):
+    """Hairline divider used above the sidebar footer."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        # The extra height gives the rule breathing room without a layout spacer.
+        self.setFixedHeight(13)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        colour = QColor(self.palette().color(QPalette.ColorRole.WindowText))
+        colour.setAlpha(24)
+        painter = QPainter(self)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(colour)
+        painter.drawRect(0, 6, self.width(), 1)
+
+
+class _SidebarFooterRow(QWidget):
+    """Footer row that opens a menu, styled like a navigation entry.
+
+    The reference sidebar keeps its global entry (settings) pinned below the
+    navigation list, separated by a hairline. It uses the same row geometry as
+    the navigation entries so the column reads as one control surface.
+    """
+
+    clicked = Signal()
+
+    def __init__(
+        self,
+        icon_name: str,
+        text: str,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._icon_name = icon_name
+        self._hovered = False
+        self.setFixedHeight(SIDEBAR_ROW_HEIGHT)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SIDEBAR_LEFT_PADDING, 0, SIDEBAR_LEFT_PADDING, 0)
+        layout.setSpacing(SIDEBAR_ICON_TEXT_GAP)
+
+        self._icon_label = QLabel(self)
+        self._icon_label.setFixedSize(SIDEBAR_ICON_SIZE, SIDEBAR_ICON_SIZE)
+        self._icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._icon_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        layout.addWidget(self._icon_label)
+
+        self._text_label = QLabel(text, self)
+        self._text_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        text_font = QFont(self._text_label.font())
+        text_font.setPixelSize(14)
+        text_font.setWeight(QFont.Weight.Medium)
+        self._text_label.setFont(text_font)
+        layout.addWidget(self._text_label, 1)
+
+        self._apply_colours()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def set_text(self, text: str) -> None:
+        self._text_label.setText(text)
+
+    # ------------------------------------------------------------------
+    # Qt overrides
+    # ------------------------------------------------------------------
+    def paintEvent(self, event) -> None:  # noqa: N802
+        if self._hovered:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(SIDEBAR_SELECTED_BACKGROUND))
+            painter.drawRoundedRect(
+                QRectF(self.rect()), SIDEBAR_ROW_RADIUS, SIDEBAR_ROW_RADIUS
+            )
+        super().paintEvent(event)
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self._hovered = True
+        self._apply_colours()
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hovered = False
+        self._apply_colours()
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        # ``QWidget`` ignores presses by default, which would let the event
+        # bubble to the parent and rob this row of the matching release.
+        if event.button() == Qt.MouseButton.LeftButton:
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
+            event.position().toPoint()
+        ):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        if event.type() == QEvent.Type.PaletteChange:
+            self._apply_colours()
+        super().changeEvent(event)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _apply_colours(self) -> None:
+        base = QColor(self.palette().color(QPalette.ColorRole.WindowText))
+        colour = QColor(base)
+        if not self._hovered:
+            colour.setAlpha(150)
+        self._text_label.setStyleSheet(
+            "color: rgba({}, {}, {}, {});".format(
+                colour.red(), colour.green(), colour.blue(), colour.alpha()
+            )
+        )
+        pixmap = load_icon(
+            self._icon_name,
+            color=colour.name(QColor.NameFormat.HexArgb),
+            stroke_width=1.8,
+        ).pixmap(SIDEBAR_ICON_SIZE, SIDEBAR_ICON_SIZE)
+        self._icon_label.setPixmap(pixmap)
+
+
 class AlbumSidebar(QWidget):
     """Composite widget exposing library navigation and actions."""
 
     albumSelected = Signal(Path)
     pinnedItemSelected = Signal(object)
+    homeSelected = Signal()
     allPhotosSelected = Signal()
     staticNodeSelected = Signal(str)
     searchEntrySelected = Signal()
     bindLibraryRequested = Signal()
+    settingsRequested = Signal()
     excludeAlbumRequested = Signal(Path)
     filesDropped = Signal(Path, object)
     albumCheckStateChanged = Signal(object)
 
+    HOME_TITLE = _HOME_TITLE
     ALL_PHOTOS_TITLE = _ALL_PHOTOS_TITLE
 
     def __init__(self, library: LibraryRuntimeController, parent: QWidget | None = None) -> None:
@@ -197,34 +355,12 @@ class AlbumSidebar(QWidget):
         # parent widgets are translucent (required for the rounded window shell).
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
-        self._title = QLabel(tr("sidebar.basic_library"))
-        self._title.setObjectName("albumSidebarTitle")
-        self._title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        # `Ignored` allows the label to be compressed below its size hint so the navigation
-        # pane can animate all the way to zero width without the title text imposing a hard
-        # minimum size.  The text will be elided once the layout becomes narrower than the
-        # rendered string, which keeps the animation visually smooth.
-        self._title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        title_font = QFont(self._title.font())
-        # macOS sidebar section headers are small, semibold and muted, not a bold
-        # 16 px label. Setting pixel size avoids the point-size rounding drift.
-        title_font.setPixelSize(11)
-        title_font.setWeight(QFont.Weight.DemiBold)
-        title_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.2)
-        self._title.setFont(title_font)
-        title_palette = self._title.palette()
-        title_palette.setColor(
-            QPalette.ColorRole.WindowText,
-            SIDEBAR_SECTION_TEXT_COLOR,
-        )
-        self._title.setPalette(title_palette)
-
         self._tree = _DropAwareTree(self)
         self._tree.setObjectName("albumSidebarTree")
         self._tree.setModel(self._model)
         self._tree.setHeaderHidden(True)
         self._tree.setRootIsDecorated(True)
-        self._tree.setUniformRowHeights(True)
+        self._tree.setUniformRowHeights(False)
         self._tree.setEditTriggers(QTreeView.EditTrigger.NoEditTriggers)
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._show_context_menu)
@@ -255,18 +391,24 @@ class AlbumSidebar(QWidget):
         # Track the minimum width that should apply when the user resizes the splitter manually.
         # The sidebar should never collapse completely in that situation, so we keep a computed
         # "manual" minimum width and only relax it when an animated transition is in progress.
-        self._manual_minimum_width = max(
-            SIDEBAR_TREE_MIN_WIDTH,
-            self._title.sizeHint().width(),
-        )
+        self._manual_minimum_width = SIDEBAR_TREE_MIN_WIDTH
         self._default_sidebar_maximum_width = super().maximumWidth()
         self._minimum_width_relaxed = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(*SIDEBAR_LAYOUT_MARGIN)
         layout.setSpacing(SIDEBAR_LAYOUT_SPACING)
-        layout.addWidget(self._title)
         layout.addWidget(self._tree, stretch=1)
+
+        # Footer: the application menu lives behind a single "设置" row, mirroring
+        # the reference sidebar's pinned settings entry.
+        self._footer_rule = _SidebarHairline(self)
+        self._settings_row = _SidebarFooterRow(
+            "gear.svg", _strip_menu_accelerator(tr("menu.settings")), self
+        )
+        self._settings_row.clicked.connect(self.settingsRequested.emit)
+        layout.addWidget(self._footer_rule)
+        layout.addWidget(self._settings_row)
 
 
         # Apply the initial manual minimum width so the splitter respects the configured
@@ -278,7 +420,6 @@ class AlbumSidebar(QWidget):
         self._model.dataChanged.connect(self._on_data_changed)
         self._tree.filesDropped.connect(self._on_files_dropped)
         self._expand_defaults()
-        self._update_title()
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.PaletteChange:
@@ -339,12 +480,9 @@ class AlbumSidebar(QWidget):
         self.setMinimumWidth(self._manual_minimum_width)
 
     def _refresh_manual_minimum_width(self) -> None:
-        """Recalculate the manual minimum width based on the current title text."""
+        """Reapply the manual minimum width after an animated collapse."""
 
-        self._manual_minimum_width = max(
-            SIDEBAR_TREE_MIN_WIDTH,
-            self._title.sizeHint().width(),
-        )
+        self._manual_minimum_width = SIDEBAR_TREE_MIN_WIDTH
         self._apply_current_minimum_width()
 
     # ------------------------------------------------------------------
@@ -368,7 +506,7 @@ class AlbumSidebar(QWidget):
     def retranslate(self) -> None:
         """Refresh translatable strings for the current language."""
 
-        self._update_title()
+        self._settings_row.set_text(_strip_menu_accelerator(tr("menu.settings")))
         self._model.refresh()
 
     def checked_root_paths(self) -> list[Path]:
@@ -414,7 +552,6 @@ class AlbumSidebar(QWidget):
                 pass
             selection_model.selectionChanged.connect(self._on_selection_changed)
 
-        self._update_title()
         self._expand_defaults()
         # Defer selection restoration to the next event loop iteration.
         # Running it synchronously during endResetModel() can trigger
@@ -444,22 +581,6 @@ class AlbumSidebar(QWidget):
             # out of the map's cluster gallery and back to All Photos.
             self.select_static_node(self._current_static_selection)
 
-    def _update_title(self) -> None:
-        root = self._library.root()
-        if root is None:
-            # Keep the unbound state explicit so users know they still need to
-            # attach a library before navigating, but avoid appending verbose
-            # filesystem paths that clutter the chrome.
-            self._title.setText(tr("sidebar.basic_library_unbound"))
-        else:
-            # Always display a concise title without the backing path to keep
-            # the window chrome tidy while the sidebar continues to show the
-            # simple library name.
-            self._title.setText(tr("sidebar.basic_library"))
-        # Recalculate the manual minimum so manual splitter drags continue to honour the
-        # configured width even if the displayed path becomes longer or shorter.
-        self._refresh_manual_minimum_width()
-
     def _on_selection_changed(self, _selected, _deselected) -> None:
         index = self._tree.currentIndex()
         item = self._model.item_from_index(index)
@@ -485,6 +606,16 @@ class AlbumSidebar(QWidget):
             self.searchEntrySelected.emit()
             return
         if node_type == NodeType.STATIC:
+            # Home is reachable without a library: it is the landing view shown
+            # while the library paths are still resolving.
+            if item.title == self.HOME_TITLE:
+                self._current_selection = None
+                self._current_static_selection = item.title
+                self._current_pinned_selection = None
+                self._current_search_selected = False
+                _logger.debug("_on_selection_changed: emitting homeSelected")
+                self.homeSelected.emit()
+                return
             if self._library.root() is None:
                 _logger.warning(
                     "_on_selection_changed: library root is None, emitting bindLibraryRequested"
@@ -539,7 +670,6 @@ class AlbumSidebar(QWidget):
                         event.position().toPoint()
                     )
                 if over_action:
-                    self._tree.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
                     self._show_action_hint(event.position().toPoint())
                 else:
                     self._tree.viewport().unsetCursor()
@@ -752,6 +882,12 @@ class AlbumSidebar(QWidget):
         if emit_signal and already_selected:
             self.pinnedItemSelected.emit(pinned_item)
 
+    def select_home(self, emit_signal: bool = False) -> None:
+        """Select the "Home" static node if it is available."""
+
+        _logger.debug("select_home: emit_signal=%s", emit_signal)
+        self.select_static_node(self.HOME_TITLE, emit_signal=emit_signal)
+
     def select_all_photos(self, emit_signal: bool = False) -> None:
         """Select the "All Photos" static node if it is available."""
 
@@ -888,9 +1024,9 @@ class AlbumSidebar(QWidget):
         self._pending_selection = target
 
     def _find_static_index(self, title: str) -> QModelIndex:
-        # The first root row is not always the "Basic Library" header: an active
-        # search entry is inserted above it. Search the root level and its
-        # children instead of assuming a fixed layout.
+        # The first root row is not always a static entry: an active search entry
+        # and the section separators share the root level. Search the root level
+        # and its children instead of assuming a fixed layout.
         for row in range(self._model.rowCount()):
             top_index = self._model.index(row, 0)
             if not top_index.isValid():

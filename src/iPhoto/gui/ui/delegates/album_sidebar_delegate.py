@@ -22,6 +22,11 @@ from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QTreeVi
 from ..icon import load_icon
 from ..models.album_tree_model import AlbumTreeItem, AlbumTreeModel, AlbumTreeRole, NodeType
 from ..palette import (
+    SIDEBAR_ACCENT_BAR_HEIGHT,
+    SIDEBAR_ACCENT_BAR_RADIUS,
+    SIDEBAR_ACCENT_BAR_WIDTH,
+    SIDEBAR_ACCENT_COLOR_HEX,
+    SIDEBAR_ACCENT_COLOR_DARK_HEX,
     SIDEBAR_BRANCH_CONTENT_GAP,
     SIDEBAR_HIGHLIGHT_MARGIN_X,
     SIDEBAR_HIGHLIGHT_MARGIN_Y,
@@ -35,6 +40,7 @@ from ..palette import (
     SIDEBAR_ROW_RADIUS,
     SIDEBAR_SELECTED_BACKGROUND,
     SIDEBAR_SEPARATOR_COLOR,
+    SIDEBAR_SEPARATOR_HEIGHT,
 )
 
 
@@ -165,11 +171,16 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
     """Custom delegate painting the sidebar with a macOS inspired style."""
 
     def sizeHint(  # noqa: D401 - inherited docstring
-        self, option: QStyleOptionViewItem, _index: QModelIndex
+        self, option: QStyleOptionViewItem, index: QModelIndex
     ) -> QSize:
         width = option.rect.width()
         if width <= 0:
             width = 200
+        node_type = index.data(AlbumTreeRole.NODE_TYPE)
+        if node_type == NodeType.SEPARATOR:
+            # A hairline does not need a full navigation row's height; the shorter
+            # row keeps the album sections close to the collections they follow.
+            return QSize(width, SIDEBAR_SEPARATOR_HEIGHT)
         return QSize(width, SIDEBAR_ROW_HEIGHT)
 
     def paint(
@@ -189,8 +200,10 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         highlight = self._resolve_highlight_colour(state)
         if highlight is not None:
             self._draw_background(painter, rect, highlight)
+        if state.is_selected:
+            self._draw_active_accent(painter, rect, state)
 
-        font = self._font_for_node(option.font, node_type)
+        font = self._font_for_node(option.font, node_type, selected=state.is_selected)
         painter.setFont(font)
 
         x = rect.left() + SIDEBAR_LEFT_PADDING + state.indentation
@@ -227,7 +240,7 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         """
 
         box = self.header_action_rect(rect)
-        colour = QColor(self._palette_for_state(state).color(QPalette.ColorRole.Link))
+        colour = self._accent_colour(self._palette_for_state(state))
         hovered = bool(getattr(state, "is_hover", False))
 
         fill = QColor(colour)
@@ -256,6 +269,66 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         painter.drawLine(centre.x(), centre.y() - arm, centre.x(), centre.y() + arm)
         painter.restore()
 
+    @staticmethod
+    def _accent_colour(palette: QPalette) -> QColor:
+        """Return the active-row accent for the palette's light or dark surface."""
+
+        dark_surface = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        return QColor(SIDEBAR_ACCENT_COLOR_DARK_HEX if dark_surface else SIDEBAR_ACCENT_COLOR_HEX)
+
+    def _muted_colour(self, palette: QPalette) -> QColor:
+        """Return the muted label colour used by unselected navigation rows."""
+
+        colour = QColor(palette.color(QPalette.ColorRole.Text))
+        # ~63 % opacity lands on the reference sidebar's muted grey while still
+        # following the active theme's text colour.
+        colour.setAlpha(160)
+        return colour
+
+    def _content_colour(self, state: _PaintState) -> QColor:
+        """Return the colour for the row's glyph.
+
+        The accent is reserved for the active row's icon, which together with the
+        left bar marks "you are here"; labels stay in the text colour.
+        """
+
+        palette = self._palette_for_state(state)
+        if state.is_selected:
+            return self._accent_colour(palette)
+        if not state.is_enabled:
+            return palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
+        if state.node_type == NodeType.ACTION:
+            return self._accent_colour(palette)
+        return self._muted_colour(palette)
+
+    def _draw_active_accent(
+        self, painter: QPainter, rect: QRect, state: _PaintState
+    ) -> None:
+        """Draw the short accent bar that marks the active row."""
+
+        if state.node_type in {NodeType.SECTION, NodeType.SEPARATOR}:
+            return
+        pill = rect.adjusted(
+            SIDEBAR_HIGHLIGHT_MARGIN_X,
+            SIDEBAR_HIGHLIGHT_MARGIN_Y,
+            -SIDEBAR_HIGHLIGHT_MARGIN_X,
+            -SIDEBAR_HIGHLIGHT_MARGIN_Y,
+        )
+        bar = QRectF(
+            pill.left(),
+            pill.center().y() - SIDEBAR_ACCENT_BAR_HEIGHT / 2,
+            SIDEBAR_ACCENT_BAR_WIDTH,
+            SIDEBAR_ACCENT_BAR_HEIGHT,
+        )
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._accent_colour(self._palette_for_state(state)))
+        painter.drawRoundedRect(
+            bar, SIDEBAR_ACCENT_BAR_RADIUS, SIDEBAR_ACCENT_BAR_RADIUS
+        )
+        painter.restore()
+
     def _get_icon_for_paint_state(self, index: QModelIndex, state: _PaintState) -> QIcon:
         """Return the correct icon for *index* based on the current paint *state*."""
 
@@ -264,61 +337,19 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
 
         icon = QIcon()
         if isinstance(model, AlbumTreeModel) and isinstance(item, AlbumTreeItem):
-            # Re-fetch the icon so we can enforce a consistent stroke width override.
-            palette = self._palette_for_state(state)
-            text_color = palette.color(QPalette.ColorRole.Text)
-            icon_color = text_color.name(QColor.NameFormat.HexArgb)
+            # Re-fetch the icon so the glyph can be tinted for the row's state;
+            # the model's default decoration is meant for other consumers.
+            colour_name = self._content_colour(state).name(QColor.NameFormat.HexArgb)
             icon = model._icon_for_item(
                 item,
                 stroke_width=SIDEBAR_ICON_STROKE_WIDTH,
-                color=icon_color,
+                color=colour_name,
             )
         else:
-            # Fallback to whatever the model exposed if the expected types differ.
+            # Fall back to whatever the model exposed if the expected types differ.
             data = index.data(Qt.ItemDataRole.DecorationRole)
             if isinstance(data, QIcon):
                 icon = data
-
-        if icon.isNull():
-            return QIcon()
-
-        if isinstance(model, AlbumTreeModel) and isinstance(item, AlbumTreeItem):
-            if state.node_type == NodeType.STATIC:
-                icon_base = model._STATIC_ICON_MAP.get(item.title.casefold())
-                palette = self._palette_for_state(state)
-                # Use the palette's link colour so the glyph tint tracks the active theme.
-                icon_color = palette.color(QPalette.ColorRole.Link)
-                colour_name = icon_color.name(QColor.NameFormat.HexArgb)
-                if icon_base in {"video", "suit.heart", "person.crop.square"}:
-                    # The sidebar mirrors macOS behaviour where select states swap
-                    # the regular outline icon for a filled version. We perform the
-                    # decision here because the delegate has access to the selection
-                    # state while the model intentionally does not.
-                    suffix = ".fill" if state.is_selected else ""
-                    return load_icon(
-                        f"{icon_base}{suffix}.svg",
-                        color=colour_name,
-                        stroke_width=SIDEBAR_ICON_STROKE_WIDTH,
-                    )
-                if icon_base:
-                    return load_icon(
-                        f"{icon_base}.svg",
-                        color=colour_name,
-                        stroke_width=SIDEBAR_ICON_STROKE_WIDTH,
-                    )
-            if state.node_type in {NodeType.PINNED_PERSON, NodeType.PINNED_GROUP}:
-                palette = self._palette_for_state(state)
-                icon_color = palette.color(QPalette.ColorRole.Text)
-                colour_name = icon_color.name(QColor.NameFormat.HexArgb)
-                if state.node_type == NodeType.PINNED_PERSON:
-                    icon_name = "person.fill.svg" if state.is_selected else "person.svg"
-                else:
-                    icon_name = "person.2.fill.svg" if state.is_selected else "person.2.svg"
-                return load_icon(
-                    icon_name,
-                    color=colour_name,
-                    stroke_width=SIDEBAR_ICON_STROKE_WIDTH,
-                )
 
         return icon
 
@@ -386,88 +417,79 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         return None
 
     def _resolve_highlight_colour(self, state: _PaintState) -> QColor | None:
-        """Return the hover or selection colour, if the item supports it."""
+        """Return the hover or selection pill colour, if the row supports one.
+
+        Hover and selection share the same pill; the active row is told apart by
+        its accent bar and heavier label, matching the reference sidebar.
+        """
 
         if state.node_type in {NodeType.SECTION, NodeType.SEPARATOR}:
             return None
+        if not state.is_selected and not (state.is_hover and state.is_enabled):
+            return None
 
         palette = self._palette_for_state(state)
-        base_colour = palette.color(QPalette.ColorRole.Base)
         highlight = palette.color(QPalette.ColorRole.Highlight)
         if not highlight.isValid() or highlight == QColor():
             # Fall back to the light-theme constant so headless tests still pick up a visible
-            # highlight.  This path executes when the view inherits a palette without a highlight
+            # pill.  This path executes when the view inherits a palette without a highlight
             # role, which can happen in synthetic QWidget setups.
             highlight = QColor(SIDEBAR_SELECTED_BACKGROUND)
         else:
             highlight = QColor(highlight)
 
-        if base_colour.isValid() and highlight == base_colour:
-            # Guard against themes that reuse the base colour for the highlight role by nudging the
-            # tone slightly brighter than the background.
-            highlight = highlight.lighter(115)
+        if highlight.alpha() == 0:
+            highlight = QColor(SIDEBAR_SELECTED_BACKGROUND)
+
+        dark_surface = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        if dark_surface and highlight.lightness() > 200:
+            # The shared Highlight role carries the light-theme pill. Painting a
+            # near-white plate on a dark sidebar would invert the whole
+            # hierarchy, so trade it for the translucent light overlay the dark
+            # theme actually uses.
+            highlight = QColor(255, 255, 255, 30)
 
         if state.is_selected:
-            if highlight.alpha() < 255:
-                return highlight
-            colour = self._soften_colour(highlight, base_colour, 0.8)
-            minimum_alpha = int(0.65 * 255)
-            alpha = colour.alpha() if colour.alpha() > 0 else minimum_alpha
-            colour.setAlpha(max(alpha, minimum_alpha))
-            return colour
+            return highlight
 
-        if state.is_hover and state.is_enabled:
-            if highlight.alpha() < 255:
-                hover_colour = QColor(highlight)
-                hover_colour.setAlpha(int(highlight.alpha() * 0.5))
-                return hover_colour
-            colour = self._soften_colour(highlight, base_colour, 0.6)
-            minimum_alpha = int(0.35 * 255)
-            base_alpha = colour.alpha() if colour.alpha() > 0 else minimum_alpha
-            colour.setAlpha(max(int(base_alpha * 0.5), minimum_alpha))
-            return colour
-
-        return None
-
-    @staticmethod
-    def _soften_colour(source: QColor, background: QColor, mix: float) -> QColor:
-        """Blend ``source`` with ``background`` to produce a softer shade."""
-
-        mix = max(0.0, min(1.0, mix))
-        if not background.isValid():
-            return QColor(source)
-        red = int(round(source.red() * mix + background.red() * (1.0 - mix)))
-        green = int(round(source.green() * mix + background.green() * (1.0 - mix)))
-        blue = int(round(source.blue() * mix + background.blue() * (1.0 - mix)))
-        softened = QColor(source)
-        softened.setRed(red)
-        softened.setGreen(green)
-        softened.setBlue(blue)
-        return softened
+        hover_colour = QColor(highlight)
+        hover_colour.setAlpha(min(highlight.alpha(), 170))
+        return hover_colour
 
     def _draw_background(self, painter: QPainter, rect: QRect, colour: QColor) -> None:
-        """Paint the rounded selection background using *colour*."""
+        """Paint the rounded selection pill using *colour*."""
 
-        background_rect = rect.adjusted(
-            SIDEBAR_HIGHLIGHT_MARGIN_X,
-            SIDEBAR_HIGHLIGHT_MARGIN_Y,
-            -SIDEBAR_HIGHLIGHT_MARGIN_X,
-            -SIDEBAR_HIGHLIGHT_MARGIN_Y,
+        background_rect = QRectF(
+            rect.adjusted(
+                SIDEBAR_HIGHLIGHT_MARGIN_X,
+                SIDEBAR_HIGHLIGHT_MARGIN_Y,
+                -SIDEBAR_HIGHLIGHT_MARGIN_X,
+                -SIDEBAR_HIGHLIGHT_MARGIN_Y,
+            )
         )
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(colour)
         painter.drawRoundedRect(background_rect, SIDEBAR_ROW_RADIUS, SIDEBAR_ROW_RADIUS)
 
-    def _font_for_node(self, base_font: QFont, node_type: NodeType) -> QFont:
-        """Return a correctly styled font for *node_type*."""
+    def _font_for_node(
+        self, base_font: QFont, node_type: NodeType, *, selected: bool = False
+    ) -> QFont:
+        """Return a correctly styled font for *node_type*.
+
+        Navigation rows are 14 px and medium weight; section headers step down to
+        13 px semibold so they read as labels rather than entries. The active row
+        gains the semibold weight that, together with the accent bar, marks it.
+        """
 
         font = QFont(base_font)
-        if node_type == NodeType.HEADER:
-            font.setPointSizeF(font.pointSizeF() + 1.0)
-            font.setBold(True)
-        elif node_type == NodeType.SECTION:
-            font.setPointSizeF(font.pointSizeF() - 0.5)
+        font.setPixelSize(13 if node_type == NodeType.HEADER else 14)
+        font.setWeight(
+            QFont.Weight.DemiBold
+            if node_type == NodeType.HEADER or selected
+            else QFont.Weight.Medium
+        )
+        if node_type == NodeType.SECTION:
             font.setCapitalization(QFont.Capitalization.SmallCaps)
         if node_type == NodeType.ACTION:
             font.setItalic(True)
@@ -507,6 +529,7 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         palette = self._palette_for_state(state)
         active_colour = palette.color(QPalette.ColorRole.Text)
+        active_colour.setAlpha(150)
         disabled_colour = palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
         indicator_colour = active_colour if state.is_enabled else disabled_colour
         pen = QPen(indicator_colour)
@@ -615,16 +638,18 @@ class AlbumSidebarDelegate(QStyledItemDelegate):
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, elided)
 
     def _text_colour_for_state(self, state: _PaintState) -> QColor:
-        """Return the correct foreground colour for the row."""
+        """Return the correct foreground colour for the row's label."""
 
         palette = self._palette_for_state(state)
         if state.node_type == NodeType.SECTION:
             return palette.color(QPalette.ColorRole.PlaceholderText)
-        if state.node_type == NodeType.ACTION:
-            return palette.color(QPalette.ColorRole.Link)
         if not state.is_enabled:
             return palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
-        return palette.color(QPalette.ColorRole.Text)
+        if state.node_type == NodeType.ACTION:
+            return self._accent_colour(palette)
+        if state.is_selected:
+            return palette.color(QPalette.ColorRole.Text)
+        return self._muted_colour(palette)
 
     def _draw_separator(self, painter: QPainter, rect: QRect) -> None:
         """Render a horizontal rule used to group tree sections."""

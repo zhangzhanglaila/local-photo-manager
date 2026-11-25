@@ -6,43 +6,61 @@ from PySide6.QtGui import QColor, QPalette, QFont
 from PySide6.QtWidgets import QWidget
 
 # --- Sidebar colour palette -------------------------------------------------
-# macOS system blue, used for key sidebar affordances and icon tinting.
+# Accent used by the navigation sidebar for the active row (left bar, icon and
+# emphasis). It follows the same warm tone as the Home page wordmark instead of
+# the system blue, so the two surfaces read as one product.
+SIDEBAR_ACCENT_COLOR_HEX = "#7B5E3B"
+SIDEBAR_ACCENT_COLOR = QColor(SIDEBAR_ACCENT_COLOR_HEX)
+SIDEBAR_ACCENT_COLOR_DARK_HEX = "#C9A86C"
+
+# macOS system blue, still exposed for the palette's Link role (legacy icons and
+# tests rely on it) even though navigation icons are tinted from the text colour.
 SIDEBAR_ICON_COLOR_HEX = "#007AFF"
 SIDEBAR_ICON_COLOR = QColor(SIDEBAR_ICON_COLOR_HEX)
 
-# Core structural colours that govern the sidebar look and feel. The sidebar is a
-# neutral translucent grey in macOS rather than the blue-tinted surface this used
-# to be, and separators are hairlines instead of 15% black.
-SIDEBAR_BACKGROUND_COLOR = QColor("#F0F0F3")
-SIDEBAR_TEXT_COLOR = QColor("#1D1D1F")
-SIDEBAR_TITLE_COLOR_HEX = "#1D1D1F"
-SIDEBAR_SECTION_TEXT_COLOR = QColor(60, 60, 67, 153)
+# Core structural colours. The sidebar is a near-white surface with a hairline
+# divider, and rows use a muted grey label until they are selected.
+SIDEBAR_BACKGROUND_COLOR = QColor("#F9F9F9")
+SIDEBAR_TEXT_COLOR = QColor("#0D0D0D")
+SIDEBAR_TITLE_COLOR_HEX = "#0D0D0D"
+SIDEBAR_SECTION_TEXT_COLOR = QColor(110, 110, 128)
+SIDEBAR_SECONDARY_TEXT_COLOR = QColor("#6E6E80")
 SIDEBAR_DISABLED_TEXT_COLOR = QColor(60, 60, 67, 90)
 SIDEBAR_SEPARATOR_COLOR = QColor(0, 0, 0, 23)
 
-# Interaction feedback colours for hover, selection, and focus states.
-SIDEBAR_HOVER_BACKGROUND = QColor(0, 0, 0, 12)
-SIDEBAR_SELECTED_BACKGROUND = QColor(0, 0, 0, 26)
+# Interaction feedback colours. Hover and selection share the same pill, which
+# is what the reference sidebar does: the active row is told apart by its weight
+# and accent bar rather than by a stronger fill.
+SIDEBAR_HOVER_BACKGROUND = QColor("#ECECEC")
+SIDEBAR_SELECTED_BACKGROUND = QColor("#ECECEC")
 
 # --- Sidebar metrics --------------------------------------------------------
-# These values ensure the delegate, tree view, and hit testing all share the
-# same geometry assumptions. macOS sidebar rows are 28-32 pt tall with a small
-# 6 pt selection radius; the old 36 pt rows and 10 pt radius read as "web app".
-SIDEBAR_ROW_HEIGHT = 32
-SIDEBAR_ROW_RADIUS = 6
+# Roomy 40 pt rows with 20 pt glyphs: the sidebar carries the whole navigation,
+# so it needs the breathing room of a full application sidebar rather than the
+# compact 32 pt list it used to be.
+SIDEBAR_ROW_HEIGHT = 40
+SIDEBAR_ROW_RADIUS = 10
+SIDEBAR_SEPARATOR_HEIGHT = 22
 SIDEBAR_LEFT_PADDING = 14
-SIDEBAR_ICON_TEXT_GAP = 9
+SIDEBAR_ICON_TEXT_GAP = 12
 SIDEBAR_BRANCH_CONTENT_GAP = 6
 SIDEBAR_INDICATOR_HOTZONE_MARGIN = 4
 SIDEBAR_INDENT_PER_LEVEL = 20  # One step per album level; 32 made the gap between the
 # section header and the first album dwarf the steps below it.
 SIDEBAR_INDICATOR_SLOT_WIDTH = 22
 SIDEBAR_INDICATOR_SIZE = 16
-SIDEBAR_ICON_SIZE = 24
+SIDEBAR_ICON_SIZE = 20
 
-# Margins around the rounded selection pill.
-SIDEBAR_HIGHLIGHT_MARGIN_X = 6
-SIDEBAR_HIGHLIGHT_MARGIN_Y = 4
+# Margins around the rounded selection pill. The tree view itself is already
+# inset horizontally, so the pill spans the row and only needs a 1 pt breathing
+# gap vertically between neighbouring rows.
+SIDEBAR_HIGHLIGHT_MARGIN_X = 0
+SIDEBAR_HIGHLIGHT_MARGIN_Y = 1
+
+# Left accent bar drawn against the selected pill's leading edge.
+SIDEBAR_ACCENT_BAR_WIDTH = 3
+SIDEBAR_ACCENT_BAR_HEIGHT = 16
+SIDEBAR_ACCENT_BAR_RADIUS = 1.5
 
 # Tree level styling shared by the widget and delegate.
 SIDEBAR_TREE_MIN_WIDTH = 220
@@ -52,9 +70,10 @@ SIDEBAR_TREE_STYLESHEET = (
     "QTreeView::branch { image: none; }"
 )
 
-# Default layout chrome values for the sidebar wrapper widget.
-SIDEBAR_LAYOUT_MARGIN = (12, 12, 12, 12)
-SIDEBAR_LAYOUT_SPACING = 8
+# Default layout chrome values for the sidebar wrapper widget. The horizontal
+# inset leaves room for the selection pill so it never touches the window edge.
+SIDEBAR_LAYOUT_MARGIN = (10, 12, 10, 12)
+SIDEBAR_LAYOUT_SPACING = 0
 
 # ---Edit Sidebar metrics --------------------------------------------------------
 Edit_SIDEBAR_FONT = QFont()
@@ -82,17 +101,22 @@ def viewer_surface_color(widget: QWidget) -> str:
 
 
 __all__ = [
+    "SIDEBAR_ACCENT_COLOR_HEX",
+    "SIDEBAR_ACCENT_COLOR",
+    "SIDEBAR_ACCENT_COLOR_DARK_HEX",
     "SIDEBAR_ICON_COLOR_HEX",
     "SIDEBAR_ICON_COLOR",
     "SIDEBAR_BACKGROUND_COLOR",
     "SIDEBAR_TEXT_COLOR",
     "SIDEBAR_TITLE_COLOR_HEX",
     "SIDEBAR_SECTION_TEXT_COLOR",
+    "SIDEBAR_SECONDARY_TEXT_COLOR",
     "SIDEBAR_DISABLED_TEXT_COLOR",
     "SIDEBAR_SEPARATOR_COLOR",
     "SIDEBAR_HOVER_BACKGROUND",
     "SIDEBAR_SELECTED_BACKGROUND",
     "SIDEBAR_ROW_HEIGHT",
+    "SIDEBAR_SEPARATOR_HEIGHT",
     "SIDEBAR_ROW_RADIUS",
     "SIDEBAR_LEFT_PADDING",
     "SIDEBAR_ICON_TEXT_GAP",
@@ -104,6 +128,9 @@ __all__ = [
     "SIDEBAR_ICON_SIZE",
     "SIDEBAR_HIGHLIGHT_MARGIN_X",
     "SIDEBAR_HIGHLIGHT_MARGIN_Y",
+    "SIDEBAR_ACCENT_BAR_WIDTH",
+    "SIDEBAR_ACCENT_BAR_HEIGHT",
+    "SIDEBAR_ACCENT_BAR_RADIUS",
     "SIDEBAR_TREE_MIN_WIDTH",
     "SIDEBAR_TREE_STYLESHEET",
     "SIDEBAR_LAYOUT_MARGIN",

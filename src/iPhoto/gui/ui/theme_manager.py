@@ -45,9 +45,12 @@ LIGHT_THEME = ThemeColors(
     text_disabled=QColor(60, 60, 67, 90),
     accent_color=QColor("#007AFF"),
     border_color=QColor(0, 0, 0, 20),
-    sidebar_background=QColor("#F0F0F3"),
-    sidebar_text=QColor("#1D1D1F"),
-    sidebar_section_text=QColor(60, 60, 67, 153),
+    # Near-white navigation surface: the sidebar reads as a separate sheet from
+    # the window without a hard colour step, and the hairline border does the
+    # separation work.
+    sidebar_background=QColor("#F9F9F9"),
+    sidebar_text=QColor("#0D0D0D"),
+    sidebar_section_text=QColor(110, 110, 128),
     sidebar_hover=QColor(0, 0, 0, 12),
     sidebar_selected=QColor(0, 0, 0, 26),
     scrollbar_handle=QColor(0, 0, 0, 66),

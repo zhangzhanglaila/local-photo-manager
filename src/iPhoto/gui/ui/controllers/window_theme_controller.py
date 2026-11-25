@@ -126,8 +126,16 @@ class WindowThemeController(QObject):
         if self._rounded_window_shell:
             radius = self._rounded_window_shell.corner_radius()
 
+        # The hairline on the right edge is what separates the navigation sheet
+        # from the content; keep the alpha instead of ``name()``'s opaque hex.
+        _border = QColor(colors.border_color)
+        sidebar_border = (
+            f"rgba({_border.red()}, {_border.green()}, {_border.blue()}, {_border.alpha()})"
+        )
+
         self._ui.sidebar.setStyleSheet(
-            f"QWidget#albumSidebar {{ background-color: {sidebar_bg}; color: {fg_color}; border-bottom-left-radius: {radius}px; }}\n"
+            f"QWidget#albumSidebar {{ background-color: {sidebar_bg}; color: {fg_color};"
+            f" border-bottom-left-radius: {radius}px; border-right: 1px solid {sidebar_border}; }}\n"
             f"QWidget#albumSidebar QLabel {{ color: {fg_color}; }}\n"
             f"QWidget#albumSidebar QTreeView {{ background-color: transparent; color: {fg_color}; }}\n"
             f"QWidget#albumSidebar QTreeView::item:selected {{ color: {colors.sidebar_text.name()}; }}"

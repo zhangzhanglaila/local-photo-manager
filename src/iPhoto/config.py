@@ -57,6 +57,10 @@ SCHEMA_DIR: Final[Path] = Path(__file__).resolve().parent / "schemas"
 ALBUM_MANIFEST_NAMES: Final[list[str]] = [".iphoto.album.json", ".iPhoto/manifest.json"]
 EXPORT_DIR_NAME: Final[str] = "exported"
 ALL_PHOTOS_TITLE: Final[str] = "All Photos"
+# Title of the landing node shown at the top of the sidebar's Basic Library
+# section. It is the default selection when the application starts, so it is
+# shared between the sidebar, the gallery page and the navigation coordinator.
+HOME_TITLE: Final[str] = "首页"
 
 # ---------------------------------------------------------------------------
 # UI interaction constants
