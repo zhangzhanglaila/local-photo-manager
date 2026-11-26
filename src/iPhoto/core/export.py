@@ -541,7 +541,7 @@ def _start_video_encoder(
         startupinfo.wShowWindow = subprocess.SW_HIDE
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-    return subprocess.Popen(
+    process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE,
         stdout=subprocess.DEVNULL,
@@ -549,6 +549,34 @@ def _start_video_encoder(
         startupinfo=startupinfo,
         creationflags=creationflags,
     )
+    # Drain stderr while frames are being streamed in. Reading it only after the
+    # last frame let ffmpeg block on a full stderr pipe, which in turn stopped it
+    # reading stdin, which blocked the encoder loop: a deadlock on long exports.
+    _start_stderr_drain(process)
+    return process
+
+
+def _start_stderr_drain(process: subprocess.Popen) -> None:
+    """Consume *process* stderr in the background into ``process._stderr``."""
+
+    import threading
+
+    stream = process.stderr
+    chunks: list[bytes] = []
+    process._iphotron_stderr_chunks = chunks  # type: ignore[attr-defined]
+    if stream is None:  # pragma: no cover - defensive
+        return
+
+    def _drain() -> None:
+        try:
+            for block in iter(lambda: stream.read(8192), b""):
+                chunks.append(block)
+        except (OSError, ValueError):  # pragma: no cover - teardown races
+            pass
+
+    thread = threading.Thread(target=_drain, name="ffmpeg-stderr", daemon=True)
+    process._iphotron_stderr_thread = thread  # type: ignore[attr-defined]
+    thread.start()
 
 
 def _write_rgba_frame(process: subprocess.Popen, image: QImage) -> None:
@@ -559,8 +587,21 @@ def _write_rgba_frame(process: subprocess.Popen, image: QImage) -> None:
 
 def _finalise_video_encoder(process: subprocess.Popen) -> str:
     if process.stdin is not None:
-        process.stdin.close()
-    _, stderr_bytes = process.communicate()
+        try:
+            process.stdin.close()
+        except (OSError, ValueError):  # pragma: no cover - already closed
+            pass
+
+    thread = getattr(process, "_iphotron_stderr_thread", None)
+    chunks = getattr(process, "_iphotron_stderr_chunks", None)
+    if thread is not None and chunks is not None:
+        # The drainer owns stderr now, so wait for the process and the reader
+        # instead of calling communicate() on a stream another thread reads.
+        process.wait()
+        thread.join(timeout=5)
+        stderr_bytes = b"".join(chunks)
+    else:  # pragma: no cover - defensive fallback
+        _, stderr_bytes = process.communicate()
     returncode = process.returncode
     message = stderr_bytes.decode("utf-8", "ignore").strip() if stderr_bytes else ""
     if returncode != 0:
