@@ -119,6 +119,14 @@ class PeopleService:
             return None
         return FaceRepository(paths.index_db_path, paths.state_db_path)
 
+    def person_count(self) -> int:
+        """Number of clustered people (0 when the face scan never ran)."""
+
+        repository = self.repository()
+        if repository is None:
+            return 0
+        return repository.count_persons()
+
     def list_clusters(self, *, include_hidden: bool = False) -> list[PersonSummary]:
         repository = self.repository()
         if repository is None:

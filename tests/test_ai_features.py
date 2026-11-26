@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -60,48 +59,56 @@ def test_a_broken_provider_does_not_break_scanning():
     assert ai_features.ocr_enabled() is True
 
 
-def _index_db(tmp_path: Path, statuses: list[str]) -> Path:
-    db = tmp_path / "global_index.db"
-    connection = sqlite3.connect(str(db))
+def _library_with_photos(tmp_path: Path, statuses: list[str]) -> Path:
+    """Build a real asset index so coverage reads the production schema."""
+
+    from iPhoto.cache.index_store import IndexStore
+
+    store = IndexStore(tmp_path)
     try:
-        connection.execute(
-            "CREATE TABLE assets (id TEXT, media_type INTEGER, live_role INTEGER,"
-            " face_status TEXT)"
+        store.write_rows(
+            [
+                {
+                    "rel": f"p{i}.jpg",
+                    "id": f"p{i}",
+                    "media_type": 0,
+                    "live_role": 0,
+                    "face_status": status,
+                }
+                for i, status in enumerate(statuses)
+            ]
         )
-        connection.executemany(
-            "INSERT INTO assets VALUES (?, 0, 0, ?)",
-            [(f"p{i}", status) for i, status in enumerate(statuses)],
-        )
-        connection.commit()
     finally:
-        connection.close()
-    return db
+        store.close()
+    return tmp_path
 
 
 @pytest.fixture()
-def library(tmp_path, monkeypatch) -> Path:
-    monkeypatch.setattr(ai_coverage, "_index_db", lambda root: tmp_path / "global_index.db")
-    monkeypatch.setattr(ai_coverage, "_work_dir", lambda root: tmp_path)
+def library(tmp_path) -> Path:
     return tmp_path
 
 
 def test_skipped_photos_count_as_finished(library: Path):
-    _index_db(library, ["done", "done", "skipped", "pending"])
+    _library_with_photos(library, ["done", "done", "skipped", "pending"])
 
     assert ai_coverage.face_coverage(library) == (3, 4)
 
 
 def test_no_database_reports_nothing(library: Path):
+    """Opening 设置 must not create an index for a library that was never scanned."""
+
     assert ai_coverage.face_coverage(library) == (0, 0)
+    assert not (library / ".iPhoto" / "global_index.db").exists()
 
 
 def test_ocr_coverage_reads_the_processed_table(library: Path):
-    _index_db(library, ["done"] * 5)
-    ocr = sqlite3.connect(str(library / "ocr_index.db"))
+    _library_with_photos(library, ["done"] * 5)
+    from iPhoto.ai.db.ocr_database import OCRRepository
+
+    ocr = OCRRepository(library)
     try:
-        ocr.execute("CREATE TABLE ocr_processed (asset_id TEXT)")
-        ocr.executemany("INSERT INTO ocr_processed VALUES (?)", [("a",), ("b",)])
-        ocr.commit()
+        ocr.mark_processed("a", "a.jpg")
+        ocr.mark_processed("b", "b.jpg")
     finally:
         ocr.close()
 
@@ -109,9 +116,58 @@ def test_ocr_coverage_reads_the_processed_table(library: Path):
 
 
 def test_missing_ocr_database_reports_zero_of_the_library(library: Path):
-    _index_db(library, ["done"] * 4)
+    _library_with_photos(library, ["done"] * 4)
 
     assert ai_coverage.ocr_coverage(library) == (0, 4)
+
+
+def test_people_count_uses_the_face_index(library: Path):
+    import numpy as np
+
+    from iPhoto.people.records import FaceRecord, PersonRecord
+    from iPhoto.people.service import PeopleService
+
+    assert ai_coverage.people_count(library) == 0
+
+    people = PeopleService(library)
+    repository = people.repository()
+    assert repository is not None
+    repository.replace_all(
+        faces=[
+            FaceRecord(
+                face_id="face-1",
+                face_key="key-1",
+                asset_id="p0",
+                asset_rel="p0.jpg",
+                box_x=0,
+                box_y=0,
+                box_w=10,
+                box_h=10,
+                confidence=0.9,
+                embedding=np.zeros(4, dtype=np.float32),
+                embedding_dim=4,
+                thumbnail_path=None,
+                person_id="person-1",
+                detected_at="2026-01-01T00:00:00",
+                image_width=100,
+                image_height=100,
+            )
+        ],
+        persons=[
+            PersonRecord(
+                person_id="person-1",
+                name="Ada",
+                key_face_id="face-1",
+                face_count=1,
+                center_embedding=np.zeros(4, dtype=np.float32),
+                created_at="2026-01-01T00:00:00",
+                updated_at="2026-01-01T00:00:00",
+            )
+        ],
+        sync_runtime_state=False,
+    )
+
+    assert ai_coverage.people_count(library) == 1
 
 
 # --- settings page ---------------------------------------------------------

@@ -268,6 +268,15 @@ class FaceRepository:
             self._sync_person_cover_defaults()
             self.refresh_all_group_assets()
 
+    def count_persons(self) -> int:
+        """Number of clustered people, without building their summaries."""
+
+        if not self._db_path.exists():
+            return 0
+        with closing(self._connect()) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM persons").fetchone()
+        return int(row[0]) if row else 0
+
     def get_person_summaries(self, *, include_hidden: bool = False) -> list[PersonSummary]:
         self.initialize()
         with closing(self._connect()) as conn:

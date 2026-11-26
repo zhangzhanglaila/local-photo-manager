@@ -21,7 +21,7 @@ import json
 import sqlite3
 import threading
 import unicodedata
-from contextlib import closing
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
@@ -40,6 +40,20 @@ logger = get_logger()
 
 # Database filename for the global index
 GLOBAL_INDEX_DB_NAME = "global_index.db"
+
+# "One still photo" in SQL. Nothing marks rows as deleted (deletion removes the
+# row), so media type plus the live-photo role is the whole filter: videos are
+# ``media_type=1`` and a live photo's motion clip is a second row with a
+# non-null ``live_role``. Both coverage screens count this population, so the
+# filter lives here instead of being copy-pasted into each caller.
+PHOTO_ROW_FILTER = "media_type = 0 AND (live_role IS NULL OR live_role = 0)"
+
+
+def index_db_path(library_root: Path) -> Path:
+    """Return where the global index for *library_root* lives (no I/O)."""
+
+    return ensure_work_dir(library_root) / GLOBAL_INDEX_DB_NAME
+
 
 # SQLite supports at most SQLITE_MAX_VARIABLE_NUMBER bound parameters per query
 # (compile-time default 999, raised to 32766 in SQLite ≥3.32).  Use a
@@ -122,6 +136,24 @@ def get_global_repository(library_root: Path) -> "AssetRepository":
         return _global_instance
 
 
+def peek_global_repository(library_root: Path) -> "AssetRepository | None":
+    """Return the open global repository when it already serves *library_root*.
+
+    Read-only callers (coverage counters) use this to reuse the session's
+    connection instead of constructing a second repository — construction runs
+    the schema migrator, which costs more than the counts themselves. Unlike
+    :func:`get_global_repository` this never switches or creates anything: a
+    different root gets ``None``.
+    """
+
+    with _global_lock:
+        if _global_instance is None:
+            return None
+        if _global_instance.library_root.resolve() != library_root.resolve():
+            return None
+        return _global_instance
+
+
 def reset_global_repository() -> None:
     """Reset the global repository singleton.
     
@@ -133,6 +165,31 @@ def reset_global_repository() -> None:
         if _global_instance is not None:
             _global_instance.close()
             _global_instance = None
+
+
+@contextmanager
+def read_index(library_root: Path) -> Iterator["AssetRepository | None"]:
+    """Yield an asset index for read-only aggregates.
+
+    Borrows the session's global repository when it is already bound to
+    *library_root* (one query, no construction), otherwise opens a short-lived
+    repository and closes it again. Yields ``None`` when the library has never
+    been scanned, so callers never create an index just to display "0 / 0".
+    """
+
+    store = peek_global_repository(library_root)
+    if store is not None:
+        yield store
+        return
+    path = index_db_path(library_root)
+    if not path.exists():
+        yield None
+        return
+    store = AssetRepository(library_root)
+    try:
+        yield store
+    finally:
+        store.close()
 
 
 class AssetRepository:
@@ -158,7 +215,7 @@ class AssetRepository:
                 will be created at `<library_root>/.iPhoto/global_index.db`.
         """
         self.library_root = library_root
-        self.path = ensure_work_dir(library_root) / GLOBAL_INDEX_DB_NAME
+        self.path = index_db_path(library_root)
         
         self._db_manager = DatabaseManager(self.path)
         self._conn: Optional[sqlite3.Connection] = None
@@ -781,6 +838,40 @@ class AssetRepository:
         try:
             cursor = conn.execute(query, params)
             return cursor.fetchone() is not None
+        finally:
+            if should_close:
+                conn.close()
+
+    def photo_count(self) -> int:
+        """Number of still photos: videos and live-photo motion parts excluded."""
+
+        return self._scalar_count(f"SELECT COUNT(*) FROM assets WHERE {PHOTO_ROW_FILTER}")
+
+    def count_photos_by_face_status(self, statuses: Iterable[str]) -> int:
+        """Number of still photos whose ``face_status`` is one of *statuses*."""
+
+        normalized = sorted(
+            value
+            for value in (normalize_face_status(status) for status in statuses)
+            if value
+        )
+        if not normalized:
+            return 0
+        placeholders = ", ".join("?" for _ in normalized)
+        return self._scalar_count(
+            f"SELECT COUNT(*) FROM assets WHERE {PHOTO_ROW_FILTER}"
+            f" AND face_status IN ({placeholders})",
+            tuple(normalized),
+        )
+
+    def _scalar_count(self, query: str, params: Tuple[Any, ...] = ()) -> int:
+        """Run a single-row ``COUNT(*)`` query on the shared connection."""
+
+        conn = self._db_manager.get_connection()
+        should_close = (conn != self._db_manager._conn)
+        try:
+            row = conn.execute(query, params).fetchone()
+            return int(row[0]) if row else 0
         finally:
             if should_close:
                 conn.close()

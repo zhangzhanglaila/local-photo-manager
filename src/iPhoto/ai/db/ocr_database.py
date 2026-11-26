@@ -43,9 +43,15 @@ class OCRRepository:
 
     def __init__(self, library_root: Path) -> None:
         self.library_root = library_root
-        self.path = ensure_work_dir(library_root) / OCR_DB_NAME
+        self.path = self.db_path(library_root)
         self._local = threading.local()
         self._create_schema()
+
+    @staticmethod
+    def db_path(library_root: Path) -> Path:
+        """Location of the OCR index for *library_root* (no I/O)."""
+
+        return ensure_work_dir(library_root) / OCR_DB_NAME
 
     # ------------------------------------------------------------------
     # Connection helpers
@@ -341,6 +347,16 @@ class OCRRepository:
             "SELECT COUNT(DISTINCT asset_id) FROM ocr_regions"
         ).fetchone()
         return row[0]
+
+    def count_processed(self) -> int:
+        """Number of assets the text scan has attempted.
+
+        ``ocr_processed`` records every attempt, including images where no text
+        was found, so it — not the region count — is the coverage numerator.
+        """
+        conn = self._get_conn()
+        row = conn.execute("SELECT COUNT(*) FROM ocr_processed").fetchone()
+        return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
     # Cleanup
