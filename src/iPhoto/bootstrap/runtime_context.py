@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt
 from ..events.bus import EventBus
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..agent.services.search_status import SearchIndexStatus
+    from ..gui.viewmodels.search_index_status import SearchIndexStatus
     from ..di.container import DependencyContainer
     from ..gui.facade import AppFacade
     from ..gui.services.background_tasks import BackgroundTaskRegistry
@@ -70,12 +70,12 @@ def _create_asset_runtime() -> "LibraryAssetRuntime":
 
 
 def _create_search_index_status() -> "SearchIndexStatus":
-    from ..agent.services.search_status import SearchIndexStatus
+    from ..gui.viewmodels.search_index_status import SearchIndexStatus
 
     return SearchIndexStatus()
 
 
-def _create_background_tasks() -> "BackgroundTaskRegistry":
+def _create_task_registry() -> "BackgroundTaskRegistry":
     from ..gui.services.background_tasks import BackgroundTaskRegistry
 
     return BackgroundTaskRegistry()
@@ -99,7 +99,7 @@ class RuntimeContext:
         default_factory=_create_search_index_status
     )
     background_tasks: "BackgroundTaskRegistry" = field(
-        default_factory=_create_background_tasks
+        default_factory=_create_task_registry
     )
     recent_albums: list[Path] = field(default_factory=list)
     defer_startup_tasks: bool = False

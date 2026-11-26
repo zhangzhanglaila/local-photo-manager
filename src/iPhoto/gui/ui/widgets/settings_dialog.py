@@ -648,8 +648,6 @@ class SettingsDialog(QDialog):
             coverage = self._compute_coverage()
             if coverage is not None:
                 done, total = coverage
-                if status is not None and total:
-                    status.set_coverage(done, total)
         if running and total:
             percent = int(done * 100 / total)
             state_label.setText(

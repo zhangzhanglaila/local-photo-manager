@@ -50,7 +50,7 @@ class EmbeddingWorker(QRunnable):
         """Name stored with each vector: the active model's directory name."""
 
         try:
-            from ..services import search_models
+            from ....agent.services import search_models
 
             return search_models.active_model().dir_name
         except Exception:  # pragma: no cover - keep indexing rather than fail

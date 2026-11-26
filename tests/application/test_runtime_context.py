@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from iPhoto.agent.services.search_status import SearchIndexStatus
+from iPhoto.gui.viewmodels.search_index_status import SearchIndexStatus
 from iPhoto.bootstrap.runtime_context import RuntimeContext
 from iPhoto.events.bus import EventBus
 

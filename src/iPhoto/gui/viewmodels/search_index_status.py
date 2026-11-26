@@ -76,11 +76,6 @@ class SearchIndexStatus(QObject):
         self._total = total
         self.changed.emit()
 
-    def set_coverage(self, done: int, total: int) -> None:
-        """Record how many photos of *total* already have vectors."""
-
-        self.set_indexing(False, done, total)
-
     def coverage_text(self) -> str:
         if self._total <= 0:
             return ""

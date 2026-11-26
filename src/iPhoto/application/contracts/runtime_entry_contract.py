@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ...agent.services.search_status import SearchIndexStatus
+    from ...gui.viewmodels.search_index_status import SearchIndexStatus
     from ...gui.services.background_tasks import BackgroundTaskRegistry
     from ...di.container import DependencyContainer
     from ...events.bus import EventBus

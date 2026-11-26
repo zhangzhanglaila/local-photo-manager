@@ -6,8 +6,8 @@ from pathlib import Path
 
 from iPhoto.agent.infrastructure.clip_embedding import CLIPEmbeddingService
 from iPhoto.agent.services.ai_devices import search_device
-from iPhoto.agent.services import search_status as search_status_module
-from iPhoto.agent.services.search_status import SearchIndexStatus
+from iPhoto.gui.viewmodels import search_index_status as search_status_module
+from iPhoto.gui.viewmodels.search_index_status import SearchIndexStatus
 
 
 def test_module_no_longer_exposes_a_process_wide_accessor() -> None:
@@ -23,6 +23,12 @@ def test_two_status_objects_are_independent() -> None:
     assert first.running is True
     assert second.running is False
     assert second.total == 0
+
+
+def test_status_is_a_read_only_view_model_for_the_settings_page() -> None:
+    """The page renders coverage; it must not write it into shared state."""
+
+    assert not hasattr(SearchIndexStatus, "set_coverage")
 
 
 def test_encoder_keeps_the_injected_status(tmp_path: Path) -> None:

@@ -2140,7 +2140,7 @@ class MainCoordinator(QObject):
                         return
 
                     # Start embedding generation with progress callbacks
-                    from iPhoto.agent.workers.embedding_worker import EmbeddingWorker
+                    from iPhoto.gui.ui.tasks.embedding_worker import EmbeddingWorker
                     worker = EmbeddingWorker(
                         embedding_service=embedding_service,
                         embedding_repository=embedding_repo,
@@ -2255,7 +2255,7 @@ class MainCoordinator(QObject):
                     self._callback("starting", len(pending_ids), len(pending_ids), f"共 {len(pending_ids)} 张照片需要处理")
 
                     # Step 4: Start embedding generation
-                    from iPhoto.agent.workers.embedding_worker import EmbeddingWorker
+                    from iPhoto.gui.ui.tasks.embedding_worker import EmbeddingWorker
                     worker = EmbeddingWorker(
                         embedding_service=embedding_service,
                         embedding_repository=embedding_repo,

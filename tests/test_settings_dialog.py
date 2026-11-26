@@ -168,10 +168,28 @@ def test_rebuild_action_requests_a_full_reindex(chrome, monkeypatch, qapp):
         dialog.deleteLater()
 
 
+def test_refreshing_rows_does_not_fabricate_coverage(chrome, qapp):
+    """Rendering the index row used to write a guessed value into the status object."""
+
+    from iPhoto.gui.viewmodels.search_index_status import SearchIndexStatus
+
+    window, header = chrome
+    status = SearchIndexStatus()
+    dialog = SettingsDialog(header, None, window, search_status=status)
+    try:
+        dialog._refresh_search_rows()
+
+        assert status.done == 0
+        assert status.total == 0
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_settings_rows_report_model_device_and_index_progress(chrome, qapp):
     """The window must say which model runs where and whether vectors are building."""
 
-    from iPhoto.agent.services.search_status import SearchIndexStatus
+    from iPhoto.gui.viewmodels.search_index_status import SearchIndexStatus
 
     window, header = chrome
     status = SearchIndexStatus()
