@@ -14,7 +14,7 @@ from ...application.use_cases.scan_library import (
     ScanLibraryResult,
     ScanLibraryUseCase,
 )
-from ...cache.index_store import get_global_repository
+from ...cache.index_store import GLOBAL_INDEX_DB_NAME, get_global_repository
 from ...config import (
     ALBUM_MANIFEST_NAMES,
     DEFAULT_EXCLUDE,
@@ -46,6 +46,35 @@ if TYPE_CHECKING:  # pragma: no cover
     from ...domain.models.core import LiveGroup
 
 LOGGER = get_logger()
+
+
+def _workspace_cache_excludes(root: Path) -> list[str]:
+    """Return extra scan excludes when *root* is a workspace directory.
+
+    A workspace (a library mapped under the configured workspace base) keeps
+    ``global_index.db`` and ``cache/thumbs`` next to the library's album folders.
+    Scanning one as if it were a library indexes the app's own thumbnails as
+    assets: they are the newest files, so the gallery's first window held nothing
+    but thumbnail rows. The grid filters those out, so it stayed empty while the
+    counter claimed thousands of photos.
+
+    Only a root that really carries the workspace database gets the extra
+    excludes, so an album that happens to contain a ``cache`` folder still scans
+    normally.
+    """
+
+    try:
+        is_workspace = (Path(root) / GLOBAL_INDEX_DB_NAME).exists()
+    except OSError:
+        is_workspace = False
+    if not is_workspace:
+        return []
+    LOGGER.warning(
+        "Scanning a workspace directory (%s): excluding %s, cache/** and thumbs/**",
+        root,
+        GLOBAL_INDEX_DB_NAME,
+    )
+    return [GLOBAL_INDEX_DB_NAME, "cache/**", "thumbs/**"]
 
 
 @dataclass(frozen=True)
@@ -619,6 +648,7 @@ class LibraryScanService:
 
         result_include = list(resolved_include)
         result_exclude = list(resolved_exclude)
+        result_exclude.extend(_workspace_cache_excludes(root))
         LOGGER.info(
             "scan_filters for %s: manifest=%s, include patterns=%d, exclude patterns=%d",
             root, manifest.get("title", "default"), len(result_include), len(result_exclude),

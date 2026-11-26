@@ -404,3 +404,29 @@ def test_scan_specific_files_prefixes_subalbum_rows(
     assert [row["rel"] for row in store.read_album_assets("album")] == [
         "album/a.jpg"
     ]
+def test_scan_filters_excludes_workspace_cache_when_root_is_a_workspace(
+    tmp_path: Path,
+) -> None:
+    """A workspace directory holds the app's own index and thumbnails."""
+
+    (tmp_path / "global_index.db").write_bytes(b"")
+    service = LibraryScanService(tmp_path)
+
+    _include, exclude = service.scan_filters(tmp_path)
+
+    assert "global_index.db" in exclude
+    assert "cache/**" in exclude
+    assert "thumbs/**" in exclude
+
+
+def test_scan_filters_keeps_an_album_cache_folder(tmp_path: Path) -> None:
+    """Only a real workspace root gets the cache excludes."""
+
+    album = tmp_path / "album"
+    (album / "cache").mkdir(parents=True)
+    service = LibraryScanService(tmp_path)
+
+    _include, exclude = service.scan_filters(album)
+
+    assert "cache/**" not in exclude
+    assert "thumbs/**" not in exclude
