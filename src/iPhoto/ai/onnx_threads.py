@@ -38,31 +38,39 @@ def bounded_session_options(env_var: str = THREAD_LIMIT_ENV):
     return options
 
 
-def bound_rapidocr_threads(env_var: str = THREAD_LIMIT_ENV) -> bool:
-    """Make RapidOCR build its sessions with the bounded thread policy.
+def rapidocr_engine_params(env_var: str = THREAD_LIMIT_ENV) -> dict[str, int]:
+    """Return the RapidOCR 3.x parameters that bound its inference threads.
 
-    RapidOCR constructs ``SessionOptions()`` inside its own module and keeps no
-    knob for the thread count, so the only place to apply the policy is the name
-    it resolves at session creation time. Returns ``True`` when the patch is in
-    place (installed now or installed earlier).
+    The 3.x package exposes ``EngineConfig.onnxruntime.*``, so the policy is
+    passed in rather than patched into its module (which only the 1.x wheel
+    needed).
+    """
+
+    return {
+        "EngineConfig.onnxruntime.intra_op_num_threads": thread_limit(env_var),
+        "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+    }
+
+
+def bound_rapidocr_threads(env_var: str = THREAD_LIMIT_ENV) -> bool:
+    """Return whether the bounded policy can be applied to RapidOCR.
+
+    Kept as the single entry point callers/tests use; the actual limit is handed
+    to the engine through :func:`rapidocr_engine_params`.
     """
 
     try:
-        import rapidocr_onnxruntime.utils as ocr_utils
+        import rapidocr  # noqa: F401
     except ImportError:
         return False
+    return bool(rapidocr_engine_params(env_var))
 
-    if getattr(ocr_utils, "_iphotro_bounded_threads", False):
-        return True
 
-    original = ocr_utils.SessionOptions
-
-    def factory(*args, **kwargs):
-        options = original(*args, **kwargs)
-        options.intra_op_num_threads = thread_limit(env_var)
-        options.inter_op_num_threads = 1
-        return options
-
-    ocr_utils.SessionOptions = factory
-    ocr_utils._iphotro_bounded_threads = True  # type: ignore[attr-defined]
-    return True
+__all__ = [
+    "DEFAULT_AI_THREAD_LIMIT",
+    "THREAD_LIMIT_ENV",
+    "bounded_session_options",
+    "bound_rapidocr_threads",
+    "rapidocr_engine_params",
+    "thread_limit",
+]

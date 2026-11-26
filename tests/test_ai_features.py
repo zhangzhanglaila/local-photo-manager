@@ -223,7 +223,7 @@ def test_model_rows_show_the_active_pack(dialog):
     page = widget._pages[4]
 
     assert "buffalo_l" in widget._pack_labels["face"].text()
-    assert "PP-OCRv3" in widget._pack_labels["ocr"].text()
+    assert "PP-OCRv5" in widget._pack_labels["ocr"].text()
     # Only the search-precision dropdown is left; the model pickers are rows.
     assert len(page.findChildren(QComboBox)) == 1
 
@@ -335,8 +335,12 @@ def test_ocr_engine_passes_paths_for_a_disk_pack(tmp_path):
         rec=rec,
     )
 
-    kwargs = OCREngine(spec=spec)._engine_kwargs()
+    params = OCREngine(spec=spec)._engine_params()
 
-    assert kwargs == {"det_model_path": str(det), "rec_model_path": str(rec)}
-    # The bundled pack must not override RapidOCR's own defaults.
-    assert OCREngine()._engine_kwargs() == {}
+    assert params["Det.model_path"] == str(det)
+    assert params["Rec.model_path"] == str(rec)
+    # The built-in pack asks for PP-OCRv5 mobile instead of overriding paths.
+    default_params = OCREngine()._engine_params()
+    assert "Det.model_path" not in default_params
+    assert default_params["Det.ocr_version"].value == "PP-OCRv5"
+    assert default_params["Rec.model_type"].value == "mobile"

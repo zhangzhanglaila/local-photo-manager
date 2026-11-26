@@ -28,20 +28,44 @@ class OCREngine:
         #: Selected OCR pack; ``None`` means "use the bundled PP-OCRv3 models".
         self._spec = spec
 
-    def _engine_kwargs(self) -> dict[str, str]:
-        """Return the model paths for the selected pack (empty for bundled)."""
+    def _engine_params(self) -> dict:
+        """Return RapidOCR 3.x parameters for the selected pack.
 
-        spec = self._spec
-        if spec is None or spec.builtin:
-            return {}
-        kwargs: dict[str, str] = {}
-        if spec.det is not None:
-            kwargs["det_model_path"] = str(spec.det)
-        if spec.rec is not None:
-            kwargs["rec_model_path"] = str(spec.rec)
-        if spec.cls is not None:
-            kwargs["cls_model_path"] = str(spec.cls)
-        return kwargs
+        The built-in pack asks for PP-OCRv5 *mobile*; RapidOCR downloads the ONNX
+        files into ``extension/models/rapidocr`` the first time and reuses them
+        afterwards. A pack found on disk is passed as explicit model paths.
+        """
+
+        from ...agent.services import ocr_models
+
+        spec = self._spec or ocr_models.active_model()
+        from ..onnx_threads import rapidocr_engine_params
+
+        params: dict = {
+            "Global.model_root_dir": str(ocr_models.rapidocr_dir()),
+            **rapidocr_engine_params(),
+        }
+        if not spec.builtin:
+            if spec.det is not None:
+                params["Det.model_path"] = str(spec.det)
+            if spec.rec is not None:
+                params["Rec.model_path"] = str(spec.rec)
+            if spec.cls is not None:
+                params["Cls.model_path"] = str(spec.cls)
+            return params
+
+        try:
+            from rapidocr.utils.typings import ModelType, OCRVersion
+
+            version = OCRVersion(spec.version or ocr_models.BUILTIN_VERSION)
+            model_type = ModelType(spec.model_type or ocr_models.BUILTIN_MODEL_TYPE)
+        except Exception:  # pragma: no cover - enum names changed upstream
+            _LOGGER.warning("RapidOCR enums unavailable; using its defaults")
+            return params
+        for task in ("Det", "Rec"):
+            params[f"{task}.ocr_version"] = version
+            params[f"{task}.model_type"] = model_type
+        return params
 
     def _ensure_loaded(self) -> bool:
         """Load RapidOCR models if not already loaded."""
@@ -53,34 +77,27 @@ class OCREngine:
                 return True
 
             try:
-                from rapidocr_onnxruntime import RapidOCR
+                from rapidocr import RapidOCR
 
-                # RapidOCR builds its own onnxruntime sessions without a thread
-                # limit, which defaults to one thread per core and starved the
-                # interface while an OCR scan ran in the background.
-                from ..onnx_threads import bound_rapidocr_threads
-
-                bound_rapidocr_threads()
-
+                # Thread limits travel through ``_engine_params`` now; the 3.x
+                # package exposes them explicitly.
                 # RapidOCR also goes through OpenCV; cap its pool with the same
                 # budget so a scan cannot saturate every core.
                 from ...utils.thread_limits import apply_library_thread_limits
 
                 apply_library_thread_limits()
 
-                _LOGGER.info("Loading RapidOCR model (first use, ~10s)...")
-                kwargs = self._engine_kwargs()
-                if kwargs:
-                    _LOGGER.info("OCR model pack: %s", kwargs)
-                self._engine = RapidOCR(**kwargs)
+                _LOGGER.info("Loading RapidOCR (PP-OCRv5 mobile) ...")
+                params = self._engine_params()
+                _LOGGER.info("OCR model pack: %s", params)
+                self._engine = RapidOCR(params=params)
                 self._loaded = True
                 _LOGGER.info("RapidOCR model loaded successfully")
                 return True
 
             except ImportError:
                 _LOGGER.warning(
-                    "rapidocr-onnxruntime not installed. "
-                    "Install with: pip install 'iPhoto[ai]'"
+                    "rapidocr not installed. Install with: pip install 'iPhoto[ai]'"
                 )
                 return False
             except Exception as e:
@@ -104,12 +121,14 @@ class OCREngine:
             return []
 
         try:
-            result, _ = self._engine(str(image_path))
-            if result is None:
+            output = self._engine(str(image_path))
+            if output is None or not getattr(output, "txts", None):
                 return []
 
             regions: list[OCRRegion] = []
-            for box, text, confidence in result:
+            for box, text, confidence in zip(
+                output.boxes, output.txts, output.scores
+            ):
                 # Filter by confidence (rapidocr may return str)
                 confidence = float(confidence)
                 if confidence < OCR_CONFIDENCE_THRESHOLD:

@@ -1,35 +1,44 @@
 """OCR model packs.
 
-RapidOCR ships one pack inside the wheel (PP-OCRv3, detection + recognition +
-orientation). Extra packs are discovered on disk so a user can drop a newer
-PP-OCRv4 (or a language-specific recogniser) into ``extension/models/ocr-<name>``
-with its ONNX files and pick it in 设置 → 智能 → OCR 模型.
+The default is **PP-OCRv5 mobile** (detection + recognition), the current
+PaddleOCR generation, fetched by RapidOCR on first use into
+``extension/models/rapidocr``. PP-OCRv3 is gone: the old
+``rapidocr-onnxruntime`` wheel shipped 2021-era models and pinned its own
+character dictionary, so it could not be upgraded in place.
 
-No download is attempted: OCR packs come from different places than the search
-models, and a half-downloaded pack would silently degrade recognition.
+Extra packs are still discovered on disk (``extension/models/ocr-<name>``) so a
+language-specific recogniser can be dropped in and picked in 设置 → 智能.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 #: Settings key written by the settings window and read by the OCR engine.
 SETTINGS_KEY = "agent.ocr.model"
 
-BUILTIN_KEY = "ppocr-v3"
-BUILTIN_TITLE = "RapidOCR PP-OCRv3"
-BUILTIN_MB = 14
+BUILTIN_KEY = "ppocr-v5"
+BUILTIN_TITLE = "PP-OCRv5 mobile"
+BUILTIN_VERSION = "PP-OCRv5"
+BUILTIN_MODEL_TYPE = "mobile"
+#: Detection + recognition + orientation, measured after the first download.
+BUILTIN_MB = 21
+
+#: Where RapidOCR keeps the downloaded ONNX files (shared across libraries).
+RAPIDOCR_DIR_NAME = "rapidocr"
 
 
 @dataclass(frozen=True)
 class OCRModelSpec:
-    """One OCR pack: either the bundled models or a folder on disk."""
+    """One OCR pack: either the built-in PP-OCRv5 or a folder on disk."""
 
     key: str
     title: str
     total_mb: float
+    version: Optional[str] = None
+    model_type: Optional[str] = None
     directory: Optional[Path] = None
     det: Optional[Path] = None
     rec: Optional[Path] = None
@@ -42,19 +51,23 @@ class OCRModelSpec:
     @property
     def summary(self) -> str:
         size = f"{int(round(self.total_mb))} MB"
-        return size if not self.builtin else f"{size} · {_bundled_label()}"
+        if self.version and self.model_type:
+            return f"{size} · {self.version} {self.model_type}"
+        return size
 
     @property
     def languages(self) -> str:
         return "zh" if self.builtin else self.key
 
 
-def _bundled_label() -> str:
-    return "内置"
-
-
 def models_root() -> Path:
     return Path(__file__).resolve().parents[3] / "extension" / "models"
+
+
+def rapidocr_dir() -> Path:
+    """Directory holding the downloaded PP-OCRv5 files."""
+
+    return models_root() / RAPIDOCR_DIR_NAME
 
 
 def _spec_from_directory(directory: Path) -> OCRModelSpec | None:
@@ -89,10 +102,16 @@ def _spec_from_directory(directory: Path) -> OCRModelSpec | None:
 
 
 def available_models() -> tuple[OCRModelSpec, ...]:
-    """Return the bundled pack plus any packs found on disk."""
+    """Return the built-in PP-OCRv5 pack plus any packs found on disk."""
 
     specs: list[OCRModelSpec] = [
-        OCRModelSpec(key=BUILTIN_KEY, title=BUILTIN_TITLE, total_mb=BUILTIN_MB)
+        OCRModelSpec(
+            key=BUILTIN_KEY,
+            title=BUILTIN_TITLE,
+            total_mb=BUILTIN_MB,
+            version=BUILTIN_VERSION,
+            model_type=BUILTIN_MODEL_TYPE,
+        )
     ]
     root = models_root()
     if root.is_dir():
@@ -114,10 +133,16 @@ def resolve_spec(key: str | None) -> OCRModelSpec:
 
 
 def is_installed(spec: OCRModelSpec) -> bool:
-    """The bundled pack is always there; disk packs must still exist."""
+    """Whether the ONNX files are already on disk."""
 
     if spec.builtin:
-        return True
+        directory = rapidocr_dir()
+        if not directory.is_dir():
+            return False
+        names = {path.name.lower() for path in directory.glob("*.onnx")}
+        return any("det" in name for name in names) and any(
+            "rec" in name for name in names
+        )
     return spec.det is not None and spec.rec is not None and spec.det.exists()
 
 
@@ -138,13 +163,16 @@ def active_model() -> OCRModelSpec:
 __all__ = [
     "BUILTIN_KEY",
     "BUILTIN_MB",
+    "BUILTIN_MODEL_TYPE",
     "BUILTIN_TITLE",
+    "BUILTIN_VERSION",
     "OCRModelSpec",
     "SETTINGS_KEY",
     "active_model",
     "available_models",
     "is_installed",
     "models_root",
+    "rapidocr_dir",
     "resolve_spec",
     "set_active_model",
 ]

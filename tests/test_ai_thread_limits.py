@@ -59,21 +59,26 @@ def test_face_pipeline_uses_the_shared_policy(monkeypatch) -> None:
 
 
 def test_rapidocr_sessions_are_bounded(monkeypatch) -> None:
-    """RapidOCR builds its sessions internally, so the policy is applied there."""
+    """The policy is handed to RapidOCR 3.x through its engine parameters."""
 
-    pytest.importorskip("rapidocr_onnxruntime", reason="OCR scanning needs RapidOCR")
+    pytest.importorskip("rapidocr", reason="OCR scanning needs RapidOCR")
     monkeypatch.setenv("IPHOTO_FACE_THREADS", "2")
 
-    from iPhoto.ai.onnx_threads import bound_rapidocr_threads
+    from iPhoto.ai.onnx_threads import bound_rapidocr_threads, rapidocr_engine_params
 
     assert bound_rapidocr_threads() is True
+    params = rapidocr_engine_params()
+    assert params["EngineConfig.onnxruntime.intra_op_num_threads"] == 2
+    assert params["EngineConfig.onnxruntime.inter_op_num_threads"] == 1
 
-    import rapidocr_onnxruntime.utils as ocr_utils
 
-    options = ocr_utils.SessionOptions()
-    assert options.intra_op_num_threads == 2
-    assert options.inter_op_num_threads == 1
+def test_the_ocr_engine_passes_the_thread_policy(monkeypatch) -> None:
+    monkeypatch.setenv("IPHOTO_FACE_THREADS", "2")
 
-    # Applying it twice must not stack wrappers.
-    assert bound_rapidocr_threads() is True
-    assert ocr_utils.SessionOptions().intra_op_num_threads == 2
+    from iPhoto.ai.ocr.ocr_engine import OCREngine
+
+    params = OCREngine()._engine_params()
+
+    assert params["EngineConfig.onnxruntime.intra_op_num_threads"] == 2
+    assert params["Det.ocr_version"].value == "PP-OCRv5"
+    assert params["Det.model_type"].value == "mobile"
