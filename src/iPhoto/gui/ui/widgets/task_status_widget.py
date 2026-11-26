@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ....i18n import tr
-from ...services.background_tasks import BackgroundTask, background_tasks
+from ...services.background_tasks import BackgroundTask, BackgroundTaskRegistry
 from .dialog_theme import dialog_tokens
 
 
@@ -76,7 +76,12 @@ class SmoothProgressBar(QProgressBar):
 class TaskStatusButton(QWidget):
     """Compact "background tasks" entry with a popup list."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        registry: BackgroundTaskRegistry,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("taskStatusButton")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -95,14 +100,14 @@ class TaskStatusButton(QWidget):
         self._bar.setFixedSize(90, 4)
         layout.addWidget(self._bar)
 
-        self._popup = TaskPopup(self)
+        self._popup = TaskPopup(self, registry)
         self._popup.hide()
         QApplication.instance().installEventFilter(self)
 
         self._applying_style = False
         self._last_task_id: str | None = None
         self._apply_style()
-        self._registry = background_tasks()
+        self._registry = registry
         self._registry.changed.connect(self._refresh)
         self._refresh()
 
@@ -258,7 +263,11 @@ class TaskRow(QWidget):
 class TaskPopup(QFrame):
     """Card listing running and recently finished tasks."""
 
-    def __init__(self, anchor: QWidget) -> None:
+    def __init__(
+        self,
+        anchor: QWidget,
+        registry: BackgroundTaskRegistry,
+    ) -> None:
         # A child of the main window, not a top-level Popup: a popup window has
         # its own square background and can spill outside the rounded app shell,
         # which looked broken. As a child it is clipped by the window and the
@@ -285,6 +294,7 @@ class TaskPopup(QFrame):
 
         #: Rows are updated in place; re-creating them on every tick multiplied
         #: the list by the number of progress updates.
+        self._registry = registry
         self._rows: dict[str, TaskRow] = {}
         self._applying_style = False
         self._timer = QTimer(self)
@@ -294,7 +304,7 @@ class TaskPopup(QFrame):
 
     # ------------------------------------------------------------------
     def refresh(self) -> None:
-        tasks = background_tasks().tasks()
+        tasks = self._registry.tasks()
         self._empty.setVisible(not tasks)
         wanted = {task.id for task in tasks}
 

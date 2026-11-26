@@ -70,6 +70,12 @@ def _create_search_index_status() -> "SearchIndexStatus":
     return SearchIndexStatus()
 
 
+def _create_background_tasks() -> "BackgroundTaskRegistry":
+    from ..gui.services.background_tasks import BackgroundTaskRegistry
+
+    return BackgroundTaskRegistry()
+
+
 def _create_event_bus() -> EventBus:
     return EventBus(logging.getLogger("EventBus"))
 
@@ -85,6 +91,9 @@ class RuntimeContext:
     asset_runtime: "LibraryAssetRuntime" = field(default_factory=_create_asset_runtime)
     search_index_status: "SearchIndexStatus" = field(
         default_factory=_create_search_index_status
+    )
+    background_tasks: "BackgroundTaskRegistry" = field(
+        default_factory=_create_background_tasks
     )
     recent_albums: list[Path] = field(default_factory=list)
     defer_startup_tasks: bool = False

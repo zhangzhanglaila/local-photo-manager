@@ -11,7 +11,6 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QProgressBar
 
 from ....application.contracts.runtime_entry_contract import RuntimeEntryContract
-from ...services.background_tasks import background_tasks
 from ....config import RECENTLY_DELETED_DIR_NAME
 from ....i18n import tr
 from ....utils.pathutils import paths_equal
@@ -53,6 +52,7 @@ class StatusBarController(QObject):
         # can use "Restore" focused language.
         self._move_context_restore: bool = False
         self._context = context
+        self._background_tasks = context.background_tasks
 
     # Generic helpers -------------------------------------------------
     def show_message(self, message: str, timeout_ms: int | None = None) -> None:
@@ -67,7 +67,7 @@ class StatusBarController(QObject):
         """Prepare the UI for a long-running scan operation."""
 
         # ⭐ 修复：无论当前状态如何，都应该允许开始扫描
-        background_tasks().start("scan", tr("status.task.scan"))
+        self._background_tasks.start("scan", tr("status.task.scan"))
         self._progress_context = "scan"
         self._status_bar.setVisible(True)
         self._progress_bar.setRange(0, 0)
@@ -96,7 +96,7 @@ class StatusBarController(QObject):
 
         root_name = _scan_root_name(root)
         if root_name:
-            background_tasks().update(
+            self._background_tasks.update(
                 "scan", title=tr("status.task.scan_named", name=root_name), detail=str(root)
             )
 
@@ -110,7 +110,7 @@ class StatusBarController(QObject):
         else:
             self._progress_bar.setRange(0, total)
             self._progress_bar.setValue(max(0, min(current, total)))
-            background_tasks().update("scan", done=current, total=total)
+            self._background_tasks.update("scan", done=current, total=total)
             # The background-task entry shows the same percentage and counts;
             # repeating it in the message label printed the text twice.``
         self._progress_bar.setVisible(True)
@@ -129,7 +129,7 @@ class StatusBarController(QObject):
         if self._rescan_action is not None:
             self._rescan_action.setEnabled(True)
             self._rescan_action.setText(tr("action.rescan"))
-        background_tasks().finish("scan", failed=not success)
+        self._background_tasks.finish("scan", failed=not success)
         message = tr("status.scan_complete") if success else tr("status.scan_failed")
         self.show_message(message, 5000)
 

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # pragma: no cover
     from ...agent.services.search_status import SearchIndexStatus
+    from ...gui.services.background_tasks import BackgroundTaskRegistry
     from ...di.container import DependencyContainer
     from ...events.bus import EventBus
     from ...gui.facade import AppFacade
@@ -29,6 +30,7 @@ class RuntimeEntryContract(Protocol):
     container: "DependencyContainer"
     asset_runtime: "LibraryAssetRuntime"
     search_index_status: "SearchIndexStatus"
+    background_tasks: "BackgroundTaskRegistry"
     library_session: "LibrarySession | None"
     recent_albums: list[Path]
     defer_startup_tasks: bool

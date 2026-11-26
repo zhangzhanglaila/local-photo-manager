@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
@@ -12,6 +14,9 @@ from PySide6.QtWidgets import (
     QSpacerItem,
     QWidget,
 )
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ...services.background_tasks import BackgroundTaskRegistry
 
 
 class _HiddenProgressBar(QProgressBar):
@@ -36,7 +41,12 @@ class ChromeStatusBar(QWidget):
     when the main window uses ``Qt.WA_TranslucentBackground`` for anti-aliased corners.
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        registry: "BackgroundTaskRegistry",
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("chromeStatusBar")
         self.setSizePolicy(
@@ -71,7 +81,7 @@ class ChromeStatusBar(QWidget):
         # the way an IDE keeps its progress widget on the right.
         from .task_status_widget import TaskStatusButton
 
-        self._task_button = TaskStatusButton(self)
+        self._task_button = TaskStatusButton(self, registry=registry)
         layout.addWidget(
             self._task_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )

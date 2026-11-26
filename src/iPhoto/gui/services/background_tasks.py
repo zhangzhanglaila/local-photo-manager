@@ -5,6 +5,10 @@ most recent operation could own: a scan that started while an index rebuild was
 running simply overwrote the other one. This registry keeps every running task so
 the UI can list them (like the background-task popup in an IDE) and so finishing
 one task no longer erases another.
+
+The registry is created by ``bootstrap`` and injected into the coordinator, the
+status-bar controller and the task popup; there is no process-wide accessor, so a
+second window or a headless test cannot share the first window's tasks.
 """
 
 from __future__ import annotations
@@ -124,20 +128,7 @@ class BackgroundTaskRegistry(QObject):
             self._tasks.pop(task_id, None)
 
 
-_registry: BackgroundTaskRegistry | None = None
-
-
-def background_tasks() -> BackgroundTaskRegistry:
-    """Return the process-wide registry (created on first use)."""
-
-    global _registry
-    if _registry is None:
-        _registry = BackgroundTaskRegistry()
-    return _registry
-
-
 __all__ = [
     "BackgroundTask",
     "BackgroundTaskRegistry",
-    "background_tasks",
 ]

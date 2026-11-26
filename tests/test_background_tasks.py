@@ -10,7 +10,6 @@ pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 
 from PySide6.QtWidgets import QApplication, QLabel, QProgressBar
 
-from iPhoto.gui.services import background_tasks as registry_module
 from iPhoto.gui.services.background_tasks import BackgroundTaskRegistry
 from iPhoto.gui.ui.widgets.task_status_widget import (
     SmoothProgressBar,
@@ -30,10 +29,8 @@ def qapp() -> QApplication:
 
 
 @pytest.fixture()
-def registry(monkeypatch) -> BackgroundTaskRegistry:
-    reg = BackgroundTaskRegistry()
-    monkeypatch.setattr(registry_module, "_registry", reg)
-    return reg
+def registry() -> BackgroundTaskRegistry:
+    return BackgroundTaskRegistry()
 
 
 def test_a_scan_and_an_index_build_coexist(registry):
@@ -71,7 +68,7 @@ def test_button_shows_the_latest_task_and_opens_the_popup(qapp, registry):
     registry.start("scan", "Scanning files")
     registry.update("scan", done=95, total=100)
 
-    button = TaskStatusButton()
+    button = TaskStatusButton(registry=registry)
     try:
         assert button.isVisibleTo(button.parentWidget() or button) is True
         assert "95%" in button._label.text()
@@ -92,7 +89,7 @@ def test_button_shows_the_latest_task_and_opens_the_popup(qapp, registry):
 
 
 def test_button_hides_when_nothing_runs(qapp, registry):
-    button = TaskStatusButton()
+    button = TaskStatusButton(registry=registry)
     try:
         assert button.isHidden() is True
         registry.start("scan", "Scanning files")
@@ -111,7 +108,7 @@ def test_refresh_updates_in_place_instead_of_stacking_rows(qapp, registry):
     """Every progress tick used to append another copy of the same task."""
 
     registry.start("scan", "Scanning files")
-    popup = TaskPopup(None)
+    popup = TaskPopup(None, registry)
     try:
         for done in (200, 400, 600, 800, 1000):
             registry.update("scan", done=done, total=1000)
@@ -171,6 +168,7 @@ def test_scan_task_names_the_folder(qapp, registry, monkeypatch):
     controller._move_context_restore = False
     controller._progress_bar = _Bar2()
     controller._status_bar = _Bar()
+    controller._background_tasks = registry
     monkeypatch.setattr(controller, "show_message", lambda *a, **k: None)
     registry.start("scan", "Scanning files")
 

@@ -303,7 +303,15 @@ class Ui_MainWindow(object):
 
         self.window_shell_layout.addWidget(self.splitter)
 
-        self.status_bar = ChromeStatusBar(self.window_shell)
+        # The task registry is a runtime service; the window never creates the
+        # "real" one. A hand-built window (tests, previews) gets its own so the
+        # status bar stays constructible, while the app passes the shared object.
+        registry = getattr(getattr(MainWindow, "_context", None), "background_tasks", None)
+        if registry is None:
+            from ..services.background_tasks import BackgroundTaskRegistry
+
+            registry = BackgroundTaskRegistry()
+        self.status_bar = ChromeStatusBar(self.window_shell, registry=registry)
         self.window_shell_layout.addWidget(self.status_bar)
         self.progress_bar = self.status_bar.progress_bar
 

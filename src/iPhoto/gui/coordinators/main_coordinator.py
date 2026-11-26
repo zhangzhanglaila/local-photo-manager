@@ -2016,15 +2016,15 @@ class MainCoordinator(QObject):
         title = (
             tr("status.task.face") if feature == "face" else tr("status.task.ocr")
         )
-        from iPhoto.gui.services.background_tasks import background_tasks
+        tasks = self._context.background_tasks
 
-        background_tasks().start(feature, title)
+        tasks.start(feature, title)
         self._status_bar.show_message(tr("settings.ai_state.scanning", title=title), 8000)
         try:
             self._gallery_vm.rescan_current()
         except Exception:  # pragma: no cover - surfaced in the status bar
             self._logger.warning("could not start the %s rebuild", feature, exc_info=True)
-            background_tasks().finish(feature, failed=True)
+            tasks.finish(feature, failed=True)
 
     def _rebuild_search_index(self) -> None:
         """Re-embed the whole library with the active model."""
@@ -2056,11 +2056,11 @@ class MainCoordinator(QObject):
 
         coordinator = self
 
+        tasks = self._context.background_tasks
+
         class _DownloadWorker(QRunnable):
             def run(self) -> None:
-                from iPhoto.gui.services.background_tasks import background_tasks
-
-                background_tasks().start("download", tr("status.task.download"))
+                tasks.start("download", tr("status.task.download"))
                 try:
                     download_search_model(
                         spec,
@@ -2069,12 +2069,12 @@ class MainCoordinator(QObject):
                         ),
                     )
                 except Exception as exc:  # noqa: BLE001 - surfaced to the user
-                    background_tasks().finish("download", failed=True)
+                    tasks.finish("download", failed=True)
                     coordinator._status_bar.show_message(
                         f"{tr('search.model.download_failed')}: {exc}", 15000
                     )
                     return
-                background_tasks().finish("download")
+                tasks.finish("download")
                 coordinator._status_bar.show_message(
                     tr("search.model.download_done", name=spec.dir_name), 5000
                 )
@@ -2149,19 +2149,19 @@ class MainCoordinator(QObject):
                         force_rebuild=force_rebuild,
                     )
 
-                    from iPhoto.gui.services.background_tasks import background_tasks
+                    tasks = self._context.background_tasks
 
-                    background_tasks().start("index", tr("status.task.index"))
+                    tasks.start("index", tr("status.task.index"))
                     status.set_indexing(True, 0, int(len(pending)))
 
                     def on_progress(current, total, msg):
-                        background_tasks().update(
+                        tasks.update(
                             "index", done=int(current), total=int(total), detail=str(msg)
                         )
                         status.set_indexing(True, current, total)
 
                     def on_finished(processed, failed):
-                        background_tasks().finish("index", failed=bool(failed))
+                        tasks.finish("index", failed=bool(failed))
                         status.set_indexing(False, len(asset_ids), len(asset_ids))
                         self._status_callback(f"AI 索引生成完成 ({processed} 张照片)")
 
