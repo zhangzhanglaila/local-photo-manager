@@ -10,7 +10,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from ...infrastructure.services.library_album_metadata_service import LibraryAlbumMetadataService
 from .session_service_resolver import bound_album_metadata_service
-from ...utils.pathutils import paths_equal
+from ...utils.pathutils import optional_path, paths_equal
 
 if TYPE_CHECKING:
     from ...library.runtime_controller import LibraryRuntimeController
@@ -107,12 +107,9 @@ class AlbumMetadataService(QObject):
         self,
         library_manager: "LibraryRuntimeController | None",
     ) -> LibraryAlbumMetadataService:
-        if library_manager is not None:
-            library_root = library_manager.root()
-        else:
-            library_root = None
-        if self._is_unconfigured_mock(library_root):
-            library_root = None
+        library_root = (
+            optional_path(library_manager.root()) if library_manager is not None else None
+        )
 
         if library_root is not None:
             candidate = bound_album_metadata_service(
@@ -143,9 +140,6 @@ class AlbumMetadataService(QObject):
             if callable(resume_watcher):
                 QTimer.singleShot(250, resume_watcher)
 
-    @staticmethod
-    def _is_unconfigured_mock(candidate: object) -> bool:
-        return candidate.__class__.__module__.startswith("unittest.mock")
 
     @staticmethod
     def _paths_equal(left,right) -> bool:

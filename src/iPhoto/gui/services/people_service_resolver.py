@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from iPhoto.people.service import PeopleService
+from ...utils.pathutils import optional_path
 from ...utils.pathutils import paths_equal as _paths_equal
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -42,7 +43,7 @@ def bound_people_service(
         return None
 
     candidate = getattr(library_manager, "people_service", None)
-    if candidate is None or _is_unconfigured_mock(candidate):
+    if candidate is None:
         return None
 
     library_root_getter = getattr(candidate, "library_root", None)
@@ -52,17 +53,11 @@ def bound_people_service(
     if library_root is None:
         return candidate
 
-    bound_root = library_root_getter()
+    bound_root = optional_path(library_root_getter())
     if bound_root is None:
         return None
 
-    return candidate if _paths_equal(Path(bound_root), Path(library_root)) else None
-
-
-def _is_unconfigured_mock(candidate: object) -> bool:
-    return candidate.__class__.__module__.startswith("unittest.mock")
-
-
+    return candidate if _paths_equal(bound_root, Path(library_root)) else None
 
 
 __all__ = [

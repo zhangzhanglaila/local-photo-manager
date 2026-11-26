@@ -428,6 +428,25 @@ def is_file_busy_error(exc: BaseException) -> bool:
     return errno_value in {errno.EACCES, errno.EBUSY, errno.EPERM}
 
 
+def optional_path(value: object) -> Path | None:
+    """Return *value* as a :class:`Path` when it is genuinely a path, else ``None``.
+
+    Collaborators are often asked for a path when they may be absent, unbound, or
+    a test double that answers every attribute with another double. Four GUI
+    services used to answer that by inspecting ``__class__.__module__`` for
+    ``unittest.mock`` — production code knowing about mocks. Validating the value
+    instead keeps the decision structural: anything that is not a string or
+    path-like object simply means "no path here".
+    """
+
+    if isinstance(value, (str, os.PathLike)):
+        try:
+            return Path(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def paths_equal(left: Path | str | None, right: Path | str | None) -> bool:
     """Return whether *left* and *right* refer to the same file system location.
 

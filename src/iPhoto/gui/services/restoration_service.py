@@ -121,9 +121,5 @@ class RestorationService(QObject):
             "bound LibrarySession."
         )
 
-    @staticmethod
-    def _is_unconfigured_mock(candidate: object) -> bool:
-        return candidate.__class__.__module__.startswith("unittest.mock")
-
 
 __all__ = ["RestorationService"]

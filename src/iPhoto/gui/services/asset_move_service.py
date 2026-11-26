@@ -16,6 +16,7 @@ from ...infrastructure.services.library_asset_operation_service import (
 from ..background_task_manager import BackgroundTaskManager
 from ..ui.tasks.move_worker import MoveSignals, MoveWorker
 from .session_service_resolver import bound_asset_operation_service
+from ...utils.pathutils import optional_path
 
 if TYPE_CHECKING:
     from ...library.runtime_controller import LibraryRuntimeController
@@ -163,9 +164,9 @@ class AssetMoveService(QObject):
         destination: Path,
         operation: str,
     ) -> LibraryAssetOperationService:
-        library_root = library_manager.root() if library_manager is not None else None
-        if self._is_unconfigured_mock(library_root):
-            library_root = None
+        library_root = (
+            optional_path(library_manager.root()) if library_manager is not None else None
+        )
         use_bound_library = (
             library_root is not None
             and self._operation_targets_bound_library(
@@ -201,16 +202,7 @@ class AssetMoveService(QObject):
             candidate = deleted_directory()
         except Exception:
             return None
-        if candidate is None or self._is_unconfigured_mock(candidate):
-            return None
-        try:
-            return Path(candidate)
-        except TypeError:
-            return None
-
-    @staticmethod
-    def _is_unconfigured_mock(candidate: object) -> bool:
-        return candidate.__class__.__module__.startswith("unittest.mock")
+        return optional_path(candidate)
 
     def _operation_targets_bound_library(
         self,
