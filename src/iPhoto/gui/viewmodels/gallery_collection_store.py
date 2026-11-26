@@ -19,10 +19,7 @@ from iPhoto.gui.viewmodels.gallery_load_worker import (
     GalleryLoadSignals,
     GalleryLoadWorker,
 )
-from iPhoto.gui.viewmodels.gallery_timeline_index import (
-    GalleryTimelineIndex,
-    TimelineSnapshot,
-)
+from iPhoto.gui.viewmodels.gallery_timeline_index import GalleryTimelineIndex
 
 from iPhoto.gui.viewmodels.asset_dto_converter import (
     geotagged_asset_to_dto as _geotagged_asset_to_dto_fn,
@@ -158,6 +155,8 @@ class GalleryCollectionStore:
 
         # Timeline (year rail) buckets, their cache and row offsets.
         self._timeline = GalleryTimelineIndex()
+        self._bucket_getter: object | None = None
+        self._refresh_bucket_getter()
 
     def cancel_pending_load(self) -> None:
         """Cancel any in-flight async load."""
@@ -188,6 +187,7 @@ class GalleryCollectionStore:
         if self._asset_query_service is asset_query_service:
             return
         self._asset_query_service = asset_query_service
+        self._refresh_bucket_getter()
         self.reset_visible_window()
         self.data_changed.emit()
         # ⭐ 服务刚绑定上，如果有 pending load 就触发它
@@ -440,33 +440,50 @@ class GalleryCollectionStore:
     def timeline_buckets(self) -> list[tuple[int, int, int]]:
         """Return ``(year, month, count)`` for the current query, newest first."""
 
-        return self._timeline.buckets(self._timeline_snapshot())
+        return self._timeline.buckets(
+            query=self._current_query,
+            generation=self._generation,
+            total_count=self._total_count,
+            direct_mode=self._direct_mode,
+            row_cache=self._row_cache,
+            count_buckets=self._bucket_getter,
+        )
 
     def month_for_row(self, row: int) -> tuple[int, int] | None:
         """Return ``(year, month)`` containing *row*, using only cached buckets."""
 
-        return self._timeline.month_for_row(row, self._timeline_snapshot())
+        return self._timeline.month_for_row(
+            row,
+            buckets=self.timeline_buckets(),
+            total_count=self._total_count,
+        )
 
     def year_spans(self) -> list[tuple[int, int, int]]:
         """Return ``(year, first_row, count)`` in display order (newest first)."""
 
-        return self._timeline.year_spans(self._timeline_snapshot())
+        return self._timeline.year_spans(
+            buckets=self.timeline_buckets(),
+            total_count=self._total_count,
+        )
 
     def year_start_rows(self) -> list[tuple[int, int]]:
         """Return ``(year, first_row)`` pairs in display order (newest first)."""
 
-        return self._timeline.year_start_rows(self._timeline_snapshot())
-
-    def _timeline_snapshot(self) -> TimelineSnapshot:
-        getter = getattr(self._asset_query_service, "count_query_buckets", None)
-        return TimelineSnapshot(
-            query=self._current_query,
+        return self._timeline.year_start_rows(
+            buckets=self.timeline_buckets(),
             total_count=self._total_count,
-            generation=self._generation,
-            direct_mode=self._direct_mode,
-            row_cache=self._row_cache,
-            count_buckets=getter if callable(getter) else None,
         )
+
+    def _refresh_bucket_getter(self) -> None:
+        """Cache the query surface's bucket aggregate for the timeline rail.
+
+        Resolved through ``getattr`` because the surface is a protocol and older
+        fakes omit the method. Refreshed only when the service is bound, so the
+        repaint path costs one attribute load instead of a probe per call.
+        """
+
+        getter = getattr(self._asset_query_service, "count_query_buckets", None)
+        self._bucket_getter = getter if callable(getter) else None
 
     @property
     def generation(self) -> int:
