@@ -34,6 +34,64 @@ _MACOS_EXIFTOOL_CANDIDATES = (
 _WINDOWS_EXIFTOOL_CANDIDATES: list[Path] = []
 
 
+def _conda_roots() -> list[Path]:
+    """Conda-family prefixes that may ship ExifTool, without hardcoded drives.
+
+    ``CONDA_PREFIX`` covers the environment iPhoto itself runs in,
+    ``~/.conda/environments.txt`` covers every prefix conda has ever created on
+    this account (a typical ``D:/programs/miniconda3`` install shows up there),
+    and the last group covers a plain default install. A developer machine's
+    drive letter used to be written into the search list, which helped exactly
+    one machine.
+    """
+
+    roots: list[Path] = []
+    for raw in (
+        os.environ.get("CONDA_PREFIX"),
+        os.environ.get("CONDA_ROOT"),
+        os.environ.get("MAMBA_ROOT_PREFIX"),
+        sys.prefix,
+    ):
+        if not raw:
+            continue
+        candidate = Path(raw)
+        if candidate not in roots:
+            roots.append(candidate)
+    for candidate in _registered_conda_envs():
+        if candidate not in roots:
+            roots.append(candidate)
+    for base in _conda_install_bases():
+        for name in ("miniconda3", "anaconda3", "Miniconda3", "Anaconda3", "mambaforge"):
+            candidate = base / name
+            if candidate not in roots:
+                roots.append(candidate)
+    return roots
+
+
+def _registered_conda_envs() -> list[Path]:
+    """Prefixes conda records in ``~/.conda/environments.txt``."""
+
+    registry = Path.home() / ".conda" / "environments.txt"
+    try:
+        lines = registry.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [Path(line.strip()) for line in lines if line.strip()]
+
+
+def _conda_install_bases() -> list[Path]:
+    """Directories that hold per-machine conda installs."""
+
+    bases = [Path.home()]
+    program_data = os.environ.get("ProgramData")
+    if program_data:
+        bases.append(Path(program_data))
+    windows_program_data = Path("C:/ProgramData")
+    if windows_program_data not in bases:
+        bases.append(windows_program_data)
+    return bases
+
+
 def _build_windows_candidates() -> list[Path]:
     """Lazily build the list of Windows ExifTool candidate paths."""
     if _WINDOWS_EXIFTOOL_CANDIDATES:
@@ -47,22 +105,16 @@ def _build_windows_candidates() -> list[Path]:
     if project_bat.is_file():
         candidates.append(project_bat)
 
-    # Miniconda / Anaconda installations
-    for base_dir in (
-        Path.home() / "miniconda3",
-        Path.home() / "anaconda3",
-        Path("D:/programs/miniconda3"),
-        Path("D:/programs/anaconda3"),
-        Path("C:/ProgramData/miniconda3"),
-        Path("C:/ProgramData/anaconda3"),
-    ):
-        candidate = base_dir / "bin" / "exiftool"
-        if candidate.is_file():
-            candidates.append(candidate)
-        # Also check the Scripts directory
-        candidate = base_dir / "Scripts" / "exiftool.exe"
-        if candidate.is_file():
-            candidates.append(candidate)
+    # Miniconda / Anaconda / mamba installations (current env first)
+    for base_dir in _conda_roots():
+        for relative in (
+            Path("bin") / "exiftool",
+            Path("Scripts") / "exiftool.exe",
+            Path("Library") / "bin" / "exiftool.exe",
+        ):
+            candidate = base_dir / relative
+            if candidate.is_file():
+                candidates.append(candidate)
 
     # Chocolatey
     choco_base = Path("C:/ProgramData/chocolatey/bin")
