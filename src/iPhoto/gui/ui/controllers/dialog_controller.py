@@ -169,17 +169,9 @@ class DialogController:
     def _should_rescan_library(self, root: Path) -> bool:
         """Return True when the library index is missing, empty or unreadable."""
 
-        from ....cache.index_store import IndexStore, index_db_path
+        from ....bootstrap.index_reader import READY, library_index_state
 
-        if not index_db_path(root).exists():
-            return True
-        store = IndexStore(root)
-        try:
-            return store.count() == 0
-        except Exception:  # noqa: BLE001 - a corrupt database means "rescan"
-            return True
-        finally:
-            store.close()
+        return library_index_state(root) != READY
 
     def _persist_library_paths(self) -> None:
         """Save all bound library roots to settings."""
@@ -190,9 +182,9 @@ class DialogController:
             self._context.settings.set("basic_library_path", str(roots[0]))
 
     def _start_initial_scan_if_needed(self, bound_root: Path) -> None:
-        from ....cache.index_store import index_db_path
+        from ....bootstrap.index_reader import MISSING, library_index_state
 
-        if index_db_path(bound_root).exists():
+        if library_index_state(bound_root) != MISSING:
             return
         self._start_scan_if_needed(bound_root)
 

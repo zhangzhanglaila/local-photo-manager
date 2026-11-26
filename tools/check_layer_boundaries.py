@@ -41,6 +41,18 @@ GUI_DOMAIN_REPOSITORY_FORBIDDEN_PREFIXES = (
     "gui/ui/models/",
 )
 
+#: Widgets may use data *types* (`iPhoto.people.records`), but the concrete
+#: storage/wiring layers must reach them through injected services and ports.
+WIDGET_FORBIDDEN_PREFIXES = ("gui/ui/widgets/",)
+WIDGET_FORBIDDEN_IMPORTS = {
+    "iPhoto.bootstrap",
+    "iPhoto.cache",
+    "iPhoto.infrastructure",
+    "iPhoto.library",
+    "iPhoto.io",
+    "iPhoto.people.repository",
+}
+
 GUI_FILE_OPERATION_SERVICE_FORBIDDEN_FILES = {
     "gui/services/deletion_service.py",
     "gui/services/restoration_service.py",
@@ -478,6 +490,14 @@ def check(src_root: Path) -> list[str]:
             ):
                 violations.append(
                     f"{py_file}:{lineno}: GUI collection/viewmodel imports legacy domain repository {module}"
+                )
+
+            if rel.startswith(WIDGET_FORBIDDEN_PREFIXES) and any(
+                _is_or_under(module, forbidden)
+                for forbidden in WIDGET_FORBIDDEN_IMPORTS
+            ):
+                violations.append(
+                    f"{py_file}:{lineno}: widget imports lower-layer module {module}"
                 )
 
             if rel in GUI_FILE_OPERATION_SERVICE_FORBIDDEN_FILES and any(

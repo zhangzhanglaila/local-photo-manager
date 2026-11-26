@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QImage, QPainterPath, QPalette, QPixmap
 from ..theme_mode import is_dark
 from PySide6.QtWidgets import QFrame, QWidget
 
-from iPhoto.infrastructure.services.people_cover_cache_service import PeopleCoverCacheService
+from iPhoto.gui.services.people_cover_cache import PeopleCoverCacheService
 from iPhoto.people.image_utils import create_cover_thumbnail, load_image_rgb
 from iPhoto.utils.pathutils import ensure_work_dir
 

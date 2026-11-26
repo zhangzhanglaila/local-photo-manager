@@ -8,7 +8,7 @@ from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsDropShadowEffect, QWidget
 
-from iPhoto.people.repository import PeopleGroupSummary, PersonSummary
+from iPhoto.people.records import PeopleGroupSummary, PersonSummary
 from iPhoto.people.image_utils import load_image_rgb
 
 from .people_dashboard_shared import (

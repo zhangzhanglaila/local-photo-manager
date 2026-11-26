@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from iPhoto.people.repository import PersonSummary
+from iPhoto.people.records import PersonSummary
 
 from ..styles import modern_scrollbar_style
 from .flow_layout import FlowLayout

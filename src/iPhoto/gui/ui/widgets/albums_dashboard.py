@@ -1,6 +1,7 @@
 """Dashboard view displaying all user albums."""
 
 from __future__ import annotations
+
 from collections import deque
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -42,7 +43,6 @@ from PySide6.QtWidgets import (
 )
 
 from iPhoto.gui.services.pinned_items_service import PinnedItemsService
-from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
 from ....errors import LibraryError
 from ....media_classifier import get_media_type, MediaType
 from ....application.services.album_manifest_service import Album
@@ -58,8 +58,10 @@ from .flow_layout import FlowLayout
 from ....utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
+    from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
     from ....library.runtime_controller import LibraryRuntimeController
     from ....library.tree import AlbumNode
+
 
 
 class RoundedImageView(QWidget):

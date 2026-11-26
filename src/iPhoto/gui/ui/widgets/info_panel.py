@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from iPhoto.people.repository import AssetFaceAnnotation, PersonSummary
+from iPhoto.people.records import AssetFaceAnnotation, PersonSummary
 from ....application.ports import MapRuntimePort
 
 from ..icons import load_icon

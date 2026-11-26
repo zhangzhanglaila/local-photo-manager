@@ -20,9 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from iPhoto.bootstrap.library_people_service import create_people_service
 from iPhoto.gui.services.pinned_items_service import PinnedItemsService
-from iPhoto.people.repository import PeopleGroupSummary, PersonSummary
+from iPhoto.people.records import PeopleGroupSummary, PersonSummary
 from iPhoto.people.service import PeopleService
 
 from . import dialogs
@@ -236,12 +235,15 @@ class PeopleDashboardWidget(QWidget):
         self.reload()
 
     def set_library_root(self, library_root: Path | None) -> None:
-        service_matches_root = self._service.library_root() == library_root
-        service_has_asset_boundary = library_root is None or self._service.asset_repository is not None
-        if self._current_library_root == library_root and service_matches_root and service_has_asset_boundary:
+        """Track the library root used for cover caching.
+
+        The people service itself is injected through :meth:set_people_service
+        by the coordinator; a widget must not construct services on its own.
+        """
+
+        if self._current_library_root == library_root:
             return
         self._current_library_root = library_root
-        self._service = create_people_service(library_root) if library_root is not None else PeopleService()
         configure_people_cover_cache(library_root)
         self.reload()
 

@@ -536,29 +536,22 @@ def test_status_message_updates_without_reloading_cards(qapp: QApplication) -> N
     assert "Click a cluster or group card" in widget._message.text()
 
 
-def test_set_library_root_uses_asset_aware_people_service_factory(
-    monkeypatch, qapp: QApplication, tmp_path: Path
+def test_set_library_root_keeps_the_injected_people_service(
+    qapp: QApplication, tmp_path: Path
 ) -> None:
+    """The widget must not build services; the coordinator injects them."""
+
     widget = PeopleDashboardWidget()
     service = PeopleService(tmp_path)
     reloads: list[bool] = []
-    created_roots: list[Path] = []
-
-    def _fake_create_people_service(root: Path) -> PeopleService:
-        created_roots.append(root)
-        return service
-
-    monkeypatch.setattr(people_dashboard_widget, "create_people_service", _fake_create_people_service)
-    monkeypatch.setattr(
-        widget,
-        "reload",
-        lambda *, preserve_content=False: reloads.append(bool(preserve_content)),
-    )
+    widget.set_people_service(service)
+    widget._current_library_root = None
+    widget.reload = lambda *, preserve_content=False: reloads.append(bool(preserve_content))
 
     widget.set_library_root(tmp_path)
 
     assert widget._service is service
-    assert created_roots == [tmp_path]
+    assert widget._current_library_root == tmp_path
     assert reloads == [False]
 
 

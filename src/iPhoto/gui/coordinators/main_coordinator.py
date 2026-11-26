@@ -2880,15 +2880,11 @@ def _build_location_index(
 
 
 def _read_all_asset_rows(library_root: Path) -> list[dict]:
-    """Read every asset row through the repository (no raw SQL in the GUI layer)."""
+    """Read every asset row through the bootstrap index reader."""
 
-    from iPhoto.cache.index_store import IndexStore
+    from iPhoto.bootstrap.index_reader import read_all_asset_rows
 
-    store = IndexStore(library_root)
-    try:
-        return list(store.read_all())
-    finally:
-        store.close()
+    return read_all_asset_rows(library_root)
 
 
 def _match_location_hits(

@@ -10,7 +10,7 @@ pytest.importorskip("PySide6", reason="PySide6 is required for people cover cach
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
-from iPhoto.infrastructure.services.people_cover_cache_service import (
+from iPhoto.gui.services.people_cover_cache import (
     PeopleCoverCacheService,
     PeopleCoverRenderTask,
     PeopleCoverWorkerSignals,

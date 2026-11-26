@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import logging
 import re
 from pathlib import Path
@@ -38,7 +40,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ....library.runtime_controller import LibraryRuntimeController
 from ....config import ALL_PHOTOS_TITLE as _ALL_PHOTOS_TITLE
 from ....config import HOME_TITLE as _HOME_TITLE
 from ....i18n import tr
@@ -76,6 +77,9 @@ _logger = logging.getLogger(__name__)
 # Menu titles carry a keyboard accelerator ("设置(&S)"); a plain label shows the
 # mnemonic verbatim, so it is stripped for the footer row.
 _MENU_ACCELERATOR_RE = re.compile(r"\s*\(&[A-Za-z0-9]\)\s*$")
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ....library.runtime_controller import LibraryRuntimeController
+
 
 
 def _strip_menu_accelerator(text: str) -> str:

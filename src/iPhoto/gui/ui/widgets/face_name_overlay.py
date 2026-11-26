@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QEnterEvent, QIcon, QMouseEvent, QPainter, QPa
 from PySide6.QtWidgets import QCompleter, QLabel, QLineEdit, QListView, QToolTip, QWidget
 
 from iPhoto.people.records import PersonSummary
-from iPhoto.people.repository import AssetFaceAnnotation
+from iPhoto.people.records import AssetFaceAnnotation
 
 _FALLBACK_FACE_NAME = "unnamed"
 _LABEL_MARGIN_X = 10
