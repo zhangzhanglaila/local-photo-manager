@@ -124,16 +124,20 @@ def models_root(install_root: Path | None = None) -> Path:
     """Return ``<install>/extension/models`` for this checkout or install."""
 
     if install_root is not None:
-        root = Path(install_root)
-    else:
-        module_path = Path(__file__).resolve()
-        # src/iPhoto/agent/services/search_models.py -> repo root at parents[4]
-        root = module_path.parents[4]
-    return root / "extension" / "models"
+        return Path(install_root) / "extension" / "models"
+    from .model_paths import candidate_roots
+
+    return candidate_roots()[0]
 
 
 def model_dir(spec: SearchModelSpec, *, install_root: Path | None = None) -> Path:
-    return models_root(install_root) / spec.dir_name
+    """Directory of *spec*, preferring an existing copy anywhere on disk."""
+
+    if install_root is not None:
+        return models_root(install_root) / spec.dir_name
+    from .model_paths import resolve_dir
+
+    return resolve_dir(spec.dir_name)
 
 
 def is_installed(spec: SearchModelSpec, *, install_root: Path | None = None) -> bool:

@@ -320,7 +320,10 @@ def test_ocr_registry_discovers_packs_on_disk(tmp_path, monkeypatch):
     pack.mkdir()
     (pack / "ch_PP-OCRv4_det_infer.onnx").write_bytes(b"x" * 100)
     (pack / "ch_PP-OCRv4_rec_infer.onnx").write_bytes(b"x" * 200)
-    monkeypatch.setattr(ocr_models, "models_root", lambda: tmp_path)
+    from iPhoto.agent.services import model_paths
+
+    monkeypatch.setattr(model_paths, "install_root", lambda: tmp_path)
+    monkeypatch.setattr(model_paths, "legacy_roots", lambda: ())
 
     specs = ocr_models.available_models()
     keys = [spec.key for spec in specs]
@@ -338,7 +341,10 @@ def test_ocr_pack_without_detector_is_ignored(tmp_path, monkeypatch):
     pack = tmp_path / "ocr-broken"
     pack.mkdir()
     (pack / "ch_PP-OCRv4_rec_infer.onnx").write_bytes(b"x")
-    monkeypatch.setattr(ocr_models, "models_root", lambda: tmp_path)
+    from iPhoto.agent.services import model_paths
+
+    monkeypatch.setattr(model_paths, "install_root", lambda: tmp_path)
+    monkeypatch.setattr(model_paths, "legacy_roots", lambda: ())
 
     assert [spec.key for spec in ocr_models.available_models()] == [
         ocr_models.BUILTIN_KEY

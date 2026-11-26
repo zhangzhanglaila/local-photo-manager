@@ -60,13 +60,21 @@ class OCRModelSpec:
 
 
 def models_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "extension" / "models"
+    from .model_paths import install_root
+
+    return install_root()
 
 
 def rapidocr_dir() -> Path:
-    """Directory holding the downloaded PP-OCRv5 files."""
+    """Directory holding the downloaded PP-OCRv5 files.
 
-    return models_root() / RAPIDOCR_DIR_NAME
+    Resolved rather than composed so an existing download in the legacy tree is
+    reused instead of being fetched again.
+    """
+
+    from .model_paths import resolve_dir
+
+    return resolve_dir(RAPIDOCR_DIR_NAME, patterns=("*.onnx",))
 
 
 def _spec_from_directory(directory: Path) -> OCRModelSpec | None:
@@ -112,14 +120,12 @@ def available_models() -> tuple[OCRModelSpec, ...]:
             model_type=BUILTIN_MODEL_TYPE,
         )
     ]
-    root = models_root()
-    if root.is_dir():
-        for directory in sorted(root.glob("ocr-*")):
-            if not directory.is_dir():
-                continue
-            spec = _spec_from_directory(directory)
-            if spec is not None:
-                specs.append(spec)
+    from .model_paths import existing_dirs
+
+    for directory in existing_dirs("ocr-*"):
+        spec = _spec_from_directory(directory)
+        if spec is not None:
+            specs.append(spec)
     return tuple(specs)
 
 

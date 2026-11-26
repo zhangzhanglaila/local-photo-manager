@@ -65,9 +65,11 @@ _active_key: Optional[str] = None
 
 
 def models_root() -> Path:
-    """Return the shared model directory (``<repo>/extension/models``)."""
+    """Canonical model directory (see :mod:`model_paths`)."""
 
-    return Path(__file__).resolve().parents[3] / "extension" / "models"
+    from .model_paths import install_root
+
+    return install_root()
 
 
 def available_models() -> tuple[FaceModelSpec, ...]:
@@ -84,7 +86,11 @@ def resolve_spec(key: str | None) -> FaceModelSpec:
 
 
 def model_dir(spec: FaceModelSpec) -> Path:
-    return models_root() / spec.dir_name
+    """Directory of *spec*, preferring an existing copy anywhere on disk."""
+
+    from .model_paths import resolve_dir
+
+    return resolve_dir(spec.dir_name, patterns=("*.onnx",))
 
 
 def is_installed(spec: FaceModelSpec) -> bool:
