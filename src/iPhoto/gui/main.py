@@ -334,6 +334,19 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
         set_app_user_model_id()
         app = QApplication(arguments)
 
+    # Second launch focuses the running window instead of starting a second
+    # process; the .pyw launcher does the same even earlier.
+    try:
+        from iPhoto.gui.single_instance import acquire_single_instance
+
+        guard = acquire_single_instance()
+        if guard is None:
+            _logger.info("another instance is running; exiting")
+            return 0
+    except Exception:  # pragma: no cover - a guard must never block startup
+        _logger.debug("single-instance guard unavailable", exc_info=True)
+        guard = None
+
     # One family for the whole application. Without it, a label styled with
     # ``font-weight: 600`` falls back to a font that has no CJK glyphs and Qt
     # substitutes a serif face, so parts of the UI looked like another app.
@@ -505,6 +518,10 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
 
     if splash is None:
         overlay.show_overlay()
+    if guard is not None:
+        guard.show_requested.connect(window.restore_from_tray)
+        guard.bind_window()
+
     window.show()
     _win32_topmost(True)
     _bring_to_front()

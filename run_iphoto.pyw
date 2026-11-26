@@ -43,6 +43,18 @@ def main() -> int:
     except Exception:  # noqa: BLE001 - cosmetic only
         pass
 
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication(sys.argv)
+
+    # Second launch: ask the running copy to come forward and quit before any
+    # splash is drawn, so double-clicking the shortcut no longer stacks windows.
+    from iPhoto.gui.single_instance import acquire_single_instance
+
+    guard = acquire_single_instance()
+    if guard is None:
+        return 0
+
     # A Qt splash cannot appear before PySide6 is imported, which on a cold boot takes
     # up to a minute. Draw a plain Win32 window first (ctypes only), then swap in Qt.
     native = None
@@ -53,9 +65,6 @@ def main() -> int:
     except Exception:  # noqa: BLE001 - cosmetic only
         native = None
 
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication(sys.argv)
     splash = native
     if splash is None:
         try:
