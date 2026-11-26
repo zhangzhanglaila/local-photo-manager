@@ -50,7 +50,7 @@ from ..delegates.album_sidebar_delegate import (
     AlbumSidebarDelegate,
     BranchIndicatorController,
 )
-from ..menus.album_sidebar_menu import show_context_menu
+from ...menus.album_sidebar_menu import show_context_menu
 from ..styles import modern_scrollbar_style
 from ..palette import (
     SIDEBAR_BRANCH_CONTENT_GAP,

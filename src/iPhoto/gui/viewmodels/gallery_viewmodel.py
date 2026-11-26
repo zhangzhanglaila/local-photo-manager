@@ -17,7 +17,7 @@ from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryCont
 from iPhoto.config import ALL_PHOTOS_TITLE, DEFAULT_EXCLUDE, DEFAULT_INCLUDE, RECENTLY_DELETED_DIR_NAME
 from iPhoto.domain.models.core import MediaType
 from iPhoto.domain.models.query import AssetQuery
-from iPhoto.gui.ui.menus.core import MenuContext
+from iPhoto.gui.menus.core import MenuContext
 from iPhoto.gui.coordinators.location_selection_session import LocationSelectionSession
 from iPhoto.gui.facade import AppFacade
 from iPhoto.gui.services.location_trash_navigation_service import (

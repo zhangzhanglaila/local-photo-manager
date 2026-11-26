@@ -20,9 +20,9 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QMenu
 
-from iPhoto.gui.ui.menus.core import MenuContext, populate_menu
-from iPhoto.gui.ui.menus.gallery_menu import GalleryMenuHandlers, gallery_action_specs
-from iPhoto.gui.ui.menus.style import apply_menu_style
+from iPhoto.gui.menus.core import MenuContext, populate_menu
+from iPhoto.gui.menus.gallery_menu import GalleryMenuHandlers, gallery_action_specs
+from iPhoto.gui.menus.style import apply_menu_style
 from ...services.people_service_resolver import resolve_people_service
 from ....i18n import tr
 

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication
 
 from iPhoto.gui.services.pinned_items_service import PinnedItemsService
 from iPhoto.i18n import tr
-from iPhoto.gui.ui.menus.album_sidebar_menu import AlbumSidebarContextMenu
+from iPhoto.gui.menus.album_sidebar_menu import AlbumSidebarContextMenu
 from iPhoto.gui.ui.models.album_tree_model import NodeType
 from iPhoto.gui.ui.widgets.album_sidebar import AlbumSidebar
 from iPhoto.library.runtime_controller import LibraryRuntimeController
@@ -277,7 +277,7 @@ def test_sidebar_pinned_album_rename_updates_album_tree(
     from unittest.mock import patch
 
     with patch(
-        "iPhoto.gui.ui.menus.album_sidebar_menu._create_styled_input_dialog",
+        "iPhoto.gui.menus.album_sidebar_menu._create_styled_input_dialog",
         return_value=("Renamed Trip", True),
     ):
         menu = AlbumSidebarContextMenu(
@@ -381,7 +381,7 @@ def test_sidebar_pinned_item_context_menu_can_rename(tmp_path: Path, qapp: QAppl
     from unittest.mock import patch
 
     with patch(
-        "iPhoto.gui.ui.menus.album_sidebar_menu._create_styled_input_dialog",
+        "iPhoto.gui.menus.album_sidebar_menu._create_styled_input_dialog",
         return_value=("VIP Alice", True),
     ):
         menu = AlbumSidebarContextMenu(

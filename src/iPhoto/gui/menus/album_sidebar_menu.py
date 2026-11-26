@@ -9,12 +9,12 @@ from PySide6.QtCore import QPoint, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QMenu, QTreeView, QWidget
 
-from ..widgets import dialogs
-from ....errors import LibraryError
-from ....i18n import tr
-from ....library.runtime_controller import LibraryRuntimeController
-from ....library.tree import AlbumNode
-from ..models.album_tree_model import AlbumTreeItem, AlbumTreeModel, NodeType
+from ..ui.widgets import dialogs
+from ...errors import LibraryError
+from ...i18n import tr
+from ...library.runtime_controller import LibraryRuntimeController
+from ...library.tree import AlbumNode
+from ..ui.models.album_tree_model import AlbumTreeItem, AlbumTreeModel, NodeType
 from .style import apply_menu_style
 
 
@@ -32,7 +32,7 @@ def _create_styled_input_dialog(
     Kept as a module-level helper because callers and tests patch it by name.
     """
 
-    from ..widgets.input_dialog import prompt_text
+    from ..ui.widgets.input_dialog import prompt_text
 
     return prompt_text(parent, title=title, label=label, text=text)
 

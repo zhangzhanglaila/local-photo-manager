@@ -47,11 +47,11 @@ from ....errors import LibraryError
 from ....media_classifier import get_media_type, MediaType
 from ....application.services.album_manifest_service import Album
 from ....utils.pathutils import ensure_work_dir
-from ..menus.album_sidebar_menu import _create_styled_input_dialog
+from ...menus.album_sidebar_menu import _create_styled_input_dialog
 from ..tasks.thumbnail_loader import ThumbnailJob, generate_cache_path, stat_mtime_ns
 from ..icon import load_icon
-from ..menus.core import MenuActionSpec, MenuContext, populate_menu
-from ..menus.style import apply_menu_style
+from ...menus.core import MenuActionSpec, MenuContext, populate_menu
+from ...menus.style import apply_menu_style
 from ..theme_manager import DARK_THEME
 from . import dialogs
 from .flow_layout import FlowLayout

@@ -33,8 +33,8 @@ from .people_dashboard_shared import (
     _widget_uses_dark_theme,
     configure_people_cover_cache,
 )
-from ..menus.core import MenuActionSpec, MenuContext, populate_menu
-from ..menus.style import apply_menu_style
+from ...menus.core import MenuActionSpec, MenuContext, populate_menu
+from ...menus.style import apply_menu_style
 from ....utils.env import is_truthy
 
 

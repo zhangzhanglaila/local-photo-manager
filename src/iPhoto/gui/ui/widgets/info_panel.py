@@ -34,8 +34,8 @@ from iPhoto.people.records import AssetFaceAnnotation, PersonSummary
 from ....application.ports import MapRuntimePort
 
 from ..icons import load_icon
-from ..menus.core import MenuActionSpec, MenuContext, populate_menu
-from ..menus.style import apply_menu_style
+from ...menus.core import MenuActionSpec, MenuContext, populate_menu
+from ...menus.style import apply_menu_style
 from .info_location_map import InfoLocationMapView
 from .main_window_metrics import TITLE_BAR_HEIGHT, WINDOW_CONTROL_BUTTON_SIZE, WINDOW_CONTROL_GLYPH_SIZE
 from .people_dashboard_dialogs import GroupPeopleDialog

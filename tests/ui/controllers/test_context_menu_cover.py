@@ -8,7 +8,7 @@ from PySide6.QtCore import QPoint, QModelIndex
 
 from iPhoto.application.dtos import AssetDTO
 from iPhoto.gui.ui.controllers.context_menu_controller import ContextMenuController
-from iPhoto.gui.ui.menus.core import MenuContext
+from iPhoto.gui.menus.core import MenuContext
 
 
 def _make_asset(asset_id: str, rel_path: str) -> AssetDTO:

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from .core import MenuActionSpec, MenuContext
-from ....i18n import tr
+from ...i18n import tr
 
 
 @dataclass(frozen=True)
