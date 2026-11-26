@@ -12,7 +12,12 @@ from PySide6.QtWidgets import QApplication, QLabel, QProgressBar
 
 from iPhoto.gui.services import background_tasks as registry_module
 from iPhoto.gui.services.background_tasks import BackgroundTaskRegistry
-from iPhoto.gui.ui.widgets.task_status_widget import TaskPopup, TaskStatusButton
+from iPhoto.gui.ui.widgets.task_status_widget import (
+    SmoothProgressBar,
+    TaskPopup,
+    TaskRow,
+    TaskStatusButton,
+)
 
 
 @pytest.fixture(scope="module")
@@ -77,8 +82,9 @@ def test_button_shows_the_latest_task_and_opens_the_popup(qapp, registry):
 
         titles = [label.text() for label in popup.findChildren(QLabel)]
         assert any("Scanning files" in text for text in titles)
-        bars = popup.findChildren(QProgressBar)
-        assert any(bar.value() == 95 for bar in bars)
+        bar = popup.findChildren(QProgressBar)[0]
+        bar._step()  # easing timer; step once so the value settles
+        assert bar._target == 95 or bar.value() == 95
     finally:
         button._popup.hide()
         button.close()
@@ -99,3 +105,31 @@ def test_button_hides_when_nothing_runs(qapp, registry):
     finally:
         button.close()
         registry.clear()
+
+
+def test_refresh_updates_in_place_instead_of_stacking_rows(qapp, registry):
+    """Every progress tick used to append another copy of the same task."""
+
+    registry.start("scan", "Scanning files")
+    popup = TaskPopup(None)
+    try:
+        for done in (200, 400, 600, 800, 1000):
+            registry.update("scan", done=done, total=1000)
+            popup.refresh()
+            qapp.processEvents()
+        rows = [child for child in popup.findChildren(TaskRow)]
+        assert len(rows) == 1, len(rows)
+        assert len(popup._rows) == 1
+        assert popup._rows["scan"]._state.text().endswith("%")
+    finally:
+        popup.close()
+        registry.clear()
+
+
+def test_smooth_bar_walks_towards_its_target(qapp):
+    bar = SmoothProgressBar()
+    bar.set_target(60)
+    assert bar.value() < 60  # not applied instantly
+    for _ in range(40):
+        bar._step()
+    assert bar.value() == 60
