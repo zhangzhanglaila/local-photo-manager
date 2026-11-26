@@ -32,6 +32,11 @@ from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.coordinators.view_router import ViewRouter
+from iPhoto.gui.services.embedding_bootstrap import (
+    EmbeddingIndexWorker,
+    EmbeddingInitWorker,
+    SearchModelDownloadWorker,
+)
 from iPhoto.gui.services.search_thread import (
     SearchThread,
     clear_search_embedding_cache,
@@ -1723,39 +1728,24 @@ class MainCoordinator(QObject):
     def _download_search_model_then_index(self, spec) -> None:
         """Fetch missing weights in the background, then index with them."""
 
-        from PySide6.QtCore import QRunnable, QThreadPool
+        from iPhoto.gui.services import embedding_bootstrap
 
-        from iPhoto.agent.infrastructure.search_model_download import (
-            download_search_model,
+        worker = SearchModelDownloadWorker(
+            spec,
+            tasks=self._context.background_tasks,
+            status_callback=self._show_status_message,
+            on_downloaded=self._start_embedding_generation_silent,
         )
+        embedding_bootstrap.QThreadPool.globalInstance().start(worker)
 
-        coordinator = self
+    def _show_status_message(self, message: str, timeout_ms: int = 5000) -> None:
+        """Show *message* in the status bar, marshalled onto the GUI thread."""
 
-        tasks = self._context.background_tasks
+        from PySide6.QtCore import QTimer
 
-        class _DownloadWorker(QRunnable):
-            def run(self) -> None:
-                tasks.start("download", tr("status.task.download"))
-                try:
-                    download_search_model(
-                        spec,
-                        progress=lambda _fraction, message: coordinator._status_bar.show_message(
-                            message, 5000
-                        ),
-                    )
-                except Exception as exc:  # noqa: BLE001 - surfaced to the user
-                    tasks.finish("download", failed=True)
-                    coordinator._status_bar.show_message(
-                        f"{tr('search.model.download_failed')}: {exc}", 15000
-                    )
-                    return
-                tasks.finish("download")
-                coordinator._status_bar.show_message(
-                    tr("search.model.download_done", name=spec.dir_name), 5000
-                )
-                coordinator._start_embedding_generation_silent()
-
-        QThreadPool.globalInstance().start(_DownloadWorker())
+        QTimer.singleShot(
+            0, lambda: self._status_bar.show_message(message, timeout_ms)
+        )
 
     def _ensure_embedding_index(self) -> None:
         """Start semantic-index generation once, if it is missing."""
@@ -1770,96 +1760,26 @@ class MainCoordinator(QObject):
 
     def _start_embedding_generation_silent(self, *, force_rebuild: bool = False) -> None:
         """Start embedding generation silently in background with status bar updates."""
+
         library_session = getattr(self._context, "library_session", None)
         if library_session is None:
             return
 
-        from PySide6.QtCore import QRunnable, Slot
+        from iPhoto.gui.services import embedding_bootstrap
 
-        coordinator = self
-
-        class SilentWorker(QRunnable):
-            def __init__(self, session, status_callback, force_rebuild):
-                super().__init__()
-                self.setAutoDelete(True)
-                self._session = session
-                self._status_callback = status_callback
-                self._force_rebuild = bool(force_rebuild)
-
-            @Slot()
-            def run(self):
-                try:
-                    # Load CLIP model
-                    embedding_service = self._session.get_embedding_service()
-                    if embedding_service is None:
-                        return
-
-                    # Get embedding repository
-                    embedding_repo = self._session.get_embedding_repository()
-                    if embedding_repo is None:
-                        return
-
-                    # Check how many need processing
-                    all_assets = self._session.asset_runtime.assets.read_all()
-                    image_assets = [a for a in all_assets if a.get("media_type") == 0]
-                    asset_ids = [a["id"] for a in image_assets]
-                    from iPhoto.agent.services import search_models as _models
-
-                    pending = embedding_repo.get_asset_ids_without_embeddings(
-                        asset_ids,
-                        model_name=coordinator._active_search_spec().dir_name,
-                    )
-                    status = coordinator._context.search_index_status
-
-                    if not pending:
-                        total = embedding_repo.count()
-                        status.set_indexing(False, len(asset_ids), len(asset_ids))
-                        self._status_callback(f"AI 索引已就绪 ({total} 张照片)")
-                        return
-
-                    # Start embedding generation with progress callbacks
-                    from iPhoto.gui.ui.tasks.embedding_worker import EmbeddingWorker
-                    worker = EmbeddingWorker(
-                        embedding_service=embedding_service,
-                        embedding_repository=embedding_repo,
-                        asset_repository=self._session.asset_runtime.assets,
-                        library_root=self._session.library_root,
-                        force_rebuild=self._force_rebuild,
-                    )
-
-                    tasks = coordinator._context.background_tasks
-
-                    tasks.start("index", tr("status.task.index"))
-                    status.set_indexing(True, 0, int(len(pending)))
-
-                    def on_progress(current, total, msg):
-                        tasks.update(
-                            "index", done=int(current), total=int(total), detail=str(msg)
-                        )
-                        status.set_indexing(True, current, total)
-
-                    def on_finished(processed, failed):
-                        tasks.finish("index", failed=bool(failed))
-                        status.set_indexing(False, len(asset_ids), len(asset_ids))
-                        self._status_callback(f"AI 索引生成完成 ({processed} 张照片)")
-
-                    worker.signals.progress.connect(on_progress)
-                    worker.signals.finished.connect(on_finished)
-
-                    QThreadPool.globalInstance().start(worker)
-
-                except Exception as e:
-                    logging.getLogger(__name__).debug("Silent embedding generation failed: %s", e)
-
-        def status_callback(message):
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._status_bar.show_message(message, 5000))
-
-        worker = SilentWorker(library_session, status_callback, force_rebuild)
-        QThreadPool.globalInstance().start(worker)
+        worker = EmbeddingIndexWorker(
+            library_session,
+            model_spec=self._active_search_spec(),
+            status=self._context.search_index_status,
+            tasks=self._context.background_tasks,
+            status_callback=self._show_status_message,
+            force_rebuild=force_rebuild,
+        )
+        embedding_bootstrap.QThreadPool.globalInstance().start(worker)
 
     def _start_embedding_generation(self) -> None:
         """Start background embedding generation with progress UI (when user searches)."""
+
         library_session = getattr(self._context, "library_session", None)
         if library_session is None:
             return
@@ -1869,104 +1789,27 @@ class MainCoordinator(QObject):
         ui.gallery_page.show_loading_message(
             "正在初始化 AI 搜索...",
             "首次使用需要为照片生成索引，之后搜索会很快",
-            show_progress=True
+            show_progress=True,
         )
-        # Run model loading and embedding generation in background
-        from PySide6.QtCore import QRunnable, Slot
-
-        coordinator = self
-
-        class InitWorker(QRunnable):
-            def __init__(self, session, callback):
-                super().__init__()
-                self.setAutoDelete(True)
-                self._session = session
-                self._callback = callback
-
-            @Slot()
-            def run(self):
-                try:
-                    # Step 1: Load CLIP model
-                    self._callback("loading_model", 0, 0, "正在加载 AI 模型（约350MB）...")
-
-                    # Check if model files exist first
-                    from iPhoto.agent.services import search_models
-                    model_dir = search_models.model_dir(coordinator._active_search_spec())
-
-                    if not search_models.is_installed(coordinator._active_search_spec()):
-                        self._callback("error", 0, 0, "模型文件不存在，请先下载模型")
-                        return
-
-                    self._callback("model_loading", 0, 0, "模型文件已找到，正在加载...")
-
-                    # Load model with timeout tracking
-                    import time
-                    start_time = time.time()
-                    embedding_service = self._session.get_embedding_service()
-                    load_time = int(time.time() - start_time)
-
-                    if embedding_service is None:
-                        self._callback("error", 0, 0, f"AI 模型加载失败（耗时 {load_time} 秒）")
-                        return
-
-                    if not embedding_service.is_loaded():
-                        self._callback("error", 0, 0, f"AI 模型加载失败（耗时 {load_time} 秒）")
-                        return
-
-                    self._callback("model_loaded", 0, 0, f"AI 模型加载完成（耗时 {load_time} 秒）")
-
-                    # Step 2: Get embedding repository
-                    embedding_repo = self._session.get_embedding_repository()
-                    if embedding_repo is None:
-                        self._callback("error", 0, 0, "数据库初始化失败")
-                        return
-
-                    # Step 3: Count images to process
-                    self._callback("counting", 0, 0, "正在统计照片数量...")
-                    all_assets = self._session.asset_runtime.assets.read_all()
-                    image_assets = [a for a in all_assets if a.get("media_type") == 0]
-                    asset_ids = [a["id"] for a in image_assets]
-                    pending_ids = embedding_repo.get_asset_ids_without_embeddings(asset_ids)
-
-                    if not pending_ids:
-                        self._callback("done", 0, 0, "")
-                        return
-
-                    self._callback("starting", len(pending_ids), len(pending_ids), f"共 {len(pending_ids)} 张照片需要处理")
-
-                    # Step 4: Start embedding generation
-                    from iPhoto.gui.ui.tasks.embedding_worker import EmbeddingWorker
-                    worker = EmbeddingWorker(
-                        embedding_service=embedding_service,
-                        embedding_repository=embedding_repo,
-                        asset_repository=self._session.asset_runtime.assets,
-                        library_root=self._session.library_root,
-                    )
-
-                    def on_progress(current, total, msg):
-                        self._callback("progress", current, total, msg)
-
-                    def on_finished(processed, failed):
-                        self._callback("done", processed, failed, "")
-
-                    worker.signals.progress.connect(on_progress)
-                    worker.signals.finished.connect(on_finished)
-                    worker.signals.error.connect(lambda err: self._callback("error", 0, 0, err))
-
-                    QThreadPool.globalInstance().start(worker)
-
-                except Exception as e:
-                    import traceback
-                    error_detail = traceback.format_exc()
-                    logging.getLogger(__name__).error("Embedding init failed: %s\n%s", e, error_detail)
-                    self._callback("error", 0, 0, f"{str(e)[:100]}")
 
         def on_status(status_type, current, total, message):
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._handle_embedding_status(status_type, current, total, message))
 
-        worker = InitWorker(library_session, on_status)
-        QThreadPool.globalInstance().start(worker)
+            QTimer.singleShot(
+                0,
+                lambda: self._handle_embedding_status(
+                    status_type, current, total, message
+                ),
+            )
+
+        from iPhoto.gui.services import embedding_bootstrap
+
+        worker = EmbeddingInitWorker(
+            library_session,
+            model_spec=self._active_search_spec(),
+            callback=on_status,
+        )
+        embedding_bootstrap.QThreadPool.globalInstance().start(worker)
 
     def _handle_embedding_status(self, status_type: str, current: int, total: int, message: str) -> None:
         """Handle embedding generation status updates."""

@@ -132,6 +132,15 @@ def _install_fakes(monkeypatch) -> list:
         def start(self, worker) -> None:
             started.append(worker)
 
+    import iPhoto.gui.services.embedding_bootstrap as bootstrap_module
+
+    # The pool lives in the worker module now; both are patched so either import
+    # path observes the fake.
+    monkeypatch.setattr(
+        bootstrap_module,
+        "QThreadPool",
+        SimpleNamespace(globalInstance=lambda: _Pool()),
+    )
     monkeypatch.setattr(
         module,
         "QThreadPool",
