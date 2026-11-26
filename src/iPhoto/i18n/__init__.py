@@ -102,6 +102,10 @@ _ZH: dict[str, str] = {
     "status.ocr.running": "正在识别图片文字…",
     "status.ocr.progress": "正在识别图片文字… 已处理 {count} 张",
     "status.ocr.done": "图片文字识别完成（本次处理 {count} 张）",
+    "search.status.loading_model": "正在加载 AI 模型…",
+    "search.status.loading_index": "AI 模型加载完成，正在加载索引…",
+    "search.status.searching": "正在搜索…",
+    "search.status.searching_found": "已加载 {count} 个索引，正在搜索…",
 
     # -- Status bar: Load --
     "status.loading_items": "正在加载项目…",
@@ -623,6 +627,10 @@ _EN: dict[str, str] = {
     "status.ocr.running": "Reading text in photos…",
     "status.ocr.progress": "Reading text in photos… {count} processed",
     "status.ocr.done": "Text recognition finished ({count} processed)",
+    "search.status.loading_model": "Loading the AI model…",
+    "search.status.loading_index": "Model ready, loading the index…",
+    "search.status.searching": "Searching…",
+    "search.status.searching_found": "Searching {count} index entries…",
 
     # -- Status bar: Load --
     "status.loading_items": "Loading items…",

@@ -28,7 +28,7 @@ from iPhoto.application.dtos import GeotaggedAsset
 from iPhoto.config import SearchSettings
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
-from iPhoto.application.dtos import ScanStatus
+from iPhoto.application.dtos import ScanStatus, SearchProgress
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
@@ -1429,7 +1429,7 @@ class MainCoordinator(QObject):
 
         class SearchThread(QThread):
             finished = Signal(object, str)  # results or None, error
-            progress = Signal(str, int, int)  # message, current, total
+            progress = Signal(object)  # SearchProgress
 
             def __init__(
                 self,
@@ -1483,7 +1483,12 @@ class MainCoordinator(QObject):
                     )
                     already_loaded = bool(probe()) if callable(probe) else False
                     self.progress.emit(
-                        "正在搜索..." if already_loaded else "正在加载 AI 模型...", 0, 0
+                        SearchProgress(
+                            "search" if already_loaded else "model",
+                            tr("search.status.searching")
+                            if already_loaded
+                            else tr("search.status.loading_model"),
+                        )
                     )
                     service = session_service
                     if service is None:
@@ -1501,7 +1506,9 @@ class MainCoordinator(QObject):
                         self.finished.emit(None, "AI 模型加载失败")
                         return
 
-                    self.progress.emit("AI 模型加载完成，正在加载索引...", 1, 3)
+                    self.progress.emit(
+                        SearchProgress("index", tr("search.status.loading_index"))
+                    )
 
                     # 2. Load embeddings
                     from iPhoto.agent.services import search_models as _search_models
@@ -1515,7 +1522,12 @@ class MainCoordinator(QObject):
                         self.finished.emit(None, "没有找到照片索引，请先生成索引")
                         return
 
-                    self.progress.emit(f"已加载 {len(all_embeddings)} 个索引，正在搜索...", 2, 3)
+                    self.progress.emit(
+                        SearchProgress(
+                            "search",
+                            tr("search.status.searching_found", count=len(all_embeddings)),
+                        )
+                    )
 
                     # Scope: "当前相册" keeps only the embeddings of the album the
                     # user is looking at.
@@ -1740,13 +1752,11 @@ class MainCoordinator(QObject):
                 0, lambda: self._finish_search(serial, results, error, query)
             )
 
-        def on_progress(message, current, total):
+        def on_progress(progress):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(
                 0,
-                lambda: self._update_search_progress(
-                    serial, message, current, total
-                ),
+                lambda: self._update_search_progress(serial, progress),
             )
 
         thread = SearchThread(
@@ -1891,7 +1901,7 @@ class MainCoordinator(QObject):
         """Show loading state in the grid view area."""
         ui = self._window.ui
         ui.gallery_page.show_search_loading(query)
-    def _update_search_progress(self, serial: int, message: str, current: int, total: int) -> None:
+    def _update_search_progress(self, serial: int, progress: object) -> None:
         """Update search progress in the UI."""
 
         state = self._search_state
@@ -1900,14 +1910,14 @@ class MainCoordinator(QObject):
         if not self._is_search_page_visible():
             # The user navigated away; do not pull them back into the search panel.
             return
-        ui = self._window.ui
-        page = ui.gallery_page
-        if "模型" in message:
-            page.show_model_loading()
-        elif "索引" in message:
+        if not isinstance(progress, SearchProgress):
+            return
+        page = self._window.ui.gallery_page
+        if progress.stage in {"model", "index"}:
             page.show_model_loading()
         else:
-            page.show_search_loading(message)
+            page.show_search_loading(progress.message)
+
     def _display_search_results(self, results: list, query: str = "") -> None:
         """Display search results in the grid view."""
         ui = self._window.ui
