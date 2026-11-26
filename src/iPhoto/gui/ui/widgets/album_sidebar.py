@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ....config import ALBUMS_SECTION_TITLE
 from ....config import ALL_PHOTOS_TITLE as _ALL_PHOTOS_TITLE
 from ....config import HOME_TITLE as _HOME_TITLE
 from ....i18n import tr
@@ -597,10 +598,10 @@ class AlbumSidebar(QWidget):
             self.bindLibraryRequested.emit()
             return
         if node_type == NodeType.HEADER:
-            if item.title == tr("sidebar.albums"):
+            if item.title == ALBUMS_SECTION_TITLE:
                 self._current_pinned_selection = None
                 self._current_search_selected = False
-                self.staticNodeSelected.emit(tr("sidebar.albums"))
+                self.staticNodeSelected.emit(ALBUMS_SECTION_TITLE)
             return
         if node_type == NodeType.SEARCH:
             self._current_selection = None

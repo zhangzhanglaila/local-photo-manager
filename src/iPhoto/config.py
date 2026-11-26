@@ -57,6 +57,11 @@ SCHEMA_DIR: Final[Path] = Path(__file__).resolve().parent / "schemas"
 ALBUM_MANIFEST_NAMES: Final[list[str]] = [".iphoto.album.json", ".iPhoto/manifest.json"]
 EXPORT_DIR_NAME: Final[str] = "exported"
 ALL_PHOTOS_TITLE: Final[str] = "All Photos"
+
+#: Stable identities for the collapsible section headers. The label shown in
+#: the tree is translated; routing and selection compare these ids instead.
+ALBUMS_SECTION_TITLE: Final[str] = "Albums"
+PINNED_SECTION_TITLE: Final[str] = "Pinned"
 # Title of the landing node shown at the top of the sidebar's Basic Library
 # section. It is the default selection when the application starts, so it is
 # shared between the sidebar, the gallery page and the navigation coordinator.

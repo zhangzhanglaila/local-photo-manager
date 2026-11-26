@@ -19,6 +19,7 @@ FORBIDDEN = (
     '"索引" in message',
     '"模型" in message',
     "chosen.text() ==",
+    '== tr("sidebar.',
 )
 
 

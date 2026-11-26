@@ -248,43 +248,69 @@ class NavigationCoordinator(QObject):
     def open_location_asset(self, rel: str) -> None:
         self._gallery_vm.open_location_asset(rel)
 
+    #: Static sidebar nodes route by their stable identity, never by the label
+    #: they render. Adding a node means one entry here plus one handler.
+    _STATIC_NODE_ROUTES: dict[str, str] = {
+        "all photos": "all_photos",
+        "recently deleted": "recently_deleted",
+        "albums": "albums_dashboard",
+        "favorites": "favorites",
+        "videos": "videos",
+        "live photos": "live_photos",
+        "people": "people",
+        "location": "location",
+    }
+
     def _handle_static_node(self, name: str) -> None:
-        normalized = name.casefold()
+        """Dispatch one static sidebar click by id (see ``_STATIC_NODE_ROUTES``)."""
 
-        # Also check against translated header names so that translated
-        # sidebar titles (e.g. "相册" for "Albums") are recognised.
-        if normalized == "all photos":
-            self.open_all_photos()
-            self._set_grid_empty_mode(None)
-        elif normalized == "recently deleted":
-            self.open_recently_deleted()
-            self._set_grid_empty_mode(None)
-        elif normalized == "albums" or name == tr("sidebar.albums"):
-            self._begin_navigation()
-            self._gallery_vm.open_albums_dashboard()
-        elif normalized == "favorites":
-            self._begin_navigation()
-            self._gallery_vm.open_filtered_collection(name, is_favorite=True)
-            self._set_grid_empty_mode("favorites")
-        elif normalized == "videos":
-            from iPhoto.domain.models.core import MediaType
+        route = self._STATIC_NODE_ROUTES.get(name.casefold())
+        if route is None:
+            self._logger.debug("Unhandled static sidebar node: %r", name)
+            return
+        getattr(self, f"_open_static_{route}")()
 
-            self._begin_navigation()
-            self._gallery_vm.open_filtered_collection(name, media_types=[MediaType.VIDEO])
-            self._set_grid_empty_mode("videos")
-        elif normalized == "live photos":
-            from iPhoto.domain.models.core import MediaType
+    def _open_static_all_photos(self) -> None:
+        self.open_all_photos()
+        self._set_grid_empty_mode(None)
 
-            self._begin_navigation()
-            self._gallery_vm.open_filtered_collection(name, media_types=[MediaType.LIVE_PHOTO])
-            self._set_grid_empty_mode("live")
-        elif normalized == "people":
-            self.open_people_view()
-        elif normalized == "location":
-            if self._pending_detail_return is not None:
-                self._pending_detail_return = None
-                return
-            self.open_location_view()
+    def _open_static_recently_deleted(self) -> None:
+        self.open_recently_deleted()
+        self._set_grid_empty_mode(None)
+
+    def _open_static_albums_dashboard(self) -> None:
+        self._begin_navigation()
+        self._gallery_vm.open_albums_dashboard()
+
+    def _open_static_favorites(self) -> None:
+        self._begin_navigation()
+        self._gallery_vm.open_filtered_collection("Favorites", is_favorite=True)
+        self._set_grid_empty_mode("favorites")
+
+    def _open_static_videos(self) -> None:
+        from iPhoto.domain.models.core import MediaType
+
+        self._begin_navigation()
+        self._gallery_vm.open_filtered_collection("Videos", media_types=[MediaType.VIDEO])
+        self._set_grid_empty_mode("videos")
+
+    def _open_static_live_photos(self) -> None:
+        from iPhoto.domain.models.core import MediaType
+
+        self._begin_navigation()
+        self._gallery_vm.open_filtered_collection(
+            "Live Photos", media_types=[MediaType.LIVE_PHOTO]
+        )
+        self._set_grid_empty_mode("live")
+
+    def _open_static_people(self) -> None:
+        self.open_people_view()
+
+    def _open_static_location(self) -> None:
+        if self._pending_detail_return is not None:
+            self._pending_detail_return = None
+            return
+        self.open_location_view()
 
     def _handle_route_requested(self, view: str) -> None:
         if view == "gallery":
