@@ -393,6 +393,27 @@ class GalleryPageWidget(QWidget):
         """Show completion and return to the view the loading panel covered."""
         self.hide_loading()
 
+    def show_search_empty(self, query: str) -> None:
+        """Show a "no matches" panel instead of leaving the old results up.
+
+        Previously a search with zero hits only wrote a status-bar line, so the
+        grid kept displaying whatever the previous search had found.
+        """
+
+        self._spinner.stop()
+        self._spinner.hide()
+        self._status_label.setText(tr("search.empty.title", query=query))
+        self._sub_label.setText(tr("search.empty.hint"))
+        self._sub_label.show()
+        self._progress_widget.hide()
+        self._continue_btn.setText(tr("search.empty.back"))
+        self._continue_btn.show()
+        self._retry_btn.hide()
+        self._hint_label.hide()
+        self._loading_phase = "empty"
+        self._stop_timer()
+        self._show_loading_panel()
+
     def hide_loading(self) -> None:
         """Hide the loading view and return to the underlying view.
 

@@ -501,6 +501,9 @@ _ZH: dict[str, str] = {
     'status.task.index': '正在建立搜索索引',
     'status.task.download': '正在下载搜索模型',
     'status.task.scan_named': '正在扫描 {name}',
+    'search.empty.title': '未找到与“{query}”相关的照片',
+    'search.empty.hint': '换个更具体的说法试试，比如「海边的猫」「地铁站」「红色的花」',
+    'search.empty.back': '返回所有照片',
 }
 
 _EN: dict[str, str] = {
@@ -986,6 +989,9 @@ _EN: dict[str, str] = {
     'status.task.index': 'Building the search index',
     'status.task.download': 'Downloading the search model',
     'status.task.scan_named': 'Scanning {name}',
+    'search.empty.title': 'No photos match “{query}”',
+    'search.empty.hint': 'Try a more specific phrase, e.g. “cat on a beach”, “subway platform”, “red flowers”',
+    'search.empty.back': 'Back to all photos',
 }
 
 

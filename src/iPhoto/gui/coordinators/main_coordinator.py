@@ -1682,6 +1682,35 @@ class MainCoordinator(QObject):
                         except Exception:
                             pass
 
+                    # Location search: a plain text query also matches the
+                    # reverse-geocoded place name ("武汉", "Tokyo"), so "武汉"
+                    # finds geotagged photos even when the image model does not
+                    # associate the scene with the city.
+                    if self._similar_to is None:
+                        try:
+                            location_hits = _match_location_hits(
+                                self._library_root,
+                                self._query,
+                                _session_rows(library_session, self._library_root),
+                            )
+                            seen_ids = {r["asset_id"] for r in results}
+                            for asset_id, label in location_hits:
+                                if asset_id in seen_ids:
+                                    continue
+                                results.append(
+                                    {
+                                        "asset_id": asset_id,
+                                        "score": 0.0,
+                                        "source": "location",
+                                        "location": label,
+                                    }
+                                )
+                                seen_ids.add(asset_id)
+                        except Exception:
+                            logging.getLogger(__name__).debug(
+                                "Location search failed", exc_info=True
+                            )
+
                     # Keep the whole match set: the cutoff already decides what
                     # belongs here, and the gallery loads result windows lazily.
 
@@ -1743,7 +1772,12 @@ class MainCoordinator(QObject):
         ui.gallery_page.show_grid()
         ui.gallery_page.hide_loading()
         if not results:
-            self._status_bar.show_message(f"未找到与 '{query}' 相关的照片")
+            # Clearing the model matters: leaving the previous results on screen
+            # made "0 results" look like the search had not run at all.
+            self._gallery_vm.show_search_results([])
+            ui.gallery_page.show_search_results_header(query, 0)
+            ui.gallery_page.show_search_empty(query)
+            self._status_bar.show_message(tr("search.empty.title", query=query))
             return
 
         # Show search results header with back button
@@ -2769,3 +2803,107 @@ class MainCoordinator(QObject):
             if p:
                 paths.append(Path(p))
         return paths
+
+
+#: Cache of ``[(asset_id, lowercase place name)]`` per library root; built once
+#: because reverse geocoding every geotagged asset on each keystroke is wasteful.
+_LOCATION_INDEX_CACHE: dict[str, list[tuple[str, str]]] = {}
+
+
+def _session_rows(session, library_root: Path) -> list[dict]:
+    """Read asset rows through the session, falling back to the index store."""
+
+    from iPhoto.application.dtos import AssetQuery
+
+    queries = getattr(session, "asset_queries", None)
+    if queries is not None:
+        try:
+            rows = queries.read_query_asset_rows(Path(library_root), AssetQuery())
+            if rows:
+                return [row for row in rows if isinstance(row, dict)]
+        except Exception:
+            pass
+    return _read_all_asset_rows(Path(library_root))
+
+
+def _build_location_index(
+    library_root: Path, rows: list[dict] | None = None
+) -> list[tuple[str, str]]:
+    """Return ``(asset_id, place label)`` for every geotagged asset.
+
+    The ``gps`` column stores JSON text, so it has to be parsed before use; the
+    place names come from the bundled offline reverse geocoder.
+    """
+
+    key = str(library_root)
+    cached = _LOCATION_INDEX_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    import json
+
+    from iPhoto.utils.geocoding import resolve_location_name
+
+    if rows is None:
+        rows = _read_all_asset_rows(library_root)
+
+    index: list[tuple[str, str]] = []
+    for row in rows:
+        gps = row.get("gps")
+        if isinstance(gps, str):
+            try:
+                gps = json.loads(gps)
+            except ValueError:
+                continue
+        if not isinstance(gps, dict):
+            continue
+        label = resolve_location_name(gps)
+        if not label:
+            continue
+        asset_id = row.get("id")
+        if not asset_id:
+            continue
+        index.append((str(asset_id), label.lower()))
+
+    _LOCATION_INDEX_CACHE[key] = index
+    return index
+
+
+def _read_all_asset_rows(library_root: Path) -> list[dict]:
+    """Read asset rows straight from the index store (no UI thread needed)."""
+
+    import sqlite3
+
+    from iPhoto.cache.index_store import IndexStore
+    from iPhoto.cache.index_store.repository import GLOBAL_INDEX_DB_NAME
+
+    db_path = Path(IndexStore(library_root).path)
+    if not db_path.exists():
+        return []
+    connection = sqlite3.connect(str(db_path))
+    connection.row_factory = sqlite3.Row
+    try:
+        return [dict(row) for row in connection.execute("SELECT * FROM assets")]
+    finally:
+        connection.close()
+
+
+def _match_location_hits(
+    library_root: Path, query: str, rows: list[dict] | None = None
+) -> list[tuple[str, str]]:
+    """Return assets whose place name contains *query*."""
+
+    from iPhoto.agent.services.place_aliases import aliases_for
+
+    needles = [needle for needle in aliases_for(query) if len(needle) >= 2]
+    if not needles:
+        return []
+    matches: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for asset_id, label in _build_location_index(Path(library_root), rows):
+        if asset_id in seen:
+            continue
+        if any(needle in label for needle in needles):
+            seen.add(asset_id)
+            matches.append((asset_id, label))
+    return matches

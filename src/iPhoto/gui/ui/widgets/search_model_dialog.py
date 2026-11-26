@@ -494,7 +494,7 @@ class SearchModelDialog(QDialog):
         self._close_button.setIconSize(QSize(12, 12))
 
     def _stylesheet(self) -> str:
-        tokens = dialog_tokens(self.palette())
+        tokens = dialog_tokens(self)
         accent = _ACCENT_DARK if tokens["shell"] == "#1C1C1E" else _ACCENT_LIGHT
         return (
             "QDialog#searchModelDialog { background: transparent; }"

@@ -119,7 +119,7 @@ class TaskStatusButton(QWidget):
         super().changeEvent(event)
 
     def _apply_style(self) -> None:
-        tokens = dialog_tokens(self.palette())
+        tokens = dialog_tokens(self)
         self.setStyleSheet(
             "QWidget#taskStatusButton { border-radius: 6px; background: transparent; }"
             f"QWidget#taskStatusButton:hover {{ background-color: {tokens['hover']}; }}"
@@ -337,7 +337,7 @@ class TaskPopup(QFrame):
         super().changeEvent(event)
 
     def _apply_style(self) -> None:
-        tokens = dialog_tokens(self.palette())
+        tokens = dialog_tokens(self)
         self.setStyleSheet(
             "QFrame#taskPopup { background: transparent; border: none; }"
             f"QFrame#taskPopupShell {{ background-color: {tokens['shell']};"

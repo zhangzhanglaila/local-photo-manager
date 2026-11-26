@@ -7,6 +7,7 @@ light/dark values in a single place stops them drifting apart.
 from __future__ import annotations
 
 from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QWidget
 
 ACCENT_LIGHT = "#7B5E3B"
 ACCENT_DARK = "#C9A86C"
@@ -17,10 +18,25 @@ def is_dark(palette: QPalette) -> bool:
     return palette.color(QPalette.ColorRole.Window).lightness() < 128
 
 
-def dialog_tokens(palette: QPalette) -> dict[str, str]:
+def _resolve_dark(source: "QWidget | QPalette") -> bool:
+    """Decide light/dark from a widget's real theme, falling back to its palette.
+
+    A child widget's palette is often the *system* palette (dark Windows) even
+    when the app is running the light theme, which is why the task popup turned
+    black in a light window.
+    """
+
+    if isinstance(source, QWidget):
+        from ..theme_mode import is_dark as widget_is_dark
+
+        return widget_is_dark(source)
+    return is_dark(source)
+
+
+def dialog_tokens(source: "QWidget | QPalette") -> dict[str, str]:
     """Return the colour tokens used by the custom dialog cards."""
 
-    if is_dark(palette):
+    if _resolve_dark(source):
         return {
             "shell": "#1C1C1E",
             "text": "#F5F5F7",
