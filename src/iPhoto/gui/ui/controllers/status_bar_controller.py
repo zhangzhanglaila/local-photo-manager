@@ -19,6 +19,18 @@ from ....utils.pathutils import paths_equal
 if TYPE_CHECKING:
     from ..widgets.chrome_status_bar import ChromeStatusBar
 
+def _scan_root_name(root: Path | None) -> str:
+    """Return a short label for the folder being scanned."""
+
+    if root is None:
+        return ""
+    try:
+        name = Path(root).name
+    except TypeError:  # pragma: no cover - defensive
+        return ""
+    return name or str(root)
+
+
 class StatusBarController(QObject):
     """Manage progress feedback and transient messages in the status bar."""
 
@@ -81,6 +93,12 @@ class StatusBarController(QObject):
             # ⭐ 修复：强制切换到扫描上下文以显示进度
             # 其他操作（如加载）应该让位于扫描进度显示
             self._progress_context = "scan"
+
+        root_name = _scan_root_name(root)
+        if root_name:
+            background_tasks().update(
+                "scan", title=tr("status.task.scan_named", name=root_name), detail=str(root)
+            )
 
         if total <= 0:
             # total < 0  → discovery thread hasn't started counting yet

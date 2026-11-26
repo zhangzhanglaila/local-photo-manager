@@ -133,3 +133,49 @@ def test_smooth_bar_walks_towards_its_target(qapp):
     for _ in range(40):
         bar._step()
     assert bar.value() == 60
+
+
+def test_scan_task_names_the_folder(qapp, registry, monkeypatch):
+    """With several roots, "scanning files" must say which folder it means."""
+
+    from pathlib import Path
+
+    from iPhoto.gui.ui.controllers.status_bar_controller import StatusBarController
+
+    class _Bar:
+        def showMessage(self, *args, **kwargs):
+            pass
+
+        def setVisible(self, *args, **kwargs):
+            pass
+
+    class _Bar2:
+        def __init__(self):
+            self.range = (0, 0)
+            self.value = 0
+            self.visible = False
+
+        def setRange(self, low, high):
+            self.range = (low, high)
+
+        def setValue(self, value):
+            self.value = value
+
+        def setVisible(self, visible):
+            self.visible = visible
+
+    controller = StatusBarController.__new__(StatusBarController)
+    controller._progress_context = "scan"
+    controller._rescan_action = None
+    controller._move_context_delete = False
+    controller._move_context_restore = False
+    controller._progress_bar = _Bar2()
+    controller._status_bar = _Bar()
+    monkeypatch.setattr(controller, "show_message", lambda *a, **k: None)
+    registry.start("scan", "Scanning files")
+
+    controller.handle_scan_progress(Path(r"D:\APPLE"), 600, 980)
+
+    task = registry.task("scan")
+    assert "APPLE" in task.title
+    assert "APPLE" in task.detail

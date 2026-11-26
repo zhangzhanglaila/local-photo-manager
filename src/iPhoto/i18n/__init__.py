@@ -500,6 +500,7 @@ _ZH: dict[str, str] = {
     'status.task.scan': '正在扫描文件',
     'status.task.index': '正在建立搜索索引',
     'status.task.download': '正在下载搜索模型',
+    'status.task.scan_named': '正在扫描 {name}',
 }
 
 _EN: dict[str, str] = {
@@ -984,6 +985,7 @@ _EN: dict[str, str] = {
     'status.task.scan': 'Scanning files',
     'status.task.index': 'Building the search index',
     'status.task.download': 'Downloading the search model',
+    'status.task.scan_named': 'Scanning {name}',
 }
 
 
