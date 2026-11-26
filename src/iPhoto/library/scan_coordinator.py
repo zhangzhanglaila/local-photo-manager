@@ -120,7 +120,7 @@ class ScanCoordinatorMixin:
             exclude,
             signals,
             library_root=self.root(),
-            scan_service=getattr(self, "_scan_service", None),
+            scan_service=self._services.scan_service,
         )
         self._current_scanner_worker = worker
         self._face_scan_status_message = None
@@ -168,7 +168,7 @@ class ScanCoordinatorMixin:
             face_worker = FaceScanWorker(
                 face_library_root,
                 self,
-                people_service=getattr(self, "_people_service", None),
+                people_service=self._services.people_service,
             )
             face_worker.statusChanged.connect(self._on_face_scan_status_changed)
             face_worker.downloadProgress.connect(self._on_face_download_progress)
