@@ -834,6 +834,9 @@ class GalleryGridView(AssetGrid):
             self._query_loading = False
             self._loading_timeout_timer.stop()
             self._empty_state_timer.stop()
+            # Rows exist, so a filter's empty message no longer applies; leaving it
+            # set let it re-appear on the next view.
+            self._empty_mode = None
             return
         # If an overlay is showing and the model now has rows, dismiss it.
         if self._empty_mode is not None:
@@ -867,15 +870,6 @@ class GalleryGridView(AssetGrid):
             self._loading_label.hide()
             self._scanning_label.hide()
             self._empty_label.hide()
-            return
-        # If overlay was shown via set_empty_mode but the model now has rows,
-        # dismiss the overlay.
-        if self._empty_mode is not None:
-            if model is not None and model.rowCount() > 0:
-                self._empty_label.hide()
-                self._empty_mode = None
-                return
-            # Still empty: overlay stays (text already correct).
             return
         self._do_update_empty_state()
 
@@ -928,9 +922,7 @@ class GalleryGridView(AssetGrid):
         self._empty_state_timer.start()
 
     def _do_update_empty_state(self) -> None:
-        """Actually update the empty state (standard path without overlay)."""
-        if self._empty_mode is not None:
-            return  # overlay managed by set_empty_mode / _on_rows_inserted
+        """Actually update the empty state."""
         model = self.model()
         is_empty = model is None or model.rowCount() == 0
         if self._empty_label is None:
@@ -953,6 +945,12 @@ class GalleryGridView(AssetGrid):
         # The window-level startup overlay owns this phase. Drawing the grid's
         # own placeholder here produced two competing progress boxes ("正在打开
         # 图库…" next to "准备中...").
+        # The label text follows the active filter context, but it is only
+        # painted by the branch below once nothing is loading any more.
+        self._empty_label.setText(
+            self._empty_message() if self._empty_mode is not None else tr("empty.no_media")
+        )
+
         # 优先级：正在扫描 > 正在加载查询 > 空状态
         if is_empty and self._is_scanning:
             # 正在扫描：展示进度提示。首次启动时这层会被启动遮罩盖住，不可见；
@@ -1001,40 +999,22 @@ class GalleryGridView(AssetGrid):
         self._update_empty_state()
 
     def set_empty_mode(self, mode: str | None) -> None:
-        """Set the context for the empty-state message (e.g. 'favorites', 'videos').
+        """Record the filter context for the empty-state text (videos/live/...).
 
-        When *mode* is not ``None`` the empty label goes up immediately
-        with the appropriate text.  It is hidden again as soon as the
-        first row arrives.  Passing ``None`` clears the override so the
-        standard empty-state logic resumes.
-
-        The label geometry update is deferred by one event-loop tick so
-        the viewport and its parent stack page are fully laid out.
+        The text used to be painted straight away, so switching to 视频 or 实况
+        flashed "没有视频" for a moment before the rows arrived. The mode is only
+        recorded here; the label appears when the query is done *and* the result
+        is genuinely empty, which is what ``_do_update_empty_state`` decides.
         """
-        # ⭐ 立即更新模式，防止竞争条件
-        self._empty_mode = mode
 
+        self._empty_mode = mode
         if mode is not None:
             self._empty_label.setText(self._empty_message())
-            self._loading_label.hide()
-            self._scanning_label.hide()
-
-            def _show() -> None:
-                if self._empty_mode != mode:
-                    return  # mode changed before timer fired
-                vp_rect = self.viewport().rect()
-                if vp_rect.width() <= 0 or vp_rect.height() <= 0:
-                    vp_rect = self.rect()
-                self._empty_label.setGeometry(vp_rect)
-                self._empty_label.show()
-                self._empty_label.raise_()
-                self.viewport().update()
-
-            QTimer.singleShot(0, _show)
-        else:
-            # ⭐ 清除模式时立即隐藏标签并重置文本
+            # Hide rather than show: an empty result is not known yet.
             self._empty_label.hide()
-            # ⭐ 重置标签文本为默认值，防止显示旧的错误消息
+            self._update_empty_state()
+        else:
+            self._empty_label.hide()
             self._empty_label.setText(tr("empty.no_media"))
             self._update_empty_state()
 
