@@ -504,6 +504,7 @@ _ZH: dict[str, str] = {
     'search.empty.title': '未找到与“{query}”相关的照片',
     'search.empty.hint': '换个更具体的说法试试，比如「海边的猫」「地铁站」「红色的花」',
     'search.empty.back': '返回所有照片',
+    'search.no_results': '没有搜索结果',
 }
 
 _EN: dict[str, str] = {
@@ -992,6 +993,7 @@ _EN: dict[str, str] = {
     'search.empty.title': 'No photos match “{query}”',
     'search.empty.hint': 'Try a more specific phrase, e.g. “cat on a beach”, “subway platform”, “red flowers”',
     'search.empty.back': 'Back to all photos',
+    'search.no_results': 'No search results',
 }
 
 

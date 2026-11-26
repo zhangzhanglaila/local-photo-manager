@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QPainter, QPalette, QPen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QPushButton, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
+from ....i18n import tr
 from ..icon import load_icon
 from .gallery_grid_view import GalleryGridView
 from .home_page import HomePage

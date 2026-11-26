@@ -334,6 +334,16 @@ def main(argv: list[str] | None = None, app=None, splash=None) -> int:
         set_app_user_model_id()
         app = QApplication(arguments)
 
+    # One family for the whole application. Without it, a label styled with
+    # ``font-weight: 600`` falls back to a font that has no CJK glyphs and Qt
+    # substitutes a serif face, so parts of the UI looked like another app.
+    try:
+        from iPhoto.gui.ui.typography import apply_app_font
+
+        apply_app_font(app)
+    except Exception:  # pragma: no cover - font setup must never block startup
+        _logger.debug("could not apply the application font", exc_info=True)
+
     # The taskbar / Alt-Tab icon comes from the *window* icon, and a process started as
     # ``pythonw.exe`` otherwise shows Python's icon. Set it explicitly from the packaged
     # icon (or the copy in the user profile, which Explorer can always read).
