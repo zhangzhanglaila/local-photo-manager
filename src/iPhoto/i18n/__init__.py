@@ -471,6 +471,10 @@ _ZH: dict[str, str] = {
     'search.model.reindexing': '正在为新模型重建索引：{done}/{total}',
     'search.model.download_failed': '模型下载失败',
     'search.model.download_done': '模型已下载：{name}',
+    'search.model.rebuild': '重建搜索索引…',
+    'search.model.rebuild_confirm': '将用当前模型重新计算所有照片的向量，已有向量会被覆盖。GPU 下通常几分钟，继续吗？',
+    'search.model.rebuild_started': '正在重建搜索索引…',
+    'settings.row.search_model': '搜索模型',
 }
 
 _EN: dict[str, str] = {
@@ -926,6 +930,10 @@ _EN: dict[str, str] = {
     'search.model.reindexing': 'Rebuilding the index for the new model: {done}/{total}',
     'search.model.download_failed': 'Model download failed',
     'search.model.download_done': 'Model downloaded: {name}',
+    'search.model.rebuild': 'Rebuild search index…',
+    'search.model.rebuild_confirm': 'Every photo will be re-embedded with the current model and existing vectors replaced. This usually takes a few minutes on GPU. Continue?',
+    'search.model.rebuild_started': 'Rebuilding the search index…',
+    'settings.row.search_model': 'Search model',
 }
 
 

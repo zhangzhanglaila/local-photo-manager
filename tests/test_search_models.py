@@ -95,3 +95,76 @@ def test_embeddings_are_filtered_by_model(tmp_path: Path, monkeypatch):
     )
     assert pending == ["as_new", "as_missing"]
     repo.close()
+
+
+def test_two_models_can_share_an_asset(tmp_path: Path, monkeypatch):
+    """One row per (asset, model): switching models must not overwrite vectors."""
+
+    monkeypatch.setattr(pathutils, "_CUSTOM_WORKSPACE_BASE", tmp_path / "workspace")
+    library = tmp_path / "Library"
+    library.mkdir()
+
+    from iPhoto.cache.index_store import embedding_repository as module
+
+    monkeypatch.setattr(module, "_global_instance", None)
+    repo = module.EmbeddingRepository(library)
+    vector = np.ones(4, dtype=np.float32) / 2.0
+    repo.store_embeddings_batch([("as_one", vector, "clip-vit-base-patch32")])
+    repo.store_embeddings_batch([("as_one", vector, "siglip2-base-patch16-224")])
+
+    assert len(repo.get_all_embeddings()) == 2
+    assert {row["model_name"] for row in repo.get_all_embeddings()} == {
+        "clip-vit-base-patch32",
+        "siglip2-base-patch16-224",
+    }
+    # Re-storing the same pair updates in place instead of duplicating.
+    repo.store_embeddings_batch([("as_one", vector, "siglip2-base-patch16-224")])
+    assert len(repo.get_all_embeddings()) == 2
+    repo.close()
+
+
+def test_old_single_key_database_is_migrated(tmp_path: Path, monkeypatch):
+    """Libraries created before the model switch keep their vectors."""
+
+    import sqlite3
+
+    monkeypatch.setattr(pathutils, "_CUSTOM_WORKSPACE_BASE", tmp_path / "workspace")
+    library = tmp_path / "Library"
+    library.mkdir()
+    work = pathutils.ensure_work_dir(library)
+    work.mkdir(parents=True, exist_ok=True)
+    db_path = work / "embeddings.db"
+    legacy = sqlite3.connect(db_path)
+    legacy.execute(
+        """
+        CREATE TABLE embeddings (
+            asset_id TEXT PRIMARY KEY,
+            embedding BLOB NOT NULL,
+            dimension INTEGER NOT NULL,
+            model_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    legacy.execute(
+        "INSERT INTO embeddings (asset_id, embedding, dimension, model_name) VALUES (?,?,?,?)",
+        ("as_legacy", np.ones(4, dtype=np.float32).tobytes(), 4, None),
+    )
+    legacy.commit()
+    legacy.close()
+
+    from iPhoto.cache.index_store import embedding_repository as module
+
+    monkeypatch.setattr(module, "_global_instance", None)
+    repo = module.EmbeddingRepository(library)
+
+    rows = repo.get_all_embeddings()
+    assert [row["asset_id"] for row in rows] == ["as_legacy"]
+    assert rows[0]["model_name"] == "clip-vit-base-patch32"
+
+    # New model vectors can now coexist with the migrated one.
+    repo.store_embeddings_batch(
+        [("as_legacy", np.ones(4, dtype=np.float32), "siglip2-base-patch16-224")]
+    )
+    assert len(repo.get_all_embeddings()) == 2
+    repo.close()

@@ -1916,6 +1916,9 @@ class MainCoordinator(QObject):
 
         from iPhoto.agent.services import search_models
 
+        if key == search_models.REBUILD_KEY:
+            self._rebuild_search_index()
+            return
         if key != search_models.SETTINGS_KEY:
             return
         spec = search_models.set_active_model(str(value) if value else None)
@@ -1934,6 +1937,25 @@ class MainCoordinator(QObject):
         # Vectors from the previous model stay on disk (so switching back is
         # instant) but search ignores them; fill in the new model's rows.
         self._start_embedding_generation_silent()
+
+    def _rebuild_search_index(self) -> None:
+        """Re-embed the whole library with the active model."""
+
+        from iPhoto.agent.services import search_models
+
+        session = getattr(self._context, "library_session", None)
+        reset = getattr(session, "reset_embedding_service", None)
+        if callable(reset):
+            reset()
+        _SEARCH_EMBEDDINGS_CACHE.clear()
+        spec = search_models.active_model()
+        if not search_models.is_installed(spec):
+            self._status_bar.show_message(
+                tr("search.model.missing", mb=spec.download_mb), 8000
+            )
+            return
+        self._status_bar.show_message(tr("search.model.rebuild_started"), 5000)
+        self._start_embedding_generation_silent(force_rebuild=True)
 
     def _download_search_model_then_index(self, spec) -> None:
         """Fetch missing weights in the background, then index with them."""
@@ -1978,7 +2000,7 @@ class MainCoordinator(QObject):
         except Exception:
             self._logger.debug("Embedding bootstrap failed", exc_info=True)
 
-    def _start_embedding_generation_silent(self) -> None:
+    def _start_embedding_generation_silent(self, *, force_rebuild: bool = False) -> None:
         """Start embedding generation silently in background with status bar updates."""
         library_session = getattr(self._context, "library_session", None)
         if library_session is None:
@@ -2024,6 +2046,7 @@ class MainCoordinator(QObject):
                         embedding_repository=embedding_repo,
                         asset_repository=self._session.asset_runtime.assets,
                         library_root=self._session.library_root,
+                        force_rebuild=force_rebuild,
                     )
 
                     def on_progress(current, total, msg):
@@ -2129,6 +2152,7 @@ class MainCoordinator(QObject):
                         embedding_repository=embedding_repo,
                         asset_repository=self._session.asset_runtime.assets,
                         library_root=self._session.library_root,
+                        force_rebuild=force_rebuild,
                     )
 
                     def on_progress(current, total, msg):

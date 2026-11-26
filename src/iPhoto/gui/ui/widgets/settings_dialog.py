@@ -384,6 +384,16 @@ class SettingsDialog(QDialog):
                             self._checkbox(header.toggle_semantic_search_action),
                         ),
                         self._value_row(
+                            tr("settings.row.search_model"),
+                            self._search_model_value(),
+                        ),
+                        self._action_row(
+                            tr("search.model.switch"), self._switch_model_action()
+                        ),
+                        self._action_row(
+                            tr("search.model.rebuild"), self._rebuild_index_action()
+                        ),
+                        self._value_row(
                             tr("settings.row.search_precision"),
                             self._combo(
                                 [
@@ -527,6 +537,30 @@ class SettingsDialog(QDialog):
                 self._settings.set(search_models.SETTINGS_KEY, key)
             else:  # pragma: no cover - settings are always present in the app
                 search_models.set_active_model(key)
+
+        action.triggered.connect(_run)
+        return action
+
+    def _rebuild_index_action(self) -> QAction:
+        action = QAction(tr("search.model.rebuild"), self)
+
+        def _run() -> None:
+            from . import dialogs
+
+            if not dialogs.confirm_action(
+                self,
+                tr("search.model.rebuild_confirm"),
+                title=tr("search.model.rebuild"),
+                yes_label=tr("dialog.ok"),
+            ):
+                return
+            if self._settings is None:  # pragma: no cover - settings always exist
+                return
+            import time
+
+            from ....agent.services import search_models
+
+            self._settings.set(search_models.REBUILD_KEY, time.time())
 
         action.triggered.connect(_run)
         return action

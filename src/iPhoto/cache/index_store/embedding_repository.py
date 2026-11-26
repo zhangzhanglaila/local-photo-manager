@@ -58,15 +58,22 @@ class EmbeddingRepository:
         return self._local.conn
 
     def _init_db(self) -> None:
-        """Initialize the database schema."""
+        """Initialize the database schema.
+
+        The key is ``(asset_id, model_name)``, not ``asset_id`` alone: switching
+        search models must keep the previous model's vectors instead of
+        overwriting them one row at a time (which left a half-migrated index that
+        belonged to neither model).
+        """
         conn = self._get_conn()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS embeddings (
-                asset_id TEXT PRIMARY KEY,
+                asset_id TEXT NOT NULL,
+                model_name TEXT NOT NULL DEFAULT 'clip-vit-base-patch32',
                 embedding BLOB NOT NULL,
                 dimension INTEGER NOT NULL,
-                model_name TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (asset_id, model_name)
             )
         """)
         conn.execute("""
@@ -74,6 +81,48 @@ class EmbeddingRepository:
             ON embeddings(asset_id)
         """)
         conn.commit()
+        self._migrate_single_model_key(conn)
+
+    @staticmethod
+    def _migrate_single_model_key(conn: sqlite3.Connection) -> None:
+        """Rewrite an ``asset_id``-only table so two models can coexist."""
+
+        columns = list(conn.execute("PRAGMA table_info(embeddings)"))
+        primary_key = [column for column in columns if column[5]]
+        if len(primary_key) != 1 or primary_key[0][1] != "asset_id":
+            return
+
+        logger.info("Migrating embeddings table to the (asset_id, model_name) key")
+        # SQLite's DDL is transactional, so a failure leaves the old table intact
+        # instead of a half-renamed database that belongs to neither schema.
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("ALTER TABLE embeddings RENAME TO embeddings_legacy")
+            conn.execute("""
+                CREATE TABLE embeddings (
+                    asset_id TEXT NOT NULL,
+                    model_name TEXT NOT NULL DEFAULT 'clip-vit-base-patch32',
+                    embedding BLOB NOT NULL,
+                    dimension INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (asset_id, model_name)
+                )
+            """)
+            conn.execute("""
+                INSERT OR IGNORE INTO embeddings (asset_id, model_name, embedding, dimension, created_at)
+                SELECT asset_id, COALESCE(model_name, 'clip-vit-base-patch32'), embedding, dimension, created_at
+                FROM embeddings_legacy
+            """)
+            conn.execute("DROP TABLE embeddings_legacy")
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_embeddings_asset_id
+                ON embeddings(asset_id)
+            """)
+        except Exception:
+            conn.rollback()
+            raise
+        conn.commit()
+
 
     def store_embedding(
         self,

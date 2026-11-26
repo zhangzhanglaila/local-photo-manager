@@ -22,6 +22,10 @@ DEFAULT_SEARCH_MODEL_KEY = "clip-b32"
 #: Settings key shared by the wizard, the settings window and the encoder.
 SETTINGS_KEY = "search.model"
 
+#: Writing a fresh value here asks the app to re-embed every asset with the
+#: active model (settings UI has no direct handle on the running coordinator).
+REBUILD_KEY = "search.rebuild_request"
+
 
 @dataclass(frozen=True)
 class SearchModelSpec:

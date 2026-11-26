@@ -141,3 +141,28 @@ def test_settings_window_follows_the_selected_language(chrome, qapp):
         dialog.deleteLater()
     finally:
         set_language("zh")
+
+
+def test_rebuild_action_requests_a_full_reindex(chrome, monkeypatch, qapp):
+    """The settings window cannot reach the coordinator, so it writes a request."""
+
+    from PySide6.QtWidgets import QLabel
+
+    from iPhoto.agent.services import search_models
+    from iPhoto.gui.ui.widgets import dialogs
+
+    window, header = chrome
+    settings = type("_S", (), {"values": {}, "get": lambda self, k, d=None: self.values.get(k, d), "set": lambda self, k, v: self.values.__setitem__(k, v)})()
+    monkeypatch.setattr(dialogs, "confirm_action", lambda *a, **kw: True)
+
+    dialog = SettingsDialog(header, None, window, settings=settings)
+    try:
+        labels = {label.text() for label in dialog.findChildren(QLabel)}
+        assert "重建搜索索引…" in labels or "Rebuild search index…" in labels
+
+        action = dialog._rebuild_index_action()
+        action.trigger()
+        assert search_models.REBUILD_KEY in settings.values
+    finally:
+        dialog.close()
+        dialog.deleteLater()
