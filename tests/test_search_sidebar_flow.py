@@ -10,8 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from iPhoto.application.dtos import SearchProgress
-from iPhoto.i18n import tr
 from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
 
 
@@ -150,7 +148,7 @@ def test_progress_does_not_reopen_panel_after_navigating_away() -> None:
     coordinator._window.ui.gallery_page = page
 
     MainCoordinator._update_search_progress(
-        coordinator, 7, SearchProgress("model", tr("search.status.loading_model"))
+        coordinator, 7, "正在加载 AI 模型...", 0, 0
     )
 
     assert page.model_loading == 0
@@ -162,13 +160,13 @@ def test_progress_updates_panel_while_search_visible() -> None:
     page = _Page()
     coordinator._window.ui.gallery_page = page
 
-    MainCoordinator._update_search_progress(coordinator, 7, SearchProgress("model", tr("search.status.loading_model")))
+    MainCoordinator._update_search_progress(coordinator, 7, "正在加载 AI 模型...", 0, 0)
 
     assert page.model_loading == 1
 
-    MainCoordinator._update_search_progress(coordinator, 7, SearchProgress("search", tr("search.status.searching")))
+    MainCoordinator._update_search_progress(coordinator, 7, "正在搜索...", 0, 0)
 
-    assert page.loading == [tr("search.status.searching")]
+    assert page.loading == ["正在搜索..."]
 
 
 def test_current_album_rel_path_only_returns_nested_albums() -> None:
@@ -219,7 +217,7 @@ def test_stale_progress_is_ignored() -> None:
     page = _Page()
     coordinator._window.ui.gallery_page = page
 
-    MainCoordinator._update_search_progress(coordinator, 6, SearchProgress("search", tr("search.status.searching")))
+    MainCoordinator._update_search_progress(coordinator, 6, "正在搜索...", 0, 0)
 
     assert page.model_loading == 0
     assert page.loading == []

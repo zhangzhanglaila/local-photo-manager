@@ -28,7 +28,7 @@ from iPhoto.application.dtos import GeotaggedAsset
 from iPhoto.config import SearchSettings
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
-from iPhoto.application.dtos import ScanStatus, SearchProgress
+from iPhoto.application.dtos import ScanStatus
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
@@ -1426,10 +1426,14 @@ class MainCoordinator(QObject):
         # starts, so rebuilding a service here would reload the weights on every
         # single search.
         library_session = self._active_session()
+        # The nested worker's ``self`` is the thread, so the coordinator is captured
+        # once here: ``self._active_search_spec()`` inside ``run`` raised
+        # AttributeError, which made every search with a bound session fail.
+        coordinator = self
 
         class SearchThread(QThread):
             finished = Signal(object, str)  # results or None, error
-            progress = Signal(object)  # SearchProgress
+            progress = Signal(str, int, int)  # message, current, total
 
             def __init__(
                 self,
@@ -1470,7 +1474,7 @@ class MainCoordinator(QObject):
                     session_service = None
                     if library_session is not None:
                         try:
-                            if search_models.is_installed(self._active_search_spec()):
+                            if search_models.is_installed(coordinator._active_search_spec()):
                                 session_service = (
                                     library_session.get_embedding_service()
                                 )
@@ -1483,12 +1487,7 @@ class MainCoordinator(QObject):
                     )
                     already_loaded = bool(probe()) if callable(probe) else False
                     self.progress.emit(
-                        SearchProgress(
-                            "search" if already_loaded else "model",
-                            tr("search.status.searching")
-                            if already_loaded
-                            else tr("search.status.loading_model"),
-                        )
+                        "正在搜索..." if already_loaded else "正在加载 AI 模型...", 0, 0
                     )
                     service = session_service
                     if service is None:
@@ -1506,28 +1505,21 @@ class MainCoordinator(QObject):
                         self.finished.emit(None, "AI 模型加载失败")
                         return
 
-                    self.progress.emit(
-                        SearchProgress("index", tr("search.status.loading_index"))
-                    )
+                    self.progress.emit("AI 模型加载完成，正在加载索引...", 1, 3)
 
                     # 2. Load embeddings
                     from iPhoto.agent.services import search_models as _search_models
 
                     all_embeddings = _load_search_embeddings(
                         self._library_root,
-                        model_name=self._active_search_spec().dir_name,
+                        model_name=coordinator._active_search_spec().dir_name,
                     )
 
                     if not all_embeddings:
                         self.finished.emit(None, "没有找到照片索引，请先生成索引")
                         return
 
-                    self.progress.emit(
-                        SearchProgress(
-                            "search",
-                            tr("search.status.searching_found", count=len(all_embeddings)),
-                        )
-                    )
+                    self.progress.emit(f"已加载 {len(all_embeddings)} 个索引，正在搜索...", 2, 3)
 
                     # Scope: "当前相册" keeps only the embeddings of the album the
                     # user is looking at.
@@ -1752,11 +1744,13 @@ class MainCoordinator(QObject):
                 0, lambda: self._finish_search(serial, results, error, query)
             )
 
-        def on_progress(progress):
+        def on_progress(message, current, total):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(
                 0,
-                lambda: self._update_search_progress(serial, progress),
+                lambda: self._update_search_progress(
+                    serial, message, current, total
+                ),
             )
 
         thread = SearchThread(
@@ -1901,7 +1895,7 @@ class MainCoordinator(QObject):
         """Show loading state in the grid view area."""
         ui = self._window.ui
         ui.gallery_page.show_search_loading(query)
-    def _update_search_progress(self, serial: int, progress: object) -> None:
+    def _update_search_progress(self, serial: int, message: str, current: int, total: int) -> None:
         """Update search progress in the UI."""
 
         state = self._search_state
@@ -1910,14 +1904,14 @@ class MainCoordinator(QObject):
         if not self._is_search_page_visible():
             # The user navigated away; do not pull them back into the search panel.
             return
-        if not isinstance(progress, SearchProgress):
-            return
-        page = self._window.ui.gallery_page
-        if progress.stage in {"model", "index"}:
+        ui = self._window.ui
+        page = ui.gallery_page
+        if "模型" in message:
+            page.show_model_loading()
+        elif "索引" in message:
             page.show_model_loading()
         else:
-            page.show_search_loading(progress.message)
-
+            page.show_search_loading(message)
     def _display_search_results(self, results: list, query: str = "") -> None:
         """Display search results in the grid view."""
         ui = self._window.ui

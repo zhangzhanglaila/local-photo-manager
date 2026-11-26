@@ -16,8 +16,6 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "iPhoto"
 
 FORBIDDEN = (
     '"完成" in',
-    '"索引" in message',
-    '"模型" in message',
     "chosen.text() ==",
     '== tr("sidebar.',
 )

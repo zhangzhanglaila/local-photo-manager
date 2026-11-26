@@ -106,21 +106,6 @@ class MapMarkerActivation:
 
 
 @dataclass(slots=True, frozen=True)
-class SearchProgress:
-    """One progress report from the semantic-search thread.
-
-    ``stage`` says *what* the thread is doing (``model`` / ``index`` / ``search``)
-    so the view can pick the right loading state. The previous code inferred it
-    from the words ``模型`` or ``索引`` inside the message: that broke under
-    translation, and the final message mentions the index it just loaded, so
-    "searching" was rendered as "loading the model".
-    """
-
-    stage: str
-    message: str = ""
-
-
-@dataclass(slots=True, frozen=True)
 class ScanStatus:
     """Structured progress text for a background AI scan.
 
