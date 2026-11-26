@@ -119,10 +119,6 @@ class ThemeManager(QObject):
             self._current_colors = LIGHT_THEME
 
         self._apply_palette(self._current_colors)
-        # Publish the resolved mode so widgets stop re-deriving it themselves.
-        from .theme_mode import set_current_mode
-
-        set_current_mode("dark" if is_dark else "light")
         self.themeChanged.emit(is_dark)
 
     def set_force_dark(self, enabled: bool) -> None:
@@ -131,6 +127,15 @@ class ThemeManager(QObject):
             return
         self._force_dark_mode = enabled
         self.apply_theme()
+
+    def current_mode(self) -> str:
+        """Return the mode actually applied, including a forced dark override.
+
+        Widgets ask this (through their host window) instead of a module-level
+        global, so the edit view's forced dark surface reaches every dialog.
+        """
+
+        return "dark" if self._current_colors.is_dark else "light"
 
     def current_colors(self) -> ThemeColors:
         return self._current_colors

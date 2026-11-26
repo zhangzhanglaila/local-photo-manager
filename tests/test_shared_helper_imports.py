@@ -33,7 +33,6 @@ _SHARED_HELPERS = {
     "SQLITE_LONG_BUSY_TIMEOUT_S",
     "MERCATOR_LAT_BOUND",
     "resolve_theme_mode",
-    "set_current_mode",
 }
 
 

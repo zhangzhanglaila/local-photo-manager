@@ -14,17 +14,16 @@ pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 
-from iPhoto.gui.ui.theme_mode import (
-    is_dark,
-    reset_current_mode,
-    resolve_theme_mode,
-    set_current_mode,
-)
+from iPhoto.gui.ui import theme_mode
+from iPhoto.gui.ui.theme_mode import is_dark, resolve_theme_mode
 
 
 class _ThemeManager:
     def __init__(self, mode: str) -> None:
         self._mode = mode
+
+    def current_mode(self) -> str:
+        return self._mode
 
     def get_effective_theme_mode(self) -> str:
         return self._mode
@@ -37,10 +36,7 @@ class _Coordinator:
 
 @pytest.fixture()
 def qapp() -> QApplication:
-    app = QApplication.instance() or QApplication([])
-    reset_current_mode()
-    yield app
-    reset_current_mode()
+    return QApplication.instance() or QApplication([])
 
 
 def _widget_with_coordinator(qapp: QApplication, theme: _ThemeManager | None) -> QWidget:
@@ -49,11 +45,18 @@ def _widget_with_coordinator(qapp: QApplication, theme: _ThemeManager | None) ->
     return widget
 
 
-def test_published_mode_wins(qapp: QApplication) -> None:
-    set_current_mode("dark")
+def test_theme_mode_has_no_module_level_global() -> None:
+    assert not hasattr(theme_mode, "set_current_mode")
+    assert not hasattr(theme_mode, "_current_mode")
 
-    assert resolve_theme_mode(None) == "dark"
-    assert is_dark(None) is True
+
+def test_forced_dark_mode_is_consulted_through_the_coordinator(
+    qapp: QApplication,
+) -> None:
+    widget = _widget_with_coordinator(qapp, _ThemeManager("dark"))
+
+    assert resolve_theme_mode(widget) == "dark"
+    assert is_dark(widget) is True
 
 
 def test_widget_context_theme_is_consulted(qapp: QApplication) -> None:
