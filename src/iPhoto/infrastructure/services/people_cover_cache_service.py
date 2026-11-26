@@ -40,16 +40,16 @@ class PeopleCoverRenderTask(QRunnable):
 class PeopleCoverCacheService(QObject):
     coverReady = Signal(str)
 
-    def __init__(self, disk_cache_path: Path, memory_limit_items: int = 512) -> None:
+    def __init__(self, disk_cache_path: Path | None = None, memory_limit_items: int = 512) -> None:
         super().__init__()
-        self._disk_cache_path = Path(disk_cache_path)
-        self._disk_cache_path.mkdir(parents=True, exist_ok=True)
+        self._disk_cache_path: Path | None = None
         self._memory_cache: dict[str, QPixmap] = {}
         self._pending_tasks: set[str] = set()
         self._worker_signals: dict[str, PeopleCoverWorkerSignals] = {}
         self._thread_pool = QThreadPool.globalInstance()
         self._memory_limit_items = max(32, int(memory_limit_items))
         self._is_shutting_down = False
+        self.set_disk_cache_path(disk_cache_path)
 
     def shutdown(self) -> None:
         self._is_shutting_down = True
@@ -57,17 +57,30 @@ class PeopleCoverCacheService(QObject):
         self._worker_signals.clear()
         self._memory_cache.clear()
 
-    def set_disk_cache_path(self, disk_cache_path: Path) -> None:
+    def set_disk_cache_path(self, disk_cache_path: Path | None) -> None:
+        """Point the cache at *disk_cache_path*; ``None`` unbinds it.
+
+        This service is a module-level singleton, so it is built the first time
+        the people dashboard module is imported — possibly before any library is
+        open. An unbound cache must not create a directory: the old home-rooted
+        fallback left ``~/.iPhoto/cache/people-covers`` behind on every launch.
+        """
+
+        if disk_cache_path is None:
+            self._disk_cache_path = None
+            self._memory_cache.clear()
+            self._pending_tasks.clear()
+            return
         next_path = Path(disk_cache_path)
         if self._disk_cache_path == next_path:
             return
         self._disk_cache_path = next_path
-        self._disk_cache_path.mkdir(parents=True, exist_ok=True)
+        next_path.mkdir(parents=True, exist_ok=True)
         self._memory_cache.clear()
         self._pending_tasks.clear()
 
     def get_thumbnail(self, path: Path, size: tuple[int, int]) -> tuple[str | None, Optional[QPixmap]]:
-        if self._is_shutting_down:
+        if self._is_shutting_down or self._disk_cache_path is None:
             return None, None
         signature = self._path_signature(path)
         if signature is None:
@@ -87,7 +100,7 @@ class PeopleCoverCacheService(QObject):
         signature: str,
         renderer: Callable[[], Optional[QImage]],
     ) -> tuple[str | None, Optional[QPixmap]]:
-        if self._is_shutting_down:
+        if self._is_shutting_down or self._disk_cache_path is None:
             return None, None
         key = self._cache_key("rendered", cache_id, signature, self._size_key(size))
         pixmap = self._get_or_start(key, renderer)
@@ -108,7 +121,7 @@ class PeopleCoverCacheService(QObject):
             return pixmap
 
         disk_file = self._disk_file(cache_key)
-        if disk_file.exists():
+        if disk_file is not None and disk_file.exists():
             disk_pixmap = QPixmap(str(disk_file))
             if not disk_pixmap.isNull():
                 self._remember(cache_key, disk_pixmap)
@@ -138,7 +151,9 @@ class PeopleCoverCacheService(QObject):
         if pixmap.isNull():
             return
         self._remember(cache_key, pixmap)
-        pixmap.save(str(self._disk_file(cache_key)), "PNG")
+        disk_file = self._disk_file(cache_key)
+        if disk_file is not None:
+            pixmap.save(str(disk_file), "PNG")
         self.coverReady.emit(cache_key)
 
     def _remember(self, cache_key: str, pixmap: QPixmap) -> None:
@@ -163,7 +178,9 @@ class PeopleCoverCacheService(QObject):
             QImage.Format.Format_RGBA8888,
         ).copy()
 
-    def _disk_file(self, cache_key: str) -> Path:
+    def _disk_file(self, cache_key: str) -> Path | None:
+        if self._disk_cache_path is None:
+            return None
         return self._disk_cache_path / f"{cache_key}.png"
 
     @staticmethod

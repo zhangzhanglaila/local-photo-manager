@@ -12,7 +12,6 @@ from PySide6.QtGui import QColor, QImage, QPainterPath, QPalette, QPixmap
 from ..theme_mode import is_dark
 from PySide6.QtWidgets import QFrame, QWidget
 
-from iPhoto.config import WORK_DIR_NAME
 from iPhoto.infrastructure.services.people_cover_cache_service import PeopleCoverCacheService
 from iPhoto.people.image_utils import create_cover_thumbnail, load_image_rgb
 from iPhoto.utils.pathutils import ensure_work_dir
@@ -62,7 +61,7 @@ QMenu::separator {
 }
 """
 
-_PEOPLE_COVER_CACHE = PeopleCoverCacheService(Path.home() / WORK_DIR_NAME / "cache" / "people-covers")
+_PEOPLE_COVER_CACHE = PeopleCoverCacheService()
 
 
 def _qcolor(value: str | QColor, alpha: int | None = None) -> QColor:
@@ -88,11 +87,18 @@ def _create_pos_anim(widget: QWidget, target: QPoint, duration: int = 240) -> QP
 
 
 def configure_people_cover_cache(library_root: Path | None) -> None:
+    """Bind the cover cache to *library_root*; ``None`` unbinds it.
+
+    No home-rooted fallback: before a library is open there is nothing to cache
+    and nothing to write to disk.
+    """
+
     if library_root is None:
-        cache_root = Path.home() / WORK_DIR_NAME / "cache" / "people-covers"
-    else:
-        cache_root = ensure_work_dir(library_root) / "cache" / "people-covers"
-    _PEOPLE_COVER_CACHE.set_disk_cache_path(cache_root)
+        _PEOPLE_COVER_CACHE.set_disk_cache_path(None)
+        return
+    _PEOPLE_COVER_CACHE.set_disk_cache_path(
+        ensure_work_dir(library_root) / "cache" / "people-covers"
+    )
 
 
 def people_cover_cache() -> PeopleCoverCacheService:

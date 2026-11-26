@@ -73,3 +73,26 @@ def test_handle_render_result_skips_cache_write_during_shutdown(
 
     assert service.cached_pixmap("cache-key") is None
     assert not (tmp_path / "people-covers" / "cache-key.png").exists()
+
+
+def test_unbound_cache_creates_no_directory_and_serves_no_covers(
+    qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The module-level singleton is built on import, before a library exists."""
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+    service = PeopleCoverCacheService()
+
+    cache_key, pixmap = service.get_rendered_cover(
+        cache_id="group-1",
+        size=(20, 20),
+        signature="sig",
+        renderer=lambda: QImage(20, 20, QImage.Format.Format_RGBA8888),
+    )
+
+    assert cache_key is None
+    assert pixmap is None
+    assert not (fake_home / ".iPhoto").exists()

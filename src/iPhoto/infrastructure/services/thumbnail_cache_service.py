@@ -81,10 +81,9 @@ class ThumbnailCacheService(QObject):
 
     thumbnailReady = Signal(Path)
 
-    def __init__(self, disk_cache_path: Path, memory_limit_mb: int = 300):
+    def __init__(self, disk_cache_path: Path | None = None, memory_limit_mb: int = 300):
         super().__init__()
-        self._disk_cache_path = disk_cache_path
-        self._disk_cache_path.mkdir(parents=True, exist_ok=True)
+        self._disk_cache_path: Path | None = None
         self._generator = PillowThumbnailGenerator()
         self._edit_service: EditServicePort | None = None
 
@@ -99,17 +98,33 @@ class ThumbnailCacheService(QObject):
         # Throttling: limit concurrent tasks
         self._max_concurrent_tasks = 10
 
+        self.set_disk_cache_path(disk_cache_path)
+
     def shutdown(self):
         """Prevents new tasks from being submitted and clears pending logic."""
         self._is_shutting_down = True
         self._pending_tasks.clear()
 
-    def set_disk_cache_path(self, disk_cache_path: Path) -> None:
+    def set_disk_cache_path(self, disk_cache_path: Path | None) -> None:
+        """Point the disk cache at *disk_cache_path*; ``None`` unbinds it.
+
+        The app constructs this service while booting, before a library exists,
+        so an unbound cache must not create a directory anywhere — the old
+        ``Path.home()`` fallback left ``~/.iPhoto/cache/thumbs`` behind on every
+        launch. Unbound requests to :meth:`get_thumbnail` are no-ops.
+        """
+
         self._is_shutting_down = False
-        if self._disk_cache_path == disk_cache_path:
+        if disk_cache_path is None:
+            self._disk_cache_path = None
+            self._memory_cache.clear()
+            self._pending_tasks.clear()
             return
-        self._disk_cache_path = disk_cache_path
-        self._disk_cache_path.mkdir(parents=True, exist_ok=True)
+        resolved = Path(disk_cache_path)
+        if self._disk_cache_path == resolved:
+            return
+        self._disk_cache_path = resolved
+        resolved.mkdir(parents=True, exist_ok=True)
         self._memory_cache.clear()
         self._pending_tasks.clear()
 
@@ -119,7 +134,7 @@ class ThumbnailCacheService(QObject):
         self._edit_service = edit_service
 
     def get_thumbnail(self, path: Path, size: QSize) -> Optional[QPixmap]:
-        if self._is_shutting_down:
+        if self._is_shutting_down or self._disk_cache_path is None:
             return None
 
         key = self._cache_key(path, size)
@@ -167,6 +182,9 @@ class ThumbnailCacheService(QObject):
 
             # Only a freshly rendered thumbnail is written: it is the one that was
             # missing from the cache.
+            if self._disk_cache_path is None:
+                self._pending_tasks.discard(key)
+                return
             disk_file = self._disk_cache_path / f"{key}.jpg"
             pixmap.save(str(disk_file), "JPEG")
 
@@ -188,7 +206,8 @@ class ThumbnailCacheService(QObject):
             # Unreadable cache entry (truncated / bad format): drop it and rebuild
             # from the source instead of leaving the key pending forever.
             try:
-                (self._disk_cache_path / f"{key}.jpg").unlink(missing_ok=True)
+                if self._disk_cache_path is not None:
+                    (self._disk_cache_path / f"{key}.jpg").unlink(missing_ok=True)
             except OSError:
                 pass
             self._pending_tasks.discard(key)
@@ -210,6 +229,8 @@ class ThumbnailCacheService(QObject):
         if key in self._memory_cache:
             del self._memory_cache[key]
 
+        if self._disk_cache_path is None:
+            return
         disk_file = self._disk_cache_path / f"{key}.jpg"
         if disk_file.exists():
             try:
@@ -222,7 +243,7 @@ class ThumbnailCacheService(QObject):
 
         if size is None:
             size = QSize(512, 512)
-        if not new_root.exists():
+        if self._disk_cache_path is None or not new_root.exists():
             return
         try:
             paths = [path for path in new_root.rglob("*") if path.is_file()]
