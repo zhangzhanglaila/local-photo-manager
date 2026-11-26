@@ -16,6 +16,8 @@ import getpass
 import logging
 import os
 import re
+import time
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -58,6 +60,8 @@ class SingleInstanceGuard(QObject):
         super().__init__(parent)
         self._key = key or instance_key()
         self._server: QLocalServer | None = None
+        self._mutex: int | None = None
+        self._lock_file = None
         #: A request that arrived before the window existed.
         self._pending = False
         self._window_ready = False
@@ -68,32 +72,134 @@ class SingleInstanceGuard(QObject):
         return self._key
 
     def try_acquire(self) -> bool:
-        """Return ``True`` when this process is the one that should keep running."""
+        """Return ``True`` when this process is the one that should keep running.
+
+        The election is an OS-level lock, not a "can I connect to the socket?"
+        test: three quick launches used to race each other, because none of them
+        had started listening yet, and every one of them concluded it was first.
+        A named mutex (Windows) or an exclusive file lock (elsewhere) is settled
+        atomically by the kernel, so exactly one process wins.
+        """
 
         if multiple_instances_allowed():
             _LOGGER.info("single-instance guard disabled by IPHOTO_ALLOW_MULTIPLE")
             return True
 
-        if self._notify_running_instance():
+        if not self._acquire_os_lock():
+            _LOGGER.info("another iPhoto instance owns the lock; asking it to show itself")
+            self._request_show_with_retry()
             return False
 
-        # Nobody answered: the previous run either never listened or was killed
-        # and left the name behind. Clear it before claiming it.
-        QLocalServer.removeServer(self._key)
+        self._start_server()
+        return True
+
+    # ------------------------------------------------------------------
+    def _acquire_os_lock(self) -> bool:
+        if os.name == "nt":
+            return self._acquire_windows_mutex()
+        return self._acquire_posix_lock()
+
+    def _acquire_windows_mutex(self) -> bool:
+        """Take the named mutex; the kernel releases it when we exit."""
+
+        try:
+            import ctypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            ctypes.set_last_error(0)
+            handle = kernel32.CreateMutexW(None, True, self._key)
+            if not handle:
+                _LOGGER.warning(
+                    "could not create the single-instance mutex (error %s)",
+                    ctypes.get_last_error(),
+                )
+                return True  # never block startup on the guard
+            already_exists = ctypes.get_last_error() == 183  # ERROR_ALREADY_EXISTS
+            if already_exists:
+                kernel32.CloseHandle(handle)
+                return False
+            self._mutex = handle
+            return True
+        except Exception:  # pragma: no cover - defensive
+            _LOGGER.debug("single-instance mutex unavailable", exc_info=True)
+            return True
+
+    def _acquire_posix_lock(self) -> bool:
+        import tempfile
+
+        try:
+            import fcntl
+        except ImportError:  # pragma: no cover - Windows without msvcrt fallback
+            return True
+
+        path = Path(tempfile.gettempdir()) / f"{self._key}.lock"
+        try:
+            handle = path.open("a+")
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return False
+        except Exception:  # pragma: no cover - defensive
+            return True
+        self._lock_file = handle
+        return True
+
+    # ------------------------------------------------------------------
+    def release(self) -> None:
+        """Drop the lock and stop listening (tests and deliberate hand-over)."""
+
+        if self._server is not None:
+            self._server.close()
+            self._server = None
+        if self._mutex is not None:
+            try:
+                import ctypes
+
+                ctypes.WinDLL("kernel32").CloseHandle(self._mutex)
+            except Exception:  # pragma: no cover - defensive
+                pass
+            self._mutex = None
+        if self._lock_file is not None:
+            try:
+                self._lock_file.close()
+            except Exception:  # pragma: no cover - defensive
+                pass
+            self._lock_file = None
+
+    # ------------------------------------------------------------------
+    def _start_server(self) -> None:
+        """Listen for "show" requests; failure only costs the focus, not the guard."""
+
         server = QLocalServer(self)
         server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         server.newConnection.connect(self._accept_connection)
         if not server.listen(self._key):
-            # A guard that blocks startup is worse than a duplicate window.
-            _LOGGER.warning(
-                "could not listen on %s (%s); continuing without the guard",
-                self._key,
-                server.errorString(),
-            )
-            return True
+            # The mutex already guarantees a single instance, so a busy pipe here
+            # just means an older process still owns the name.
+            QLocalServer.removeServer(self._key)
+            if not server.listen(self._key):
+                _LOGGER.warning(
+                    "could not listen on %s (%s); the window will not be raised "
+                    "from a second launch",
+                    self._key,
+                    server.errorString(),
+                )
+                return
         self._server = server
         _LOGGER.info("single-instance guard listening on %s", self._key)
-        return True
+
+    def _request_show_with_retry(self, attempts: int = 20, delay_ms: int = 150) -> bool:
+        """Ask the running instance to show itself, waiting for it to listen.
+
+        A launch that happens while the first instance is still starting has to
+        retry: the owner may not have created its server yet.
+        """
+
+        for attempt in range(attempts):
+            if self._notify_running_instance():
+                return True
+            if attempt + 1 < attempts:
+                time.sleep(delay_ms / 1000.0)
+        return False
 
     def _notify_running_instance(self) -> bool:
         socket = QLocalSocket()
@@ -104,7 +210,7 @@ class SingleInstanceGuard(QObject):
         socket.flush()
         socket.waitForBytesWritten(400)
         socket.disconnectFromServer()
-        _LOGGER.info("another iPhoto instance is running; asked it to show itself")
+        _LOGGER.info("asked the running instance to show itself")
         return True
 
     def _accept_connection(self) -> None:
