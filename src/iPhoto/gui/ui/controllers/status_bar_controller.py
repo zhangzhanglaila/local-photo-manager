@@ -11,6 +11,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QProgressBar
 
 from ....application.contracts.runtime_entry_contract import RuntimeEntryContract
+from ...services.background_tasks import background_tasks
 from ....config import RECENTLY_DELETED_DIR_NAME
 from ....i18n import tr
 from ....utils.pathutils import paths_equal
@@ -54,6 +55,7 @@ class StatusBarController(QObject):
         """Prepare the UI for a long-running scan operation."""
 
         # ⭐ 修复：无论当前状态如何，都应该允许开始扫描
+        background_tasks().start("scan", tr("status.task.scan"))
         self._progress_context = "scan"
         self._status_bar.setVisible(True)
         self._progress_bar.setRange(0, 0)
@@ -90,6 +92,7 @@ class StatusBarController(QObject):
         else:
             self._progress_bar.setRange(0, total)
             self._progress_bar.setValue(max(0, min(current, total)))
+            background_tasks().update("scan", done=current, total=total)
             percent = int(max(0, min(current, total)) * 100 // total) if total else 0
             self.show_message(
                 tr(
@@ -115,6 +118,7 @@ class StatusBarController(QObject):
         if self._rescan_action is not None:
             self._rescan_action.setEnabled(True)
             self._rescan_action.setText(tr("action.rescan"))
+        background_tasks().finish("scan", failed=not success)
         message = tr("status.scan_complete") if success else tr("status.scan_failed")
         self.show_message(message, 5000)
 

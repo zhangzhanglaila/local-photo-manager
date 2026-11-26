@@ -494,6 +494,12 @@ _ZH: dict[str, str] = {
     'search.model.indexing_now': '正在重建索引：{percent}%（{done}/{total}）',
     'search.model.coverage_unknown': '尚未建立索引',
     'search.model.device_pending': '设备待加载',
+    'status.tasks_empty': '没有正在进行的后台任务',
+    'status.tasks_done': '完成',
+    'status.tasks_failed': '失败',
+    'status.task.scan': '正在扫描文件',
+    'status.task.index': '正在建立搜索索引',
+    'status.task.download': '正在下载搜索模型',
 }
 
 _EN: dict[str, str] = {
@@ -972,6 +978,12 @@ _EN: dict[str, str] = {
     'search.model.indexing_now': 'Rebuilding index: {percent}% ({done}/{total})',
     'search.model.coverage_unknown': 'Not indexed yet',
     'search.model.device_pending': 'device pending',
+    'status.tasks_empty': 'No background tasks',
+    'status.tasks_done': 'done',
+    'status.tasks_failed': 'failed',
+    'status.task.scan': 'Scanning files',
+    'status.task.index': 'Building the search index',
+    'status.task.download': 'Downloading the search model',
 }
 
 

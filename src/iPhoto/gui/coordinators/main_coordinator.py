@@ -1981,18 +1981,23 @@ class MainCoordinator(QObject):
 
         class _DownloadWorker(QRunnable):
             def run(self) -> None:
+                from iPhoto.gui.services.background_tasks import background_tasks
+
+                background_tasks().start("download", tr("status.task.download"))
                 try:
                     download_search_model(
                         spec,
-                        progress=lambda message: coordinator._status_bar.show_message(
+                        progress=lambda _fraction, message: coordinator._status_bar.show_message(
                             message, 5000
                         ),
                     )
                 except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                    background_tasks().finish("download", failed=True)
                     coordinator._status_bar.show_message(
                         f"{tr('search.model.download_failed')}: {exc}", 15000
                     )
                     return
+                background_tasks().finish("download")
                 coordinator._status_bar.show_message(
                     tr("search.model.download_done", name=spec.dir_name), 5000
                 )
@@ -2068,14 +2073,21 @@ class MainCoordinator(QObject):
                         force_rebuild=force_rebuild,
                     )
 
+                    from iPhoto.gui.services.background_tasks import background_tasks
+
+                    background_tasks().start("index", tr("status.task.index"))
                     search_status().set_indexing(True, 0, int(len(pending)))
 
                     def on_progress(current, total, msg):
                         pct = int(current / total * 100) if total > 0 else 0
+                        background_tasks().update(
+                            "index", done=int(current), total=int(total), detail=str(msg)
+                        )
                         search_status().set_indexing(True, current, total)
                         self._status_callback(f"AI 索引生成中: {current}/{total} ({pct}%)")
 
                     def on_finished(processed, failed):
+                        background_tasks().finish("index", failed=bool(failed))
                         search_status().set_indexing(False, len(asset_ids), len(asset_ids))
                         self._status_callback(f"AI 索引生成完成 ({processed} 张照片)")
 

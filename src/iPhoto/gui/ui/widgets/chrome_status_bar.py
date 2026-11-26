@@ -46,6 +46,11 @@ class ChromeStatusBar(QWidget):
         layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(12)
 
+        from .task_status_widget import TaskStatusButton
+
+        self._task_button = TaskStatusButton(self)
+        layout.addWidget(self._task_button, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self._message_label = QLabel(self)
         self._message_label.setObjectName("statusMessageLabel")
         self._message_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -85,6 +90,12 @@ class ChromeStatusBar(QWidget):
         bar.setTextVisible(False)
         bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         return bar
+
+    @property
+    def task_button(self):
+        """Expose the background-task entry (tests and controllers)."""
+
+        return self._task_button
 
     @property
     def progress_bar(self) -> QProgressBar:
