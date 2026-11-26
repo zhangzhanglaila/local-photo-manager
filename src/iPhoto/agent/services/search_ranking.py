@@ -278,3 +278,34 @@ def select_results(
 
     order = np.argsort(scores_array[indices])[::-1]
     return [int(index) for index in indices[order].tolist()]
+
+
+#: Families whose text tower understands Chinese directly.
+MULTILINGUAL_FAMILIES = frozenset({"siglip", "chinese_clip"})
+
+
+def query_texts(family: str, query: str, translated: str) -> list[str]:
+    """Return the texts to encode for *query* on *family*.
+
+    Multilingual models read the query as typed, and on SigLIP the raw Chinese
+    often beats the translated English, so both are encoded and the best score
+    per photo is kept. English-only CLIP gets just the translation.
+    """
+
+    if family in MULTILINGUAL_FAMILIES:
+        texts = [query]
+        if translated not in texts:
+            texts.append(translated)
+        return texts
+    return [translated]
+
+
+def translation_penalty_applies(family: str) -> bool:
+    """Whether a partially translated query needs the stricter cutoff.
+
+    A multilingual model reading the raw query is not guessing, so the penalty
+    only applies to English-only families (it was also the reason SigLIP
+    searches returned nothing: the penalty was a CLIP-scale 0.265 floor).
+    """
+
+    return family not in MULTILINGUAL_FAMILIES

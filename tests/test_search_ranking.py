@@ -177,3 +177,21 @@ def test_siglip_scores_survive_its_floor() -> None:
 
     assert set(range(1500, 1503)).issubset(set(kept))
     assert len(kept) < 60, len(kept)
+
+
+def test_multilingual_families_encode_the_raw_query() -> None:
+    from iPhoto.agent.services.search_ranking import query_texts
+
+    assert query_texts("siglip", "腿", "leg") == ["腿", "leg"]
+    # English-only CLIP can only use the translation.
+    assert query_texts("clip", "腿", "leg") == ["leg"]
+    # Identical strings are not encoded twice.
+    assert query_texts("siglip", "cat", "cat") == ["cat"]
+
+
+def test_translation_penalty_only_applies_to_english_only_models() -> None:
+    from iPhoto.agent.services.search_ranking import translation_penalty_applies
+
+    assert translation_penalty_applies("clip") is True
+    assert translation_penalty_applies("siglip") is False
+    assert translation_penalty_applies("chinese_clip") is False

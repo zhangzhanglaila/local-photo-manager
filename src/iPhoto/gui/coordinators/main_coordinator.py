@@ -1563,6 +1563,8 @@ class MainCoordinator(QObject):
                         active_model as _active_search_model,
                     )
                     from iPhoto.agent.services.search_ranking import (
+                        query_texts as _query_texts,
+                        translation_penalty_applies as _penalty_applies,
                         labels_for_query,
                         other_labels,
                         precision_params,
@@ -1598,13 +1600,26 @@ class MainCoordinator(QObject):
                     else:
                         translated_query = translate_query(self._query)
                         partial_translation = translation_is_partial(self._query)
-                        query_embedding = service.encode_text(translated_query)
-                        if query_embedding is None:
-                            self.finished.emit(None, "搜索编码失败")
+                        _family = _search_models_for_family().family
+
+                        # Multilingual families (SigLIP, Chinese-CLIP) understand
+                        # the query as typed; on SigLIP the raw Chinese sometimes
+                        # matches better than the translated English. Encode both
+                        # and keep the best score per photo.
+                        multilingual = _family in {"siglip", "chinese_clip"}
+                        texts = _query_texts(_family, self._query, translated_query)
+                        vectors = [
+                            vec
+                            for text in texts
+                            if (vec := service.encode_text(text)) is not None
+                        ]
+                        if not vectors:
+                            self.finished.emit(None, "search encoding failed")
                             return
 
-                        sim_scores = matrix @ query_embedding
-                        _family = _search_models_for_family().family
+                        sim_scores = matrix @ vectors[0]
+                        for extra in vectors[1:]:
+                            sim_scores = _np.maximum(sim_scores, matrix @ extra)
                         floor, margin, margin_tolerance, zscore = precision_params(
                             self._precision,
                             family=_family,
@@ -1616,16 +1631,20 @@ class MainCoordinator(QObject):
                         except Exception:
                             pass
 
-                        if partial_translation:
-                            # A brand prefix ("茉" in "茉酸奶") or fully unknown
-                            # CJK leaves the English model guessing. Keep only the
-                            # head of the distribution instead of hundreds of
-                            # loose matches.
-                            floor = max(floor, 0.265)
-                            margin = min(margin, 0.035)
+                        if partial_translation and _penalty_applies(_family):
+                            # Untranslated or partly translated Chinese leaves
+                            # the model guessing, so keep only the head of the
+                            # distribution. These margins are relative to the
+                            # family's floor: the old absolute 0.265/0.28 were
+                            # CLIP-scale numbers and rejected every SigLIP hit
+                            # (its matches peak near 0.13), which turned real
+                            # queries into 0 photos.
+                            base_floor = floor
+                            floor = max(floor, base_floor * 1.10)
+                            margin = min(margin, margin * 0.6)
                             if translated_query == self._query:
-                                floor = max(floor, 0.28)
-                                margin = min(margin, 0.02)
+                                floor = max(floor, base_floor * 1.17)
+                                margin = min(margin, margin * 0.33)
 
                         margins = None
                         group = labels_for_query(translated_query)

@@ -227,10 +227,16 @@ class EmbeddingRepository:
 
         return [aid for aid in asset_ids if aid not in existing]
 
-    def count(self) -> int:
-        """Return the number of stored embeddings."""
+    def count(self, model_name: Optional[str] = None) -> int:
+        """Return the number of stored embeddings, optionally for one model."""
         conn = self._get_conn()
-        cursor = conn.execute("SELECT COUNT(*) FROM embeddings")
+        if model_name:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM embeddings WHERE model_name = ?",
+                (model_name,),
+            )
+        else:
+            cursor = conn.execute("SELECT COUNT(*) FROM embeddings")
         return cursor.fetchone()[0]
 
     def close(self) -> None:

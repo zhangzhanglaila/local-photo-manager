@@ -573,6 +573,14 @@ class SettingsDialog(QDialog):
         from ....agent.services.search_status import search_status
 
         status = search_status()
+        if not status.running and status.total == 0:
+            # Nothing has indexed since startup, so ask the database directly:
+            # showing "not indexed yet" while 10k vectors exist is misleading.
+            coverage = self._compute_coverage()
+            if coverage is not None:
+                done, total = coverage
+                if total:
+                    status.set_coverage(done, total)
         if status.running and status.total:
             percent = int(status.done * 100 / status.total)
             state_label.setText(
@@ -589,6 +597,27 @@ class SettingsDialog(QDialog):
             )
         else:
             state_label.setText(tr("search.model.coverage_unknown"))
+
+    def _compute_coverage(self) -> tuple[int, int] | None:
+        """Return ``(indexed, photos)`` for the active model, if a library is open."""
+
+        library = getattr(self, "_library", None)
+        getter = getattr(library, "root", None)
+        root = None
+        if callable(getter):
+            try:
+                root = getter()
+            except Exception:  # pragma: no cover - defensive
+                root = None
+        if root is None:
+            return None
+        try:
+            from ....agent.services.search_coverage import compute_coverage
+            from ....agent.services.search_models import active_model
+
+            return compute_coverage(root, active_model().dir_name)
+        except Exception:  # pragma: no cover - display only
+            return None
 
     def _search_model_value(self) -> QLabel:
         """Show the active search model plus the device that will run it."""
