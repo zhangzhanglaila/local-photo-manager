@@ -505,6 +505,21 @@ _ZH: dict[str, str] = {
     'search.empty.hint': '换个更具体的说法试试，比如「海边的猫」「地铁站」「红色的花」',
     'search.empty.back': '返回所有照片',
     'search.no_results': '没有搜索结果',
+    'settings.section.local_ai': '人脸与文字',
+    'settings.row.face_recognition': '人脸识别（人物聚类）',
+    'settings.row.face_index_state': '人脸索引状态',
+    'settings.row.face_rebuild': '补全人脸索引…',
+    'settings.row.ocr': '文字识别（OCR）',
+    'settings.row.ocr_index_state': '文字索引状态',
+    'settings.row.ocr_rebuild': '补全文字索引…',
+    'settings.ai_state.coverage': '已处理 {done}/{total}',
+    'settings.ai_state.people': '{count} 个人物',
+    'settings.ai_state.no_library': '未打开照片库',
+    'settings.rebuild_confirm.face': '将在后台扫描尚未处理的人脸照片，首次使用会先加载人脸模型（约 300 MB）。继续吗？',
+    'settings.rebuild_confirm.ocr': '将在后台识别尚未处理照片中的文字，识别结果会加入搜索。继续吗？',
+    'status.task.face': '正在识别人脸',
+    'status.task.ocr': '正在识别文字',
+    'settings.ai_state.scanning': '{title}：正在扫描待处理照片…',
 }
 
 _EN: dict[str, str] = {
@@ -994,6 +1009,21 @@ _EN: dict[str, str] = {
     'search.empty.hint': 'Try a more specific phrase, e.g. “cat on a beach”, “subway platform”, “red flowers”',
     'search.empty.back': 'Back to all photos',
     'search.no_results': 'No search results',
+    'settings.section.local_ai': 'Faces and text',
+    'settings.row.face_recognition': 'Face recognition (people)',
+    'settings.row.face_index_state': 'Face index status',
+    'settings.row.face_rebuild': 'Scan pending faces…',
+    'settings.row.ocr': 'Text recognition (OCR)',
+    'settings.row.ocr_index_state': 'Text index status',
+    'settings.row.ocr_rebuild': 'Scan pending text…',
+    'settings.ai_state.coverage': '{done}/{total} processed',
+    'settings.ai_state.people': '{count} people',
+    'settings.ai_state.no_library': 'No library open',
+    'settings.rebuild_confirm.face': 'Photos without face data will be scanned in the background. The first run loads the face models (~300 MB). Continue?',
+    'settings.rebuild_confirm.ocr': 'Text in unprocessed photos will be recognised in the background and added to search. Continue?',
+    'status.task.face': 'Recognising faces',
+    'status.task.ocr': 'Recognising text',
+    'settings.ai_state.scanning': '{title}: scanning pending photos…',
 }
 
 

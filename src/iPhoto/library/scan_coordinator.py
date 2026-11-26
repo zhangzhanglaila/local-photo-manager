@@ -19,6 +19,18 @@ if TYPE_CHECKING:
 LOGGER = get_logger()
 
 
+def _face_enabled() -> bool:
+    from ..agent.services.ai_features import face_enabled
+
+    return face_enabled()
+
+
+def _ocr_enabled() -> bool:
+    from ..agent.services.ai_features import ocr_enabled
+
+    return ocr_enabled()
+
+
 class _PairingWorker(QRunnable):
     """Run live-photo pairing off the main thread after a scan completes."""
 
@@ -134,6 +146,11 @@ class ScanCoordinatorMixin:
             self.faceScanStatusChanged.emit(
                 "Face scan disabled (IPHOTO_SKIP_FACE_SCAN=1)."
             )
+
+        # The settings switch (设置 → 智能) does the same thing without an env var.
+        if not _skip_face and not _face_enabled():
+            _skip_face = True
+            self.faceScanStatusChanged.emit("人脸识别已在设置中关闭。")
 
         if _skip_face:
             self.faceScanStatusChanged.emit(
@@ -583,6 +600,9 @@ class ScanCoordinatorMixin:
             from ..ai.db.ocr_database import get_ocr_repository
             from ..ai.workers.ocr_worker import OCRWorker
 
+            if not _ocr_enabled():
+                LOGGER.debug("OCR disabled in settings, skipping OCR scan")
+                return None
             ocr_repo = get_ocr_repository(library_root)
             ocr_engine = OCREngine()
             return OCRWorker(ocr_engine, ocr_repo, library_root)

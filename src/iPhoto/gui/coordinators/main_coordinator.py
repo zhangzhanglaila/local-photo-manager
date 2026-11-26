@@ -1973,10 +1973,13 @@ class MainCoordinator(QObject):
     def _on_search_model_setting_changed(self, key: str, value: object) -> None:
         """React to a model change made by the wizard or the settings window."""
 
-        from iPhoto.agent.services import search_models
+        from iPhoto.agent.services import ai_features, search_models
 
         if key == search_models.REBUILD_KEY:
             self._rebuild_search_index()
+            return
+        if key in (ai_features.FACE_REBUILD_KEY, ai_features.OCR_REBUILD_KEY):
+            self._rebuild_ai_index("face" if key == ai_features.FACE_REBUILD_KEY else "ocr")
             return
         if key != search_models.SETTINGS_KEY:
             return
@@ -1999,6 +2002,30 @@ class MainCoordinator(QObject):
         # Vectors from the previous model stay on disk (so switching back is
         # instant) but search ignores them; fill in the new model's rows.
         self._start_embedding_generation_silent()
+
+    def _rebuild_ai_index(self, feature: str) -> None:
+        """Re-run the face or text scan for photos that still need it.
+
+        Both workers pull the remaining ``pending`` rows as their queue drains,
+        so a library rescan is enough to backfill them; nothing is thrown away.
+        """
+
+        root = self._session.library_root if self._session is not None else None
+        if root is None:
+            self._status_bar.show_message(tr("settings.ai_state.no_library"), 6000)
+            return
+        title = (
+            tr("status.task.face") if feature == "face" else tr("status.task.ocr")
+        )
+        from iPhoto.gui.services.background_tasks import background_tasks
+
+        background_tasks().start(feature, title)
+        self._status_bar.show_message(tr("settings.ai_state.scanning", title=title), 8000)
+        try:
+            self._gallery_vm.rescan_current()
+        except Exception:  # pragma: no cover - surfaced in the status bar
+            self._logger.warning("could not start the %s rebuild", feature, exc_info=True)
+            background_tasks().finish(feature, failed=True)
 
     def _rebuild_search_index(self) -> None:
         """Re-embed the whole library with the active model."""

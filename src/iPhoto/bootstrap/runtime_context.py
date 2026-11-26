@@ -99,6 +99,11 @@ class RuntimeContext:
         try:
             from ..agent.services import search_models
 
+            # Let the library scan consult the 设置 → 智能 switches (faces / OCR).
+            from ..agent.services import ai_features
+
+            ai_features.set_settings_provider(lambda: self.settings)
+
             configured = search_models.set_active_model(
                 self.settings.get(search_models.SETTINGS_KEY, None)
             )

@@ -40,6 +40,15 @@ SETTINGS_SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "agent": {
+            "type": "object",
+            "properties": {
+                "semantic_search_enabled": {"type": "boolean"},
+                "face_recognition_enabled": {"type": "boolean"},
+                "ocr_enabled": {"type": "boolean"},
+            },
+            "additionalProperties": True,
+        },
         "ui": {
             "type": "object",
             "properties": {
@@ -113,6 +122,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "show_map_extension_startup_prompt": True,
         "wheel_action": "zoom",
         "language": "zh",
+    },
+    "agent": {
+        # Local AI scans. Semantic search is opt-in (it needs a model download);
+        # faces and text recognition run on-device after a scan, so they start on.
+        "semantic_search_enabled": False,
+        "face_recognition_enabled": True,
+        "ocr_enabled": True,
     },
     "last_open_albums": [],
 }

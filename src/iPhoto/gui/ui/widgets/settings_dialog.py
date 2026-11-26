@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ....agent.services import search_models
+from ....agent.services import ai_features, search_models
 from ....i18n import tr
 from ..icon import load_icon
 from .search_model_dialog import (
@@ -409,6 +409,35 @@ class SettingsDialog(QDialog):
                     ],
                 ),
                 (
+                    tr("settings.section.local_ai"),
+                    [
+                        self._value_row(
+                            tr("settings.row.face_recognition"),
+                            self._ai_toggle(ai_features.FACE_KEY, ai_features.face_enabled),
+                        ),
+                        self._value_row(
+                            tr("settings.row.face_index_state"),
+                            self._ai_state_value("face"),
+                        ),
+                        self._action_row(
+                            tr("settings.row.face_rebuild"),
+                            self._ai_rebuild_action("face"),
+                        ),
+                        self._value_row(
+                            tr("settings.row.ocr"),
+                            self._ai_toggle(ai_features.OCR_KEY, ai_features.ocr_enabled),
+                        ),
+                        self._value_row(
+                            tr("settings.row.ocr_index_state"),
+                            self._ai_state_value("ocr"),
+                        ),
+                        self._action_row(
+                            tr("settings.row.ocr_rebuild"),
+                            self._ai_rebuild_action("ocr"),
+                        ),
+                    ],
+                ),
+                (
                     tr("settings.section.tools"),
                     [
                         self._action_row(tr("settings.row.find_duplicates"), header.find_duplicates_action),
@@ -597,6 +626,108 @@ class SettingsDialog(QDialog):
             )
         else:
             state_label.setText(tr("search.model.coverage_unknown"))
+
+    def _ai_toggle(self, key: str, getter) -> QCheckBox:
+        """A checkbox bound to one of the local-AI switches."""
+
+        box = QCheckBox(self)
+        checked = bool(getter()) if self._settings is None else bool(
+            self._settings.get(key, getter())
+        )
+        box.setChecked(checked)
+        box.toggled.connect(lambda value: self._set_ai_switch(key, value))
+        return box
+
+    def _set_ai_switch(self, key: str, value: bool) -> None:
+        if self._settings is None:
+            return
+        self._settings.set(key, bool(value))
+        self._refresh_ai_rows()
+
+    def _ai_state_value(self, feature: str) -> QLabel:
+        label = QLabel("", self)
+        label.setObjectName("settingsPathLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if not hasattr(self, "_ai_state_labels"):
+            self._ai_state_labels: dict[str, QLabel] = {}
+        self._ai_state_labels[feature] = label
+        self._refresh_ai_rows()
+        return label
+
+    def _refresh_ai_rows(self) -> None:
+        for feature, label in getattr(self, "_ai_state_labels", {}).items():
+            label.setText(self._ai_state_text(feature))
+
+    def _ai_state_text(self, feature: str) -> str:
+        root = self._library_root()
+        if root is None:
+            return tr("settings.ai_state.no_library")
+        try:
+            from ....agent.services.ai_coverage import (
+                face_coverage,
+                ocr_coverage,
+                people_count,
+            )
+
+            if feature == "face":
+                done, total = face_coverage(root)
+                if total <= 0:
+                    return tr("settings.ai_state.no_library")
+                text = tr("settings.ai_state.coverage", done=done, total=total)
+                people = people_count(root)
+                if people:
+                    text = f"{text} · {tr('settings.ai_state.people', count=people)}"
+                return text
+            done, total = ocr_coverage(root)
+            if total <= 0:
+                return tr("settings.ai_state.no_library")
+            return tr("settings.ai_state.coverage", done=done, total=total)
+        except Exception:  # pragma: no cover - display only
+            return ""
+
+    def _library_root(self):
+        library = getattr(self, "_library", None)
+        getter = getattr(library, "root", None)
+        if not callable(getter):
+            return None
+        try:
+            return getter()
+        except Exception:  # pragma: no cover - defensive
+            return None
+
+    def _ai_rebuild_action(self, feature: str) -> QAction:
+        """Ask the coordinator to re-run the face or text scan."""
+
+        title = (
+            tr("settings.row.face_rebuild")
+            if feature == "face"
+            else tr("settings.row.ocr_rebuild")
+        )
+        action = QAction(title, self)
+
+        def _run() -> None:
+            from . import dialogs
+
+            if not dialogs.confirm_action(
+                self,
+                tr(f"settings.rebuild_confirm.{feature}"),
+                title=title,
+                yes_label=tr("dialog.ok"),
+            ):
+                return
+            if self._settings is None:  # pragma: no cover - settings always exist
+                return
+            import time
+
+            key = (
+                ai_features.FACE_REBUILD_KEY
+                if feature == "face"
+                else ai_features.OCR_REBUILD_KEY
+            )
+            self._settings.set(key, time.time())
+
+        action.triggered.connect(_run)
+        return action
 
     def _compute_coverage(self) -> tuple[int, int] | None:
         """Return ``(indexed, photos)`` for the active model, if a library is open."""
