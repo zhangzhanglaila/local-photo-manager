@@ -42,7 +42,7 @@ from iPhoto.gui.ui.media import MediaRestoreRequest
 from iPhoto.io.metadata import read_video_meta
 from iPhoto.media_classifier import VIDEO_EXTENSIONS
 from iPhoto.utils.logging import get_logger
-from iPhoto.utils.ffmpeg import probe_video_rotation
+from iPhoto.utils.ffmpeg import probe_media, video_rotation_from_meta
 from iPhoto.core.adjustment_mapping import (
     VIDEO_TRIM_IN_KEY,
     VIDEO_TRIM_OUT_KEY,
@@ -62,6 +62,31 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 _APP_LOGGER = get_logger().getChild("video_trim")
 _DEFAULT_VIDEO_FRAME_STEP_MS = 33
+
+
+def _video_trim_thumbnail_count(view_width: int, rotation: int, raw_w: int, raw_h: int) -> int:
+    """How many thumbnails fill *view_width* for a clip of this geometry.
+
+    Pure function: the caller supplies the geometry recorded when the clip was
+    opened, so nothing here can block on a media probe.
+    """
+
+    if rotation in {90, 270}:
+        display_w, display_h = raw_h, raw_w
+    else:
+        display_w, display_h = raw_w, raw_h
+
+    logical_thumb_h = 42.0
+    logical_thumb_w = 0.0
+    if display_w > 0 and display_h > 0:
+        logical_thumb_w = display_w * (logical_thumb_h / float(display_h))
+
+    if logical_thumb_w > 1.0:
+        count = int(math.ceil(view_width / logical_thumb_w)) + 2
+    else:
+        count = view_width // max(96, 1)
+
+    return min(max(int(count), 6), 60)
 
 
 class EditCoordinator(QObject):
@@ -120,6 +145,11 @@ class EditCoordinator(QObject):
         self._video_trim_diag: dict[int, dict[str, object]] = {}
         self._pending_video_duration_sec: float | None = None
         self._video_frame_step_ms = _DEFAULT_VIDEO_FRAME_STEP_MS
+        # Rotation and coded size of the video currently loaded for trimming.
+        # Recorded once when the clip is opened; the trim thumbnail estimator
+        # must never call ffprobe from a widget signal slot.
+        self._video_rotation_source: Path | None = None
+        self._video_rotation_info: tuple[int, int, int] = (0, 0, 0)
 
         # Helpers / Sub-controllers (Ported from EditController)
         self._zoom_handler = EditZoomHandler(
@@ -436,6 +466,7 @@ class EditCoordinator(QObject):
         self._emit_video_trim_diag("start_video_edit_load", source=source)
         # Probe once and extract both fields to avoid duplicate ffprobe calls.
         video_meta = self._read_video_meta_safe(source)
+        self._record_video_rotation(source)
         self._video_frame_step_ms = self._frame_step_ms_from_meta(video_meta)
         self._video_color_stats = None
         self._pending_video_duration_sec = self._duration_sec_from_meta(video_meta)
@@ -986,25 +1017,14 @@ class EditCoordinator(QObject):
         if width < 100:
             width = 1000
 
-        rotation, raw_w, raw_h = probe_video_rotation(source)
-        if rotation in {90, 270}:
-            display_w, display_h = raw_h, raw_w
+        if self._video_rotation_source == source:
+            rotation, raw_w, raw_h = self._video_rotation_info
         else:
-            display_w, display_h = raw_w, raw_h
-
-        logical_thumb_h = 42.0
-        logical_thumb_w = 0.0
-        if display_w > 0 and display_h > 0:
-            logical_thumb_w = display_w * (logical_thumb_h / float(display_h))
-
-        if logical_thumb_w > 1.0:
-            count = int(math.ceil(width / logical_thumb_w)) + 2
-        else:
-            count = width // max(96, 1)
-
-        count = max(int(count), 6)
-        count = min(count, 60)
-        return width, count
+            # The trim UI can observe a duration signal before the clip finished
+            # loading; fall back to a square-ish estimate instead of probing
+            # ffprobe from inside a widget signal slot.
+            rotation, raw_w, raw_h = (0, 0, 0)
+        return width, _video_trim_thumbnail_count(width, rotation, raw_w, raw_h)
 
     def _handle_video_duration_changed(self, duration_ms: int) -> None:
         if self._session is None or not self._is_video_source():
@@ -1116,6 +1136,23 @@ class EditCoordinator(QObject):
                 QTextEdit,
             ),
         )
+
+    def _record_video_rotation(self, source: Path) -> None:
+        """Remember the clip's rotation/size while its probe payload is warm.
+
+        ``read_video_meta`` already ran ffprobe for *source* a moment earlier, so
+        this is a cache hit; keeping the result here is what lets the trim
+        thumbnail estimator stay ffprobe-free inside a widget signal slot.
+        """
+
+        try:
+            payload = probe_media(source)
+        except Exception:
+            _LOGGER.debug("Failed to read display matrix for %s", source, exc_info=True)
+            payload = {}
+        rotation, width, height, _ = video_rotation_from_meta(payload)
+        self._video_rotation_source = source
+        self._video_rotation_info = (rotation, width, height)
 
     def _probe_video_frame_step_ms(self, source: Path) -> int:
         info = self._read_video_meta_safe(source)

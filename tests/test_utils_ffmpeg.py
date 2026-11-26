@@ -742,3 +742,28 @@ def test_extract_with_opencv_applies_display_rotation(monkeypatch: pytest.Monkey
     assert data == b"encoded"
     assert rotate_calls == [FakeCV2.ROTATE_90_CLOCKWISE]
     assert encoded_shapes == [(160, 90)]
+
+
+def test_video_rotation_from_meta_uses_an_existing_payload_without_probing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Callers that already hold a probe payload must not trigger another one."""
+
+    def _fail_probe(_source: Path) -> dict:
+        raise AssertionError("video_rotation_from_meta must not run ffprobe")
+
+    monkeypatch.setattr(ffmpeg, "probe_media", _fail_probe)
+    meta = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": 1920,
+                "height": 1080,
+                "side_data_list": [
+                    {"side_data_type": "Display Matrix", "rotation": -90}
+                ],
+            }
+        ]
+    }
+
+    assert ffmpeg.video_rotation_from_meta(meta) == (90, 1920, 1080, False)

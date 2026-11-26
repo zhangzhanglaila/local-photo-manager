@@ -482,26 +482,22 @@ def probe_video_rotation_info(source: Path) -> tuple[int, int, int, bool]:
     return _probe_video_rotation_info_cached(*cache_key)
 
 
-def _probe_video_rotation_info_uncached(source: Path) -> tuple[int, int, int, bool]:
-    """Return rotation/raw dimensions and Linux 180° pre-rotation hint.
+def video_rotation_from_meta(meta: Dict[str, Any]) -> tuple[int, int, int, bool]:
+    """Return ``(cw_degrees, raw_width, raw_height, linux_180_hint)`` from a probe payload.
 
-    Returns a tuple ``(cw_degrees, raw_width, raw_height, linux_180_hint)`` where
     *cw_degrees* is the clockwise rotation (0, 90, 180, 270) that must be
     applied to the raw decoded frame for correct on-screen orientation.
     *raw_width* and *raw_height* are the coded pixel dimensions **before**
-    rotation. *linux_180_hint* flags sources where Linux multimedia backends
-    are known to often deliver already-upright frames while preserving 180°
+    rotation. *linux_180_hint* flags sources where Linux multimedia backends are
+    known to often deliver already-upright frames while preserving 180°
     display-matrix metadata (notably some Apple QuickTime/iPhone files).
 
     The value is derived from the ``Display Matrix`` side-data entry of the
-    first video stream.  On failure the tuple ``(0, 0, 0, False)`` is returned so
-    callers can safely destructure without error handling.
+    first video stream, so callers that already hold a probe payload (see
+    :func:`probe_media`) can read it without running ffprobe again. On failure
+    the tuple ``(0, 0, 0, False)`` is returned so callers can safely
+    destructure without error handling.
     """
-
-    try:
-        meta = probe_media(source)
-    except ExternalToolError:
-        return (0, 0, 0, False)
 
     streams = meta.get("streams", [])
     if not isinstance(streams, list):
@@ -577,10 +573,22 @@ def _probe_video_rotation_info_uncached(source: Path) -> tuple[int, int, int, bo
 
             linux_180_hint = (major_brand == "qt") or ("core media video" in handler_name)
 
-        _LINUX_180_HINT_CACHE[str(source.resolve())] = linux_180_hint
         return (cw, raw_w, raw_h, linux_180_hint)
 
     return (0, 0, 0, False)
+
+
+def _probe_video_rotation_info_uncached(source: Path) -> tuple[int, int, int, bool]:
+    """Probe *source* and remember its Linux 180° pre-rotation hint."""
+
+    try:
+        meta = probe_media(source)
+    except ExternalToolError:
+        return (0, 0, 0, False)
+
+    info = video_rotation_from_meta(meta)
+    _LINUX_180_HINT_CACHE[str(source.resolve())] = info[3]
+    return info
 
 
 def probe_video_rotation(source: Path) -> tuple[int, int, int]:

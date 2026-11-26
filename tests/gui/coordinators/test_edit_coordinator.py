@@ -225,6 +225,8 @@ def test_queue_video_trim_thumbnails_accepts_missing_duration() -> None:
     coordinator._video_trim_diag = {}
     coordinator._video_trim_worker = None
     coordinator._emit_video_trim_diag = Mock()
+    coordinator._video_rotation_source = Path("/fake/video.mp4")
+    coordinator._video_rotation_info = (0, 0, 0)
 
     class _SignalStub:
         def connect(self, *args, **kwargs) -> None:
@@ -245,9 +247,6 @@ def test_queue_video_trim_thumbnails_accepts_missing_duration() -> None:
     ) as worker_cls, patch(
         "iPhoto.gui.coordinators.edit_coordinator.QThreadPool.globalInstance",
         return_value=pool,
-    ), patch(
-        "iPhoto.gui.coordinators.edit_coordinator.probe_video_rotation",
-        return_value=(0, 0, 0),
     ):
         EditCoordinator._queue_video_trim_thumbnails(coordinator, None)
 
@@ -335,15 +334,14 @@ def test_estimate_video_trim_thumbnail_request_scales_for_portrait_video() -> No
     trim_bar = Mock()
     trim_bar.thumbnail_view_width.return_value = 1000
     coordinator._ui = SimpleNamespace(video_trim_bar=trim_bar)
+    source = Path("/fake/video.mp4")
+    coordinator._video_rotation_source = source
+    coordinator._video_rotation_info = (0, 540, 960)
 
-    with patch(
-        "iPhoto.gui.coordinators.edit_coordinator.probe_video_rotation",
-        return_value=(0, 540, 960),
-    ):
-        width, count = EditCoordinator._estimate_video_trim_thumbnail_request(
-            coordinator,
-            Path("/fake/video.mp4"),
-        )
+    width, count = EditCoordinator._estimate_video_trim_thumbnail_request(
+        coordinator,
+        source,
+    )
 
     assert width == 1000
     assert count == 45
@@ -382,8 +380,12 @@ def test_start_video_edit_load_sets_trim_before_queueing_thumbnails() -> None:
         set_values=Mock(),
     )
     coordinator._emit_video_trim_diag = Mock()
-    coordinator._probe_video_frame_step_ms = Mock(return_value=17)
-    coordinator._probe_video_duration_sec = Mock(return_value=5.0)
+    coordinator._read_video_meta_safe = Mock(
+        return_value={"dur": 5.0, "frame_rate": 30.0}
+    )
+    coordinator._record_video_rotation = Mock(
+        side_effect=lambda source: order.append("rotation")
+    )
     coordinator._resolve_session_adjustments = Mock(return_value={})
     coordinator._queue_video_trim_thumbnails = Mock(
         side_effect=lambda duration: order.append(("queue", duration))
@@ -405,6 +407,9 @@ def test_start_video_edit_load_sets_trim_before_queueing_thumbnails() -> None:
     trim_bar.set_playhead_ratio.assert_called_once_with(0.2)
     coordinator._queue_video_trim_thumbnails.assert_called_once_with(5.0)
     assert order.index("trim") < order.index(("queue", 5.0))
+    # Rotation is recorded from the probe payload before thumbnails are queued,
+    # so the estimator never needs ffprobe from a widget signal slot.
+    assert order.index("rotation") < order.index(("queue", 5.0))
 
 
 def test_thumbnail_image_handler_applies_trim_before_adding(qapp) -> None:
