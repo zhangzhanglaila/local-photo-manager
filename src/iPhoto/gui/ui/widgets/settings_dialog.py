@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QStyle,
@@ -37,7 +38,6 @@ from ..icon import load_icon
 from .search_model_dialog import (
     SearchModelDialog,
     current_device_label,
-    model_summary,
     model_title,
 )
 
@@ -436,26 +436,44 @@ class SettingsDialog(QDialog):
         control (or a chevron for actions) on the right.
         """
 
-        page = QWidget(self)
-        page.setObjectName("settingsPage")
-        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        layout = QVBoxLayout(page)
+        # The cards keep their natural height and the page scrolls: squeezing a
+        # five-row card into a fixed page compressed every row and made the
+        # section look cramped.
+        content = QWidget(self)
+        content.setObjectName("settingsPageContent")
+        content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(32, 24, 32, 24)
         layout.setSpacing(6)
 
-        heading = QLabel(title, page)
+        heading = QLabel(title, content)
         heading.setObjectName("settingsPageTitle")
         layout.addWidget(heading)
         layout.addSpacing(12)
 
         for section_title, rows in sections:
             if section_title:
-                label = QLabel(section_title, page)
+                label = QLabel(section_title, content)
                 label.setObjectName("settingsSectionLabel")
                 layout.addWidget(label)
-            layout.addWidget(self._card(rows, page))
+            layout.addWidget(self._card(rows, content))
             layout.addSpacing(14)
         layout.addStretch(1)
+
+        scroll = QScrollArea(self)
+        scroll.setObjectName("settingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+
+        page = QWidget(self)
+        page.setObjectName("settingsPage")
+        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        page_layout.addWidget(scroll)
         return page
 
     def _card(self, rows: list[QWidget], parent: QWidget) -> QWidget:
@@ -514,10 +532,9 @@ class SettingsDialog(QDialog):
         """Show the active search model plus the device that will run it."""
 
         spec = search_models.active_model()
-        label = QLabel(
-            f"{model_title(spec)} · {model_summary(spec)} · {current_device_label()}",
-            self,
-        )
+        # Keep it short: quality/language/size live in the chooser, the row only
+        # needs "which model" and "where it runs".
+        label = QLabel(f"{model_title(spec)} · {current_device_label()}", self)
         label.setObjectName("settingsPathLabel")
         label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         label.setWordWrap(False)
@@ -644,6 +661,12 @@ class SettingsDialog(QDialog):
             f"QLabel#settingsPathLabel {{ font-size: 13px; color: {muted}; }}"
             f"QLabel#settingsSectionLabel {{ font-size: 12px; font-weight: 600;"
             f"  color: {muted}; padding-left: 4px; padding-bottom: 2px; }}"
+            "QScrollArea#settingsScroll, QWidget#settingsPageContent { background: transparent; }"
+            f"QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}"
+            f"QScrollBar::handle:vertical {{ background: {divider}; border-radius: 5px;"
+            "  min-height: 32px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
             f"QWidget#settingsCard {{ background-color: {card_bg}; border-radius: 12px;"
             f"  border: 1px solid {divider}; }}"
             f"QWidget#settingsDivider {{ background-color: {divider}; }}"

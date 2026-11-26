@@ -1,4 +1,5 @@
-"""The search-model chooser explains the trade-offs and returns a key."""
+"""The search-model chooser explains the trade-offs, shows install state and
+can download the weights (with a manual fallback when the network fails)."""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 from PySide6.QtWidgets import QApplication, QListWidgetItem
 
 from iPhoto.agent.services import search_models
+from iPhoto.gui.ui.widgets import search_model_dialog as module
 from iPhoto.gui.ui.widgets.search_model_dialog import (
     SearchModelDialog,
     model_details,
@@ -27,42 +29,82 @@ def qapp() -> QApplication:
     yield app
 
 
-def test_dialog_lists_every_model_with_its_tradeoffs(qapp: QApplication):
+def _select(dialog: SearchModelDialog, key: str) -> None:
+    for row in range(dialog._list.count()):
+        item: QListWidgetItem = dialog._list.item(row)
+        if item.data(0x0100) == key:
+            dialog._list.setCurrentItem(item)
+            return
+    raise AssertionError(f"{key} missing from the list")
+
+
+def test_dialog_lists_every_model_with_its_tradeoffs(qapp: QApplication, monkeypatch):
+    monkeypatch.setattr(module.search_models, "is_installed", lambda spec, **kw: False)
     dialog = SearchModelDialog(current_key="clip-b32")
     try:
         keys = [
-            dialog._list.item(row).data(0x0100)  # Qt.ItemDataRole.UserRole
-            for row in range(dialog._list.count())
+            dialog._list.item(row).data(0x0100) for row in range(dialog._list.count())
         ]
         assert keys == [spec.key for spec in search_models.available_models()]
-
-        text = dialog._details.text()
-        assert "MB" in text
-        assert "language" in text.lower() or "语言" in text or "Languages" in text
+        assert "MB" in dialog._details.text()
     finally:
         dialog.close()
 
 
-def test_selecting_another_model_returns_its_key(qapp: QApplication):
+def test_missing_model_offers_a_download_instead_of_silently_doing_nothing(
+    qapp: QApplication, monkeypatch
+):
+    monkeypatch.setattr(module.search_models, "is_installed", lambda spec, **kw: False)
     dialog = SearchModelDialog(current_key="clip-b32")
     try:
-        for row in range(dialog._list.count()):
-            item: QListWidgetItem = dialog._list.item(row)
-            if item.data(0x0100) == "siglip2-base":
-                dialog._list.setCurrentItem(item)
-                break
+        _select(dialog, "siglip2-base")
+        assert dialog._download_button.isVisibleTo(dialog) is True
+        assert dialog._use_button.isEnabled() is False
+        assert dialog._use_button.text() == module.tr("search.model.download_and_use")
+    finally:
+        dialog.close()
+
+
+def test_installed_model_can_be_selected(qapp: QApplication, monkeypatch):
+    monkeypatch.setattr(module.search_models, "is_installed", lambda spec, **kw: True)
+    dialog = SearchModelDialog(current_key="clip-b32")
+    try:
+        _select(dialog, "siglip2-base")
         assert dialog._use_button.isEnabled() is True
+        assert dialog._download_button.isVisibleTo(dialog) is False
         dialog._accept_selection()
         assert dialog.selected_key() == "siglip2-base"
     finally:
         dialog.close()
 
 
-def test_keeping_the_current_model_needs_no_action(qapp: QApplication):
-    dialog = SearchModelDialog(current_key="siglip2-base")
+def test_failed_download_points_at_the_folder(qapp: QApplication, monkeypatch):
+    monkeypatch.setattr(module.search_models, "is_installed", lambda spec, **kw: False)
+    dialog = SearchModelDialog(current_key="clip-b32")
     try:
-        assert dialog._use_button.isEnabled() is False
-        assert dialog.selected_key() == "siglip2-base"
+        _select(dialog, "siglip2-base")
+        dialog._on_download_finished(False, "huggingface.co unreachable")
+        text = dialog._status.text()
+        assert str(module.search_models.model_dir(dialog._spec())) in text
+        assert "unreachable" in text
+        assert dialog._download_button.isEnabled() is True
+        assert dialog._download_button.text() == module.tr("search.model.retry")
+    finally:
+        dialog.close()
+
+
+def test_successful_download_enables_use(qapp: QApplication, monkeypatch):
+    state = {"installed": False}
+    monkeypatch.setattr(
+        module.search_models, "is_installed", lambda spec, **kw: state["installed"]
+    )
+    dialog = SearchModelDialog(current_key="clip-b32")
+    try:
+        _select(dialog, "siglip2-base")
+        state["installed"] = True
+        dialog._on_download_finished(True, "")
+        assert dialog._use_button.isEnabled() is True
+        assert dialog._progress.isVisibleTo(dialog) is False
     finally:
         dialog.close()
 

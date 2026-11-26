@@ -475,6 +475,12 @@ _ZH: dict[str, str] = {
     'search.model.rebuild_confirm': '将用当前模型重新计算所有照片的向量，已有向量会被覆盖。GPU 下通常几分钟，继续吗？',
     'search.model.rebuild_started': '正在重建搜索索引…',
     'settings.row.search_model': '搜索模型',
+    'search.model.download': '下载模型',
+    'search.model.download_and_use': '下载并使用',
+    'search.model.retry': '重试下载',
+    'search.model.downloading': '正在下载 {name}（约 {mb} MB）…',
+    'search.model.open_folder': '打开文件夹',
+    'search.model.download_failed_hint': '下载失败（{error}）。\n可以把模型文件手动放到：{path}\n然后回到这里点「重试下载」旁边的「下载并使用」。',
 }
 
 _EN: dict[str, str] = {
@@ -934,6 +940,12 @@ _EN: dict[str, str] = {
     'search.model.rebuild_confirm': 'Every photo will be re-embedded with the current model and existing vectors replaced. This usually takes a few minutes on GPU. Continue?',
     'search.model.rebuild_started': 'Rebuilding the search index…',
     'settings.row.search_model': 'Search model',
+    'search.model.download': 'Download',
+    'search.model.download_and_use': 'Download and use',
+    'search.model.retry': 'Retry download',
+    'search.model.downloading': 'Downloading {name} (~{mb} MB)…',
+    'search.model.open_folder': 'Open folder',
+    'search.model.download_failed_hint': 'Download failed ({error}).\nYou can place the model files in: {path}\nThen choose “Download and use” again.',
 }
 
 
