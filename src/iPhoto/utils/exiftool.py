@@ -148,6 +148,179 @@ def _resolve_exiftool_executable() -> str:
     )
 
 
+def argv_from_wrapper(executable: str) -> list[str] | None:
+    """Return the argv a ``.bat``/``.cmd`` wrapper would run, if it is simple.
+
+    On Windows ``shutil.which("exiftool")`` finds the project's ``exiftool.bat``,
+    so every session used to start ``cmd.exe`` *and* ``perl.exe``. Only ``cmd.exe``
+    is the direct child, so killing it left ``perl.exe`` behind — that is how the
+    machine accumulated dozens of idle ExifTool processes. Running the interpreter
+    directly removes the wrapper from the chain entirely.
+
+    Returns ``None`` when the batch does something more elaborate than
+    ``perl.exe -I<lib> <exiftool-script> %*``.
+    """
+
+    path = Path(executable)
+    if path.suffix.lower() not in {".bat", ".cmd"}:
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+    import re
+
+    for line in text.splitlines():
+        lowered = line.lower()
+        if "perl" not in lowered or "exiftool" not in lowered:
+            continue
+        if lowered.lstrip().startswith(("@rem", "rem ", "echo", "@echo", "::")):
+            continue
+        tokens = [
+            token.replace('"', "")
+            for token in re.findall(r'"[^"]*"|\S+', line)
+        ]
+        tokens = [token for token in tokens if token]
+        tokens = [token for token in tokens if not token.startswith("%")]
+        if len(tokens) < 2 or "perl" not in tokens[0].lower():
+            continue
+        if not Path(tokens[0]).is_file():
+            continue
+        if not Path(tokens[-1]).is_file():
+            continue
+        return tokens
+    return None
+
+
+def launch_argv(executable: str) -> list[str]:
+    """Return the argv that starts ExifTool without a shell wrapper."""
+
+    if os.name == "nt":
+        direct = argv_from_wrapper(executable)
+        if direct is not None:
+            return direct
+    return [executable]
+
+
+def _kill_tree(process: "subprocess.Popen[str]") -> None:
+    """Kill *process* and any children it spawned."""
+
+    pid = getattr(process, "pid", None)
+    if pid is None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        if process.poll() is None:
+            process.kill()
+    except OSError:
+        pass
+
+
+_job_handle: int | None = None
+_job_attempted = False
+
+
+def _kill_on_close_job() -> int | None:
+    """Create (once) a Windows job object that kills children when we exit."""
+
+    global _job_handle, _job_attempted
+    if os.name != "nt":
+        return None
+    if _job_handle is not None or _job_attempted:
+        return _job_handle
+    _job_attempted = True
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        class _IoCounters(ctypes.Structure):
+            _fields_ = [
+                ("ReadOperationCount", ctypes.c_uint64),
+                ("WriteOperationCount", ctypes.c_uint64),
+                ("OtherOperationCount", ctypes.c_uint64),
+                ("ReadTransferCount", ctypes.c_uint64),
+                ("WriteTransferCount", ctypes.c_uint64),
+                ("OtherTransferCount", ctypes.c_uint64),
+            ]
+
+        class _BasicLimits(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.POINTER(ctypes.c_ulong)),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class _ExtendedLimits(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _BasicLimits),
+                ("IoInfo", _IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        job = kernel32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        info = _ExtendedLimits()
+        # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        info.BasicLimitInformation.LimitFlags = 0x2000
+        if not kernel32.SetInformationJobObject(
+            job, 9, ctypes.byref(info), ctypes.sizeof(info)
+        ):
+            kernel32.CloseHandle(job)
+            return None
+        _job_handle = int(job)
+    except Exception:  # pragma: no cover - job objects are best effort
+        LOGGER.debug("could not create the ExifTool job object", exc_info=True)
+        _job_handle = None
+    return _job_handle
+
+
+def _adopt(process: "subprocess.Popen[str]") -> None:
+    """Put *process* in the kill-on-close job so it cannot outlive the app."""
+
+    job = _kill_on_close_job()
+    if job is None:
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = int(getattr(process, "_handle", 0) or 0)
+        if not handle:
+            return
+        if not kernel32.AssignProcessToJobObject(
+            wintypes.HANDLE(job), wintypes.HANDLE(handle)
+        ):
+            LOGGER.debug(
+                "could not put ExifTool in the job object (error %s)",
+                ctypes.get_last_error(),
+            )
+    except Exception:  # pragma: no cover - best effort
+        LOGGER.debug("could not adopt the ExifTool process", exc_info=True)
+
+
 def _startup_options() -> tuple[subprocess.STARTUPINFO | None, int]:
     startupinfo = None
     creationflags = 0
@@ -227,8 +400,9 @@ class _ExifToolSession:
 
     def __init__(self, executable: str) -> None:
         startupinfo, creationflags = _startup_options()
+        self._argv = launch_argv(executable) + ["-stay_open", "True", "-@", "-"]
         self._process = subprocess.Popen(
-            [executable, "-stay_open", "True", "-@", "-"],
+            self._argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -239,6 +413,7 @@ class _ExifToolSession:
             startupinfo=startupinfo,
             creationflags=creationflags,
         )
+        _adopt(self._process)
         self._lines: "queue.Queue[str | None]" = queue.Queue()
         self._stderr: collections.deque[str] = collections.deque(maxlen=_STDERR_LINES)
         self._closed = False
@@ -335,7 +510,9 @@ class _ExifToolSession:
         try:
             self._process.wait(timeout=5)
         except subprocess.TimeoutExpired:  # pragma: no cover - stuck process
-            self._process.kill()
+            # ``kill`` only reaches the direct child; the Perl interpreter sits one
+            # level below the old ``cmd.exe`` wrapper, so kill the whole tree.
+            _kill_tree(self._process)
         for thread in (self._stdout_thread, self._stderr_thread):
             thread.join(timeout=2)
 
@@ -442,7 +619,7 @@ def _read_metadata_one_shot(paths: list[Path], executable: str) -> list[dict[str
 
     try:
         cmd = [
-            executable,
+            *launch_argv(executable),
             *_SESSION_ARGS,
             "-@",
             tmp_arg_path,
@@ -495,7 +672,7 @@ def write_gps_metadata(
     executable = _resolve_exiftool_executable()
     safe_path = _safe_exiftool_path(path)
     cmd = [
-        executable,
+        *launch_argv(executable),
         "-overwrite_original",
         "-charset",
         "filename=utf8",
@@ -519,4 +696,10 @@ def write_gps_metadata(
 atexit.register(_close_session)
 
 
-__all__ = ["get_metadata_batch", "release_metadata_handles", "write_gps_metadata"]
+__all__ = [
+    "argv_from_wrapper",
+    "get_metadata_batch",
+    "launch_argv",
+    "release_metadata_handles",
+    "write_gps_metadata",
+]
