@@ -59,6 +59,7 @@ class LibrarySession:
     map_interactions: MapInteractionServicePort | None = None
     edit: EditServicePort | None = None
     locations: LocationAssetServicePort | None = None
+    search_index_status: object | None = None
     bind_asset_runtime: bool = True
     # Agent services (optional, initialized lazily)
     _search_service: object = field(default=None, repr=False)
@@ -193,6 +194,7 @@ class LibrarySession:
             self._embedding_service = CLIPEmbeddingService(
                 model_dir=model_dir,
                 family=spec.family,
+                status=self.search_index_status,
             )
             return self._embedding_service
         except Exception as e:

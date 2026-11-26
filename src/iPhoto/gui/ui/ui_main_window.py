@@ -334,13 +334,13 @@ class Ui_MainWindow(object):
             except RuntimeError:
                 # The window deleted itself when it was closed.
                 self._settings_dialog = None
+        context = getattr(self._main_window, "_context", None)
         self._settings_dialog = SettingsDialog(
             self.main_header,
             self._library,
             self._main_window,
-            settings=getattr(
-                getattr(self._main_window, "_context", None), "settings", None
-            ),
+            settings=getattr(context, "settings", None),
+            search_status=getattr(context, "search_index_status", None),
         )
         self._settings_dialog.show()
         self._settings_dialog.raise_()

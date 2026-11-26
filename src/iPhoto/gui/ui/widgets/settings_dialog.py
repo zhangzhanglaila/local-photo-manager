@@ -220,12 +220,18 @@ class SettingsDialog(QDialog):
     """The application's settings, grouped into pages."""
 
     def __init__(
-        self, header, library=None, parent: QWidget | None = None, settings=None
+        self,
+        header,
+        library=None,
+        parent: QWidget | None = None,
+        settings=None,
+        search_status=None,
     ) -> None:
         super().__init__(parent)
         self._header = header
         self._library = library
         self._settings = settings
+        self._search_status = search_status
         self._pages: list[QWidget] = []
 
         self.setWindowTitle(tr("dialog.settings_title"))
@@ -599,17 +605,18 @@ class SettingsDialog(QDialog):
         label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._index_state_label = label
         self._refresh_search_rows()
-        from ....agent.services.search_status import search_status
-
-        search_status().changed.connect(self._refresh_search_rows)
-        self.finished.connect(self._disconnect_status)
+        status = self._search_status
+        if status is not None:
+            status.changed.connect(self._refresh_search_rows)
+            self.finished.connect(self._disconnect_status)
         return label
 
     def _disconnect_status(self, _result: int = 0) -> None:
-        from ....agent.services.search_status import search_status
-
+        status = self._search_status
+        if status is None:
+            return
         try:
-            search_status().changed.disconnect(self._refresh_search_rows)
+            status.changed.disconnect(self._refresh_search_rows)
         except (RuntimeError, TypeError):
             pass
 
@@ -625,35 +632,36 @@ class SettingsDialog(QDialog):
             else tr("search.model.not_installed_suffix")
         )
         if label is not None:
-            label.setText(f"{model_title(spec)}{state} · {current_device_label()}")
+            label.setText(
+                f"{model_title(spec)}{state} · {current_device_label(self._search_status)}"
+            )
 
         if state_label is None:
             return
-        from ....agent.services.search_status import search_status
-
-        status = search_status()
-        if not status.running and status.total == 0:
+        status = self._search_status
+        running = bool(status.running) if status is not None else False
+        done = status.done if status is not None else 0
+        total = status.total if status is not None else 0
+        if not running and total == 0:
             # Nothing has indexed since startup, so ask the database directly:
             # showing "not indexed yet" while 10k vectors exist is misleading.
             coverage = self._compute_coverage()
             if coverage is not None:
                 done, total = coverage
-                if total:
+                if status is not None and total:
                     status.set_coverage(done, total)
-        if status.running and status.total:
-            percent = int(status.done * 100 / status.total)
+        if running and total:
+            percent = int(done * 100 / total)
             state_label.setText(
                 tr(
                     "search.model.indexing_now",
                     percent=percent,
-                    done=status.done,
-                    total=status.total,
+                    done=done,
+                    total=total,
                 )
             )
-        elif status.total:
-            state_label.setText(
-                tr("search.model.coverage", done=status.done, total=status.total)
-            )
+        elif total:
+            state_label.setText(tr("search.model.coverage", done=done, total=total))
         else:
             state_label.setText(tr("search.model.coverage_unknown"))
 
@@ -909,7 +917,10 @@ class SettingsDialog(QDialog):
             if search_models.is_installed(spec)
             else tr("search.model.not_installed_suffix")
         )
-        label = QLabel(f"{model_title(spec)}{state} · {current_device_label()}", self)
+        label = QLabel(
+            f"{model_title(spec)}{state} · {current_device_label(self._search_status)}",
+            self,
+        )
         label.setObjectName("settingsPathLabel")
         label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         label.setWordWrap(False)

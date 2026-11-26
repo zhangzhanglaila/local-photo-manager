@@ -4,6 +4,10 @@ The settings page needs to answer three questions at a glance: which model is
 active, where it runs (GPU or CPU), and whether vectors are still being built.
 Keeping that in one small observable object avoids reaching into the coordinator
 from the settings window.
+
+The object is *not* a process-wide singleton any more: ``bootstrap`` creates one
+instance and injects it into the encoder, the coordinator and the settings
+window, so two windows (or a headless test) never share hidden state.
 """
 
 from __future__ import annotations
@@ -83,16 +87,4 @@ class SearchIndexStatus(QObject):
         return f"{self._done}/{self._total}"
 
 
-_status: SearchIndexStatus | None = None
-
-
-def search_status() -> SearchIndexStatus:
-    """Return the process-wide status object (created on first use)."""
-
-    global _status
-    if _status is None:
-        _status = SearchIndexStatus()
-    return _status
-
-
-__all__ = ["SearchIndexStatus", "search_status"]
+__all__ = ["SearchIndexStatus"]

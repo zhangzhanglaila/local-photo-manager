@@ -96,17 +96,20 @@ def model_details(spec: search_models.SearchModelSpec) -> str:
     )
 
 
-def current_device_label() -> str:
+def current_device_label(status: object | None = None) -> str:
     """Return ``CUDA`` or ``CPU`` for the running encoder.
 
     Only the device is shown: "float16" is the arithmetic precision, not
     something a user should have to decode in a settings row. The precision is
     still reported in the log and in the model dialog details.
+
+    *status* is the injected search-index status when the caller has one; it
+    reports the device the encoder actually chose.
     """
 
     from ....agent.services.ai_devices import search_device
 
-    return search_device()
+    return search_device(status)
 
 
 class _DownloadSignals(QObject):

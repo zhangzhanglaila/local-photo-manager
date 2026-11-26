@@ -64,6 +64,12 @@ def _create_asset_runtime() -> "LibraryAssetRuntime":
     return LibraryAssetRuntime()
 
 
+def _create_search_index_status() -> "SearchIndexStatus":
+    from ..agent.services.search_status import SearchIndexStatus
+
+    return SearchIndexStatus()
+
+
 def _create_event_bus() -> EventBus:
     return EventBus(logging.getLogger("EventBus"))
 
@@ -77,6 +83,9 @@ class RuntimeContext:
     facade: "AppFacade" = field(default_factory=_create_facade)
     event_bus: EventBus = field(default_factory=_create_event_bus)
     asset_runtime: "LibraryAssetRuntime" = field(default_factory=_create_asset_runtime)
+    search_index_status: "SearchIndexStatus" = field(
+        default_factory=_create_search_index_status
+    )
     recent_albums: list[Path] = field(default_factory=list)
     defer_startup_tasks: bool = False
     show_welcome_if_needed: bool = True  # 是否在需要时显示欢迎向导
@@ -414,6 +423,7 @@ class RuntimeContext:
             normalized,
             asset_runtime=self.asset_runtime,
             bind_asset_runtime=False,
+            search_index_status=self.search_index_status,
         )
         # ``LibraryRuntimeController.bind_library_session`` is the single binding
         # entry point and always exists. The old fallback rebound twelve services

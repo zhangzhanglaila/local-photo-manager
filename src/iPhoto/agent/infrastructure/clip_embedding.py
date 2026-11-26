@@ -153,7 +153,12 @@ class CLIPEmbeddingService:
     images and text into embeddings.
     """
 
-    def __init__(self, model_dir: Path, family: str = "clip") -> None:
+    def __init__(
+        self,
+        model_dir: Path,
+        family: str = "clip",
+        status: object | None = None,
+    ) -> None:
         """Initialize the embedding service.
 
         Parameters
@@ -164,9 +169,14 @@ class CLIPEmbeddingService:
             ``"clip"``, ``"siglip"`` or ``"chinese_clip"``. The three families differ
             in class names, tokenizer padding and output dimension, not in how the
             app uses the vectors.
+        status : SearchIndexStatus | None
+            Injected live status object. When given, the device/precision chosen on
+            load is reported to the settings page; the encoder no longer reaches for
+            a process-wide singleton.
         """
         self._model_dir = Path(model_dir)
         self._family = family if family in {"clip", "siglip", "chinese_clip"} else "clip"
+        self._status = status
         self._model = None
         self._processor = None
         self._tokenizer = None
@@ -212,14 +222,11 @@ class CLIPEmbeddingService:
                     self._model.to(device)
                     self._device = device
                     self._dtype = dtype
-                    try:
-                        from ..services.search_status import search_status
-
-                        search_status().set_device(
-                            device, getattr(dtype, "__name__", str(dtype)).replace("torch.", "")
+                    if self._status is not None:
+                        self._status.set_device(
+                            device,
+                            getattr(dtype, "__name__", str(dtype)).replace("torch.", ""),
                         )
-                    except Exception:  # pragma: no cover - status is display only
-                        pass
                     self._processor = processor_cls.from_pretrained(str(self._model_dir))
                     if tokenizer_cls is not None:
                         self._tokenizer = tokenizer_cls.from_pretrained(str(self._model_dir))

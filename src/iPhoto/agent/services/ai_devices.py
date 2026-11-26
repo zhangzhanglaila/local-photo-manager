@@ -16,17 +16,17 @@ import sys
 _LOGGER = logging.getLogger(__name__)
 
 
-def search_device() -> str:
-    """Return ``"CUDA"`` or ``"CPU"`` for the semantic-search encoder."""
+def search_device(status: "object | None" = None) -> str:
+    """Return ``"CUDA"`` or ``"CPU"`` for the semantic-search encoder.
 
-    try:
-        from .search_status import search_status
+    *status* is the injected :class:`SearchIndexStatus` when the caller has one;
+    it knows the device the encoder actually selected. Without it, torch's own
+    capability check is the best available answer.
+    """
 
-        status = search_status()
-        if status.device:
-            return status.device.upper()
-    except Exception:  # pragma: no cover - status is display only
-        pass
+    device = getattr(status, "device", "") if status is not None else ""
+    if device:
+        return str(device).upper()
 
     torch = sys.modules.get("torch")
     if torch is not None:

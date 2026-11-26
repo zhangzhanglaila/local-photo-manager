@@ -171,12 +171,12 @@ def test_rebuild_action_requests_a_full_reindex(chrome, monkeypatch, qapp):
 def test_settings_rows_report_model_device_and_index_progress(chrome, qapp):
     """The window must say which model runs where and whether vectors are building."""
 
-    from iPhoto.agent.services.search_status import search_status
+    from iPhoto.agent.services.search_status import SearchIndexStatus
 
     window, header = chrome
-    dialog = SettingsDialog(header, None, window)
+    status = SearchIndexStatus()
+    dialog = SettingsDialog(header, None, window, search_status=status)
     try:
-        status = search_status()
         status.set_device("cuda", "float16")
         status.set_indexing(True, 4200, 14806)
         qapp.processEvents()
