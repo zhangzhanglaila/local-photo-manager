@@ -84,3 +84,30 @@ def test_all_registries_agree_on_the_root(trees):
     assert search_models.models_root() == canonical
     assert face_models.models_root() == canonical
     assert ocr_models.models_root() == canonical
+
+def test_legacy_packs_are_moved_into_the_canonical_tree(trees):
+    canonical, legacy = trees
+    (legacy / "buffalo_s").mkdir()
+    (legacy / "buffalo_s" / "det_500m.onnx").write_bytes(b"x")
+
+    moved, skipped = model_paths.migrate_legacy_tree()
+
+    assert moved == [(legacy / "buffalo_s", canonical / "buffalo_s")]
+    assert skipped == []
+    assert (canonical / "buffalo_s" / "det_500m.onnx").is_file()
+    assert not (legacy / "buffalo_s").exists()
+
+
+def test_migration_never_overwrites_a_canonical_pack(trees):
+    canonical, legacy = trees
+    (canonical / "buffalo_l").mkdir()
+    (canonical / "buffalo_l" / "keep.onnx").write_bytes(b"new")
+    (legacy / "buffalo_l").mkdir()
+    (legacy / "buffalo_l" / "keep.onnx").write_bytes(b"old")
+
+    moved, skipped = model_paths.migrate_legacy_tree()
+
+    assert moved == []
+    assert skipped == [legacy / "buffalo_l"]
+    assert (canonical / "buffalo_l" / "keep.onnx").read_bytes() == b"new"
+

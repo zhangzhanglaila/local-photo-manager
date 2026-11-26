@@ -120,6 +120,15 @@ class RuntimeContext:
         self.language = _create_language_store(self.settings)
         from .ai_feature_switches import SettingsAiFeatureSwitches
 
+        # Model packs used to live under src/extension/models; move them once into
+        # the documented folder so every registry resolves to the same place.
+        try:
+            from ..agent.services import model_paths
+
+            model_paths.migrate_legacy_tree()
+        except Exception:  # pragma: no cover - never block startup on housekeeping
+            _logger.debug("AI model tree migration failed", exc_info=True)
+
         self.ai_feature_switches = SettingsAiFeatureSwitches(self.settings)
         self.library = _create_library_manager(self.ai_feature_switches)
         # The chosen search model decides the encoder, the index's model_name and

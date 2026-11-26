@@ -98,10 +98,52 @@ def existing_dirs(pattern: str) -> tuple[Path, ...]:
     return tuple(found)
 
 
+def migrate_legacy_tree() -> tuple[list[tuple[Path, Path]], list[Path]]:
+    """Move packs from legacy roots into the canonical folder.
+
+    Returns `(moved, skipped)`: *moved* pairs are `(source, destination)`;
+    *skipped* entries already exist under the canonical root and are left in place
+    (never overwritten — the canonical copy may be newer). Only same-volume moves
+    are attempted, so startup can never stall on copying hundreds of megabytes.
+    """
+
+    target_root = install_root()
+    moved: list[tuple[Path, Path]] = []
+    skipped: list[Path] = []
+    for legacy in legacy_roots():
+        if not legacy.is_dir() or legacy.resolve() == target_root.resolve():
+            continue
+        try:
+            if legacy.drive.lower() != target_root.drive.lower():
+                _LOGGER.info(
+                    "Keeping AI models in %s: a different drive than %s",
+                    legacy,
+                    target_root,
+                )
+                continue
+        except OSError:  # pragma: no cover - drive introspection on odd mounts
+            continue
+        target_root.mkdir(parents=True, exist_ok=True)
+        for entry in sorted(legacy.iterdir()):
+            destination = target_root / entry.name
+            if destination.exists():
+                skipped.append(entry)
+                continue
+            try:
+                entry.rename(destination)
+            except OSError as exc:
+                _LOGGER.warning("Could not move AI model %s: %s", entry, exc)
+                continue
+            moved.append((entry, destination))
+            _LOGGER.info("Moved AI model %s -> %s", entry, destination)
+    return moved, skipped
+
+
 __all__ = [
     "candidate_roots",
     "existing_dirs",
     "install_root",
     "legacy_roots",
+    "migrate_legacy_tree",
     "resolve_dir",
 ]
