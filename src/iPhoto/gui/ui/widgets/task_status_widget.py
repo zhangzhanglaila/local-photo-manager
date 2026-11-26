@@ -98,6 +98,7 @@ class TaskStatusButton(QWidget):
         self._popup.hide()
 
         self._applying_style = False
+        self._last_task_id: str | None = None
         self._apply_style()
         self._registry = background_tasks()
         self._registry.changed.connect(self._refresh)
@@ -140,8 +141,13 @@ class TaskStatusButton(QWidget):
         if percent is not None:
             text = f"{task.title} {percent}%"
         self._label.setText(text)
+        first = task.id != self._last_task_id
+        self._last_task_id = task.id
         if percent is None:
             self._bar.set_indeterminate()
+        elif first or self._bar.value() == 0:
+            # Show the real value as soon as the task appears, then ease.
+            self._bar.set_value_immediate(percent)
         else:
             self._bar.set_target(percent)
         if self._popup.isVisible():
@@ -161,7 +167,15 @@ class TaskStatusButton(QWidget):
             return
         self._popup.refresh()
         anchor = self.mapToGlobal(QPoint(0, 0))
-        self._popup.move(anchor.x(), anchor.y() - self._popup.sizeHint().height() - 8)
+        height = self._popup.sizeHint().height()
+        x = anchor.x()
+        y = anchor.y() - height - 8
+        screen = self.screen()
+        if screen is not None:
+            bounds = screen.availableGeometry()
+            x = max(bounds.left() + 8, min(x, bounds.right() - self._popup.width() - 8))
+            y = max(bounds.top() + 8, min(y, bounds.bottom() - height - 8))
+        self._popup.move(x, y)
         self._popup.show()
         self._popup.raise_()
 
@@ -228,14 +242,24 @@ class TaskPopup(QFrame):
     def __init__(self, anchor: QWidget) -> None:
         super().__init__(anchor, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setObjectName("taskPopup")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # A translucent window plus an inner shell is what makes the rounded
+        # corners real; painting a radius on the top-level frame left the square
+        # window background visible behind the corners.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedWidth(360)
 
-        self._layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._shell = QFrame(self)
+        self._shell.setObjectName("taskPopupShell")
+        self._shell.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        outer.addWidget(self._shell)
+
+        self._layout = QVBoxLayout(self._shell)
         self._layout.setContentsMargins(14, 12, 14, 12)
         self._layout.setSpacing(10)
 
-        self._empty = QLabel(tr("status.tasks_empty"), self)
+        self._empty = QLabel(tr("status.tasks_empty"), self._shell)
         self._empty.setObjectName("taskPopupEmpty")
         self._layout.addWidget(self._empty)
 
@@ -289,7 +313,8 @@ class TaskPopup(QFrame):
     def _apply_style(self) -> None:
         tokens = dialog_tokens(self.palette())
         self.setStyleSheet(
-            f"QFrame#taskPopup {{ background-color: {tokens['shell']};"
+            "QFrame#taskPopup { background: transparent; }"
+            f"QFrame#taskPopupShell {{ background-color: {tokens['shell']};"
             f"  border: 1px solid {tokens['divider']}; border-radius: 12px; }}"
             f"QLabel#taskPopupTitle {{ font-size: 12px; font-weight: 600; color: {tokens['text']}; }}"
             f"QLabel#taskPopupState {{ font-size: 11px; color: {tokens['muted']}; }}"

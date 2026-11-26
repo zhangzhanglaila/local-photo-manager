@@ -14,6 +14,18 @@ from PySide6.QtWidgets import (
 )
 
 
+class _HiddenProgressBar(QProgressBar):
+    """Progress bar that never becomes visible.
+
+    ``StatusBarController`` still drives a bar for scan/load/import progress. The
+    status bar now shows that progress through the background-task entry, so the
+    controller's bar must stay invisible no matter what it asks for.
+    """
+
+    def setVisible(self, visible: bool) -> None:  # noqa: N802 - Qt-style API
+        super().setVisible(False)
+
+
 class ChromeStatusBar(QWidget):
     """Lightweight status bar with an opaque background and progress indicator.
 
@@ -46,11 +58,6 @@ class ChromeStatusBar(QWidget):
         layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(12)
 
-        from .task_status_widget import TaskStatusButton
-
-        self._task_button = TaskStatusButton(self)
-        layout.addWidget(self._task_button, 0, Qt.AlignmentFlag.AlignVCenter)
-
         self._message_label = QLabel(self)
         self._message_label.setObjectName("statusMessageLabel")
         self._message_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -60,8 +67,18 @@ class ChromeStatusBar(QWidget):
         )
         layout.addWidget(self._message_label, 1)
 
+        # Background-task entry sits at the right end, next to the window grip,
+        # the way an IDE keeps its progress widget on the right.
+        from .task_status_widget import TaskStatusButton
+
+        self._task_button = TaskStatusButton(self)
+        layout.addWidget(
+            self._task_button, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+
+        # The old right-hand bar duplicated the task entry's progress; it is kept
+        # as a hidden compatibility surface for controllers that still drive it.
         self._progress_bar = self._create_progress_bar()
-        layout.addWidget(self._progress_bar, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Reserve horizontal space so the floating resize indicator and size grip can occupy
         # the bottom-right corner without overlapping the progress bar. A fixed-width spacer
@@ -81,13 +98,10 @@ class ChromeStatusBar(QWidget):
         self._clear_timer.timeout.connect(self.clearMessage)
 
     def _create_progress_bar(self) -> QProgressBar:
-        """Instantiate the determinate/indeterminate progress indicator."""
+        """Hidden compatibility surface; progress is drawn by the task entry."""
 
-        bar = QProgressBar(self)
+        bar = _HiddenProgressBar(self)
         bar.setObjectName("statusProgress")
-        bar.setVisible(False)
-        bar.setMinimumWidth(160)
-        bar.setTextVisible(False)
         bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         return bar
 

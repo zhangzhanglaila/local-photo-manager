@@ -2079,12 +2079,10 @@ class MainCoordinator(QObject):
                     search_status().set_indexing(True, 0, int(len(pending)))
 
                     def on_progress(current, total, msg):
-                        pct = int(current / total * 100) if total > 0 else 0
                         background_tasks().update(
                             "index", done=int(current), total=int(total), detail=str(msg)
                         )
                         search_status().set_indexing(True, current, total)
-                        self._status_callback(f"AI 索引生成中: {current}/{total} ({pct}%)")
 
                     def on_finished(processed, failed):
                         background_tasks().finish("index", failed=bool(failed))
