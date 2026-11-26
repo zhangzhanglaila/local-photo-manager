@@ -301,6 +301,14 @@ class SearchModelDialog(QDialog):
         spec = self._spec()
         if self._thread is not None:
             return
+        # Files copied in by hand are picked up on retry instead of downloading
+        # them a second time.
+        if search_models.is_installed(spec):
+            self._status.setText(tr("search.model.installed"))
+            self._set_status_color(_OK_COLOR)
+            self._status.show()
+            self._refresh_state()
+            return
         self._download_button.setEnabled(False)
         self._use_button.setEnabled(False)
         self._progress.show()
