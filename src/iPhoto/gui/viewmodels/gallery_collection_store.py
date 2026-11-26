@@ -19,7 +19,6 @@ from iPhoto.gui.viewmodels.gallery_load_worker import (
     GalleryLoadSignals,
     GalleryLoadWorker,
 )
-from iPhoto.gui.viewmodels.gallery_timeline_index import GalleryTimelineIndex
 
 from iPhoto.gui.viewmodels.asset_dto_converter import (
     geotagged_asset_to_dto as _geotagged_asset_to_dto_fn,
@@ -153,10 +152,11 @@ class GalleryCollectionStore:
         self._load_signals: Optional[GalleryLoadSignals] = None
         self._logger = logging.getLogger(__name__)
 
-        # Timeline (year rail) buckets, their cache and row offsets.
-        self._timeline = GalleryTimelineIndex()
-        self._bucket_getter: object | None = None
-        self._refresh_bucket_getter()
+        # Timeline (year rail): buckets are cached per query + total count.
+        self._timeline_buckets: list[tuple[int, int, int]] = []
+        self._timeline_cache_key: Optional[tuple[int, int]] = None
+        self._bucket_offsets: list[int] = []
+        self._bucket_offsets_key: tuple[int, int] | None = None
 
     def cancel_pending_load(self) -> None:
         """Cancel any in-flight async load."""
@@ -187,7 +187,6 @@ class GalleryCollectionStore:
         if self._asset_query_service is asset_query_service:
             return
         self._asset_query_service = asset_query_service
-        self._refresh_bucket_getter()
         self.reset_visible_window()
         self.data_changed.emit()
         # ⭐ 服务刚绑定上，如果有 pending load 就触发它
@@ -438,52 +437,147 @@ class GalleryCollectionStore:
         return self._total_count
 
     def timeline_buckets(self) -> list[tuple[int, int, int]]:
-        """Return ``(year, month, count)`` for the current query, newest first."""
+        """Return ``(year, month, count)`` for the current query, newest first.
 
-        return self._timeline.buckets(
-            query=self._current_query,
-            generation=self._generation,
-            total_count=self._total_count,
-            direct_mode=self._direct_mode,
-            row_cache=self._row_cache,
-            count_buckets=self._bucket_getter,
+        Cached per query so opening the timeline rail costs one small aggregate
+        query per view change, not one per repaint.
+        """
+
+        query = self._current_query
+        if query is None and not self._direct_mode:
+            return []
+        if self._total_count <= 0:
+            return []
+
+        # Direct mode already holds every DTO in memory, so grouping it costs a
+        # single pass and no SQL at all. Query mode asks the index for one
+        # aggregate instead of loading rows.
+        # Key on the query's *content*, not its id(): a new AssetQuery can reuse
+        # the id of a garbage-collected one, and with an unchanged total the rail
+        # then kept the previous view's years (an album showed the library's
+        # 1970/2021… ladder instead of its own 2024).
+        cache_key: tuple = (
+            ("direct", self._generation, self._total_count)
+            if query is None
+            else (repr(query), self._total_count)
         )
+        if self._timeline_cache_key == cache_key:
+            return list(self._timeline_buckets)
+
+        if query is None:
+            buckets = self._buckets_from_row_cache()
+        else:
+            getter = getattr(self._asset_query_service, "count_query_buckets", None)
+            buckets = []
+            if callable(getter):
+                try:
+                    buckets = [
+                        (int(year), int(month), int(count))
+                        for year, month, count in getter(query)
+                    ]
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "Timeline buckets unavailable", exc_info=True
+                    )
+                    buckets = []
+
+        self._timeline_cache_key = cache_key
+        self._timeline_buckets = buckets
+        return list(buckets)
+
+    def _buckets_from_row_cache(self) -> list[tuple[int, int, int]]:
+        """Group the in-memory DTOs by ``(year, month)``, newest first."""
+
+        counts: dict[tuple[int, int], int] = {}
+        for dto in self._row_cache.values():
+            created_at = getattr(dto, "created_at", None)
+            if created_at is None:
+                continue
+            try:
+                key = (int(created_at.year), int(created_at.month))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            counts[key] = counts.get(key, 0) + 1
+        return [
+            (year, month, count)
+            for (year, month), count in sorted(counts.items(), reverse=True)
+        ]
 
     def month_for_row(self, row: int) -> tuple[int, int] | None:
-        """Return ``(year, month)`` containing *row*, using only cached buckets."""
+        """Return ``(year, month)`` containing *row*, using only cached buckets.
 
-        return self._timeline.month_for_row(
-            row,
-            buckets=self.timeline_buckets(),
-            total_count=self._total_count,
-        )
+        Dragging the timeline must not query the database, so the date pill asks
+        this instead of loading the row. Precision is the month — enough to show a
+        live preview while the pointer moves.
+        """
+
+        buckets = self.timeline_buckets()
+        if not buckets or row < 0:
+            return None
+
+        # Cumulative offsets are rebuilt only when the bucket list changes.
+        if self._bucket_offsets_key != (len(buckets), self._total_count):
+            offsets: list[int] = []
+            consumed = 0
+            for _year, _month, count in buckets:
+                offsets.append(consumed)
+                consumed += max(0, count)
+            self._bucket_offsets = offsets
+            self._bucket_offsets_key = (len(buckets), self._total_count)
+
+        offsets = self._bucket_offsets
+        lo, hi = 0, len(offsets) - 1
+        found = 0
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if offsets[mid] <= row:
+                found = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        year, month, _count = buckets[found]
+        return int(year), int(month)
 
     def year_spans(self) -> list[tuple[int, int, int]]:
-        """Return ``(year, first_row, count)`` in display order (newest first)."""
+        """Return ``(year, first_row, count)`` in display order (newest first).
 
-        return self._timeline.year_spans(
-            buckets=self.timeline_buckets(),
-            total_count=self._total_count,
-        )
+        The rail sizes each year by ``count`` so a year holding thousands of
+        photos occupies far more of the track than a year holding three. Rows are
+        sorted by date descending, so cumulative bucket counts give the exact row
+        each year starts at — no scanning of asset rows required.
+        """
+
+        buckets = self.timeline_buckets()
+        if not buckets:
+            return []
+
+        # Aggregate per year first: the bucket query is month-ordered, but any
+        # non-contiguous same-year bucket (mixed sort order, a scan inserting an
+        # old row) used to create a second span for the same year, which the rail
+        # then drew as a repeated label ("2025" twice).
+        per_year: dict[int, int] = {}
+        for year, _month, count in buckets:
+            try:
+                key = int(year)
+            except (TypeError, ValueError):
+                continue
+            per_year[key] = per_year.get(key, 0) + max(0, int(count))
+        if not per_year:
+            return []
+
+        result: list[tuple[int, int, int]] = []
+        row = 0
+        for year in sorted(per_year, reverse=True):
+            count = per_year[year]
+            first_row = min(row, max(0, self._total_count - 1))
+            result.append((year, first_row, count))
+            row += count
+        return result
 
     def year_start_rows(self) -> list[tuple[int, int]]:
         """Return ``(year, first_row)`` pairs in display order (newest first)."""
 
-        return self._timeline.year_start_rows(
-            buckets=self.timeline_buckets(),
-            total_count=self._total_count,
-        )
-
-    def _refresh_bucket_getter(self) -> None:
-        """Cache the query surface's bucket aggregate for the timeline rail.
-
-        Resolved through ``getattr`` because the surface is a protocol and older
-        fakes omit the method. Refreshed only when the service is bound, so the
-        repaint path costs one attribute load instead of a probe per call.
-        """
-
-        getter = getattr(self._asset_query_service, "count_query_buckets", None)
-        self._bucket_getter = getter if callable(getter) else None
+        return [(year, first_row) for year, first_row, _count in self.year_spans()]
 
     @property
     def generation(self) -> int:
