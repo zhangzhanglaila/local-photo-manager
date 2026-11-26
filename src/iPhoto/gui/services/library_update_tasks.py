@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...bootstrap.library_scan_service import LibraryScanService
+from ...infrastructure.services.library_scan_service import LibraryScanService
 from ..background_task_manager import BackgroundTaskManager
 from ...library.workers.rescan_worker import RescanSignals, RescanWorker
 from ...library.workers.scanner_worker import ScannerSignals, ScannerWorker

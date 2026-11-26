@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from iPhoto.bootstrap.library_asset_query_service import LibraryAssetQueryService
+from iPhoto.infrastructure.services.library_asset_query_service import LibraryAssetQueryService
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.domain.models.core import MediaType
 from iPhoto.domain.models.query import AssetQuery

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from iPhoto.bootstrap.library_asset_operation_service import (
+from iPhoto.infrastructure.services.library_asset_operation_service import (
     LibraryAssetOperationService,
 )
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME

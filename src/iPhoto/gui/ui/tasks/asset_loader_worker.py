@@ -9,7 +9,7 @@ from typing import Dict, Iterable, List, Optional, Set
 
 from PySide6.QtCore import QObject, QRunnable, Signal, QThread
 
-from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
+from ....infrastructure.services.library_asset_query_service import LibraryAssetQueryService
 from ....config import RECENTLY_DELETED_DIR_NAME
 from ....core.pairing import pair_live
 from ....utils.pathutils import ensure_work_dir

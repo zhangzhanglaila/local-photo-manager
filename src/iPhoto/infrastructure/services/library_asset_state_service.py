@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..application.ports import AssetFavoriteQueryPort, LibraryStateRepositoryPort
+from ...application.ports import AssetFavoriteQueryPort, LibraryStateRepositoryPort
 
 
 class LibraryAssetStateService:

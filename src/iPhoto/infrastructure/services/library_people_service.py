@@ -6,13 +6,13 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
-from ..application.ports import PeopleAssetRepositoryPort
-from ..cache.index_store import get_global_repository
-from ..people.index_coordinator import (
+from ...application.ports import PeopleAssetRepositoryPort
+from ...cache.index_store import get_global_repository
+from ...people.index_coordinator import (
     PeopleIndexCoordinator,
     get_people_index_coordinator,
 )
-from ..people.service import PeopleService
+from ...people.service import PeopleService
 
 
 class IndexStorePeopleAssetRepository:

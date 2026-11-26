@@ -10,18 +10,18 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from ..application.ports import AssetRepositoryPort
-from ..cache.index_store import get_global_repository
-from ..cache.lock import FileLock
-from ..config import ALBUM_MANIFEST_NAMES, RECENTLY_DELETED_DIR_NAME
-from ..errors import IPhotoError
-from ..index_sync_service import prune_index_scope
-from ..io.scanner_adapter import process_media_paths
-from ..media_classifier import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
-from ..schemas import validate_album
-from ..utils.jsonio import read_json, write_json
-from ..utils.logging import get_logger
-from ..utils.pathutils import (
+from ...application.ports import AssetRepositoryPort
+from ...cache.index_store import get_global_repository
+from ...cache.lock import FileLock
+from ...config import ALBUM_MANIFEST_NAMES, RECENTLY_DELETED_DIR_NAME
+from ...errors import IPhotoError
+from ...index_sync_service import prune_index_scope
+from ...io.scanner_adapter import process_media_paths
+from ...media_classifier import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+from ...schemas import validate_album
+from ...utils.jsonio import read_json, write_json
+from ...utils.logging import get_logger
+from ...utils.pathutils import (
     album_manifest_path,
     ensure_work_dir,
     find_album_manifest,
@@ -29,7 +29,7 @@ from ..utils.pathutils import (
     resolve_work_dir,
 )
 from .library_scan_service import LibraryScanService
-from ..utils.pathutils import paths_equal
+from ...utils.pathutils import paths_equal
 
 LOGGER = get_logger()
 

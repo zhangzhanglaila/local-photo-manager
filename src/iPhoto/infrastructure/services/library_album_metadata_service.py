@@ -7,19 +7,19 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
-from ..application.library_context import LibraryContextFactory
-from ..application.ports import AlbumRepositoryPort, LibraryStateRepositoryPort
-from ..infrastructure.repositories.album_manifest_repository import (
+from ...application.library_context import LibraryContextFactory
+from ...application.ports import AlbumRepositoryPort, LibraryStateRepositoryPort
+from ...infrastructure.repositories.album_manifest_repository import (
     AlbumManifestRepository,
 )
-from ..infrastructure.repositories.library_context import (
+from ...infrastructure.repositories.library_context import (
     IndexStoreLibraryContextFactory,
 )
-from ..infrastructure.repositories.library_state_repository import (
+from ...infrastructure.repositories.library_state_repository import (
     IndexStoreLibraryStateRepository,
 )
-from ..utils.pathutils import is_descendant_path
-from ..utils.pathutils import paths_equal
+from ...utils.pathutils import is_descendant_path
+from ...utils.pathutils import paths_equal
 
 
 @dataclass(frozen=True)

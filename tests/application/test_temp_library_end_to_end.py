@@ -27,14 +27,14 @@ pytest.importorskip(
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication
 
-import iPhoto.bootstrap.library_scan_service as scan_service_module
-from iPhoto.bootstrap.library_asset_lifecycle_service import (
+import iPhoto.infrastructure.services.library_scan_service as scan_service_module
+from iPhoto.infrastructure.services.library_asset_lifecycle_service import (
     LibraryAssetLifecycleService,
 )
-from iPhoto.bootstrap.library_asset_operation_service import (
+from iPhoto.infrastructure.services.library_asset_operation_service import (
     LibraryAssetOperationService,
 )
-from iPhoto.bootstrap.library_scan_service import LibraryScanService
+from iPhoto.infrastructure.services.library_scan_service import LibraryScanService
 from iPhoto.bootstrap.library_session import LibrarySession
 from iPhoto.cache.index_store import get_global_repository, reset_global_repository
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME

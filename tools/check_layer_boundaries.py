@@ -59,7 +59,7 @@ GUI_FILE_OPERATION_SERVICE_FORBIDDEN_FILES = {
 }
 
 GUI_FILE_OPERATION_SERVICE_FORBIDDEN_IMPORTS = {
-    "iPhoto.bootstrap.library_asset_lifecycle_service",
+    "iPhoto.infrastructure.services.library_asset_lifecycle_service",
     "iPhoto.media_classifier",
 }
 
@@ -95,7 +95,7 @@ GUI_BOOTSTRAP_PEOPLE_FORBIDDEN_PREFIXES = (
 )
 
 GUI_BOOTSTRAP_PEOPLE_FORBIDDEN = {
-    "iPhoto.bootstrap.library_people_service",
+    "iPhoto.infrastructure.services.library_people_service",
 }
 
 GUI_SIDECAR_FORBIDDEN_PREFIXES = (

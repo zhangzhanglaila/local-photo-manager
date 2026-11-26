@@ -91,9 +91,17 @@ def host(tmp_path, monkeypatch, qapp) -> _Host:
         downloadProgress = Signal(int, int)
         finished = Signal(object, bool)
 
-        def __init__(self, library_root, parent=None, *, people_service=None):
+        def __init__(
+            self,
+            library_root,
+            parent=None,
+            *,
+            people_service=None,
+            model_pack=None,
+        ):
             super().__init__()
             recorded["people_service"] = people_service
+            recorded["model_pack"] = model_pack
 
         def cancel(self) -> None:
             pass

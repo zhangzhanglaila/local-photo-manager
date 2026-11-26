@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any
 from ...utils.pathutils import paths_equal as _paths_equal
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ...bootstrap.library_album_metadata_service import LibraryAlbumMetadataService
-    from ...bootstrap.library_asset_lifecycle_service import LibraryAssetLifecycleService
-    from ...bootstrap.library_asset_operation_service import LibraryAssetOperationService
-    from ...bootstrap.library_asset_query_service import LibraryAssetQueryService
-    from ...bootstrap.library_scan_service import LibraryScanService
+    from ...infrastructure.services.library_album_metadata_service import LibraryAlbumMetadataService
+    from ...infrastructure.services.library_asset_lifecycle_service import LibraryAssetLifecycleService
+    from ...infrastructure.services.library_asset_operation_service import LibraryAssetOperationService
+    from ...infrastructure.services.library_asset_query_service import LibraryAssetQueryService
+    from ...infrastructure.services.library_scan_service import LibraryScanService
     from ...library.runtime_controller import LibraryRuntimeController
 
 

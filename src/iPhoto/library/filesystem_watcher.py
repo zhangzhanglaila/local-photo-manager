@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..bootstrap.library_scan_service import LibraryScanService
+from ..infrastructure.services.library_scan_service import LibraryScanService
 from ..config import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
 
 if TYPE_CHECKING:

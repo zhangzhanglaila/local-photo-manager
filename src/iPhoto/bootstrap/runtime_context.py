@@ -41,10 +41,12 @@ def _create_library_manager(
     model_selection: "ModelSelection",
 ) -> "LibraryRuntimeController":
     from ..library.runtime_controller import LibraryRuntimeController
+    from .library_session import create_headless_library_session
 
     return LibraryRuntimeController(
         feature_switches=feature_switches,
         model_selection=model_selection,
+        session_factory=create_headless_library_session,
     )
 
 

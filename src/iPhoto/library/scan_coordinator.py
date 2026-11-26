@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Dict, Iterable, List, Optional
 
 from PySide6.QtCore import QMutexLocker, QRunnable, QThread
 
-from ..bootstrap.library_scan_service import LibraryScanService
+from ..infrastructure.services.library_scan_service import LibraryScanService
 from ..utils.logging import get_logger
 from .workers.face_scan_worker import FaceScanWorker
 from .workers.scanner_worker import ScannerSignals, ScannerWorker

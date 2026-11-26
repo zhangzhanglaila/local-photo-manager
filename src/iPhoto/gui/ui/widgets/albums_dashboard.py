@@ -58,7 +58,7 @@ from .flow_layout import FlowLayout
 from ....utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
-    from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
+    from ....infrastructure.services.library_asset_query_service import LibraryAssetQueryService
     from ....library.runtime_controller import LibraryRuntimeController
     from ....library.tree import AlbumNode
 

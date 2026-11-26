@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from iPhoto.bootstrap.library_people_service import create_people_service
+from iPhoto.infrastructure.services.library_people_service import create_people_service
 from iPhoto.bootstrap.library_session import LibrarySession
 from iPhoto.people.index_coordinator import PeopleIndexCoordinator
 from iPhoto.people.pipeline import DetectedAssetFaces

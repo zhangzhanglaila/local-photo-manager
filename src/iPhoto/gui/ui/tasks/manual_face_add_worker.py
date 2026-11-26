@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from iPhoto.bootstrap.library_people_service import create_people_service
+from iPhoto.infrastructure.services.library_people_service import create_people_service
 from iPhoto.people.manual_faces import ManualFaceValidationError
 from iPhoto.people.service import ManualFaceAddResult, PeopleService
 

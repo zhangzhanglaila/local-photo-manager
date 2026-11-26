@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..application.dtos import GeotaggedAsset
-from ..application.services.location_asset_service import geotagged_asset_from_row
+from ...application.dtos import GeotaggedAsset
+from ...application.services.location_asset_service import geotagged_asset_from_row
 from .library_asset_query_service import LibraryAssetQueryService
 
 

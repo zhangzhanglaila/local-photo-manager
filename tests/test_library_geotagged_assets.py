@@ -18,6 +18,7 @@ pytest.importorskip(
 
 from PySide6.QtWidgets import QApplication
 
+from iPhoto.bootstrap.library_session import create_headless_library_session
 from iPhoto.library.runtime_controller import LibraryRuntimeController
 
 
@@ -89,7 +90,7 @@ def test_geotagged_assets_use_classifier(tmp_path: Path, qapp: QApplication) -> 
     repo = get_global_repository(root)
     repo.write_rows([row])
 
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     qapp.processEvents()
 
@@ -131,7 +132,7 @@ def test_geotagged_assets_reuse_cached_rows_until_library_changes(
             return [row]
 
     repo = _Repo()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     manager.bind_asset_query_service(_QueryService(repo))
 
@@ -149,7 +150,7 @@ def test_geotagged_assets_delegate_to_bound_location_service(
     del qapp
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     asset = object()
     service = _LocationService([asset])
@@ -186,7 +187,7 @@ def test_scan_chunk_invalidates_geotagged_cache(tmp_path: Path) -> None:
             return [row]
 
     repo = _Repo()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     manager.bind_asset_query_service(_QueryService(repo))
 
@@ -223,7 +224,7 @@ def test_scan_finished_invalidates_geotagged_cache(tmp_path: Path) -> None:
             return [row]
 
     repo = _Repo()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     manager.bind_asset_query_service(_QueryService(repo))
 

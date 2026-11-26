@@ -8,7 +8,7 @@ from typing import Callable, Iterable, Optional, Sequence, TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ...bootstrap.library_asset_operation_service import (
+from ...infrastructure.services.library_asset_operation_service import (
     AssetMovePlan,
     LibraryAssetOperationService,
     MetadataLookup,

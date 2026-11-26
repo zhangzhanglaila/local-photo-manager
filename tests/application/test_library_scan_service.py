@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-import iPhoto.bootstrap.library_scan_service as scan_service_module
-from iPhoto.bootstrap.library_scan_service import LibraryScanService
+import iPhoto.infrastructure.services.library_scan_service as scan_service_module
+from iPhoto.infrastructure.services.library_scan_service import LibraryScanService
 from iPhoto.cache.index_store import get_global_repository, reset_global_repository
 
 

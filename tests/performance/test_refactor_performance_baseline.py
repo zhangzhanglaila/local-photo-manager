@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from iPhoto.bootstrap.library_scan_service import LibraryScanService
+from iPhoto.infrastructure.services.library_scan_service import LibraryScanService
 from iPhoto.cache.index_store import get_global_repository, reset_global_repository
 from iPhoto.infrastructure.services.cache_stats import CacheStatsCollector
 from iPhoto.infrastructure.services.disk_thumbnail_cache import DiskThumbnailCache

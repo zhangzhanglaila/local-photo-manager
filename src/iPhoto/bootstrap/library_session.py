@@ -32,15 +32,15 @@ from ..infrastructure.services.location_metadata_service import (
 from ..infrastructure.services.map_runtime_service import SessionMapRuntimeService
 from ..application.services.assign_location_service import AssignLocationService
 from ..people.service import PeopleService
-from .library_asset_state_service import LibraryAssetStateService
-from .library_album_metadata_service import LibraryAlbumMetadataService
-from .library_asset_lifecycle_service import LibraryAssetLifecycleService
-from .library_asset_operation_service import LibraryAssetOperationService
-from .library_asset_query_service import LibraryAssetQueryService
+from ..infrastructure.services.library_asset_state_service import LibraryAssetStateService
+from ..infrastructure.services.library_album_metadata_service import LibraryAlbumMetadataService
+from ..infrastructure.services.library_asset_lifecycle_service import LibraryAssetLifecycleService
+from ..infrastructure.services.library_asset_operation_service import LibraryAssetOperationService
+from ..infrastructure.services.library_asset_query_service import LibraryAssetQueryService
 from .library_edit_service import LibraryEditService
-from .library_location_service import LibraryLocationService
-from .library_people_service import create_people_service
-from .library_scan_service import LibraryScanService
+from ..infrastructure.services.library_location_service import LibraryLocationService
+from ..infrastructure.services.library_people_service import create_people_service
+from ..infrastructure.services.library_scan_service import LibraryScanService
 
 logger = logging.getLogger(__name__)
 

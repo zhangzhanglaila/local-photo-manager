@@ -8,7 +8,7 @@ from typing import Iterable, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from ....bootstrap.library_asset_lifecycle_service import LibraryAssetLifecycleService
+from ....infrastructure.services.library_asset_lifecycle_service import LibraryAssetLifecycleService
 from ....io import sidecar
 from ....utils.exiftool import release_metadata_handles
 from ....utils.logging import get_logger

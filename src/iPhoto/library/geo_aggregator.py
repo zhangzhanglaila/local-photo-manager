@@ -7,7 +7,7 @@ from typing import List
 
 from ..application.dtos import GeotaggedAsset
 from ..application.services.location_asset_service import geotagged_asset_from_row
-from ..bootstrap.library_location_service import LibraryLocationService
+from ..infrastructure.services.library_location_service import LibraryLocationService
 from ..utils.geocoding import resolve_location_name  # compatibility patch target
 
 

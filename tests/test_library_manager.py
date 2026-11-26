@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication
 
 from iPhoto.bootstrap.library_session import LibrarySession
 from iPhoto.errors import AlbumDepthError, AlbumOperationError, LibraryUnavailableError
+from iPhoto.bootstrap.library_session import create_headless_library_session
 from iPhoto.library.runtime_controller import LibraryRuntimeController
 
 
@@ -40,7 +41,7 @@ def _write_manifest(path: Path, title: str) -> None:
 
 def test_bind_and_scan_tree(tmp_path: Path, qapp: QApplication) -> None:
     root = tmp_path / "Library"
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     spy = QSignalSpy(manager.treeUpdated)
     with pytest.raises(LibraryUnavailableError):
         manager.bind_path(root)
@@ -71,7 +72,7 @@ def test_bind_and_scan_tree(tmp_path: Path, qapp: QApplication) -> None:
 def test_bind_path_relays_people_snapshot_events(tmp_path: Path, qapp: QApplication) -> None:
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
 
     snapshot_spy = QSignalSpy(manager.peopleSnapshotCommitted)
@@ -96,7 +97,7 @@ def test_bind_path_rebinds_people_snapshot_events_for_prebound_session(
 ) -> None:
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     session = LibrarySession(root)
     manager.bind_library_session(session)
 
@@ -125,7 +126,7 @@ def test_bind_path_from_session_rebinds_people_snapshot_events(
 ) -> None:
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     session = LibrarySession(root)
     manager.bind_library_session(session)
 
@@ -154,7 +155,7 @@ def test_bind_path_auto_binds_headless_library_session(
 ) -> None:
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
 
     manager.bind_path(root)
     qapp.processEvents()
@@ -170,7 +171,7 @@ def test_bind_path_auto_binds_headless_library_session(
 def test_create_and_rename_album(tmp_path: Path, qapp: QApplication) -> None:
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     created = manager.create_album("Paris")
     # Levels follow the sidebar tree: bound library (1) -> album (2) -> sub-album (3).
@@ -209,7 +210,7 @@ def test_reserved_album_names_are_rejected_for_create_and_rename(
 ) -> None:
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
 
     created = manager.create_album("Trips")
@@ -247,7 +248,7 @@ def test_work_dir_case_variants_are_hidden_from_album_tree(
     internal.mkdir()
     _write_manifest(internal, f"Internal {internal_name}")
 
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     qapp.processEvents()
 
@@ -260,7 +261,7 @@ def test_ensure_manifest_generates_defaults(tmp_path: Path) -> None:
     root = tmp_path / "Library"
     album_dir = root / "NoManifest"
     album_dir.mkdir(parents=True)
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
     library_node = next(node for node in manager.list_albums() if node.path == root)
     node = next(node for node in manager.list_children(library_node) if node.path == album_dir)
@@ -273,7 +274,7 @@ def test_ensure_manifest_generates_defaults(tmp_path: Path) -> None:
 def test_scan_finished_skips_prune_when_worker_failed(tmp_path: Path, qapp: QApplication) -> None:
     root = tmp_path / "Library"
     root.mkdir()
-    manager = LibraryRuntimeController()
+    manager = LibraryRuntimeController(session_factory=create_headless_library_session)
     manager.bind_path(root)
 
     class _Worker:

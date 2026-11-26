@@ -12,6 +12,7 @@ sub-modules extracted during a refactoring pass:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -48,12 +49,12 @@ if TYPE_CHECKING:  # pragma: no cover
         MapInteractionServicePort,
         MapRuntimePort,
     )
-    from ..bootstrap.library_album_metadata_service import LibraryAlbumMetadataService
-    from ..bootstrap.library_asset_lifecycle_service import LibraryAssetLifecycleService
-    from ..bootstrap.library_asset_operation_service import LibraryAssetOperationService
-    from ..bootstrap.library_asset_query_service import LibraryAssetQueryService
+    from ..infrastructure.services.library_album_metadata_service import LibraryAlbumMetadataService
+    from ..infrastructure.services.library_asset_lifecycle_service import LibraryAssetLifecycleService
+    from ..infrastructure.services.library_asset_operation_service import LibraryAssetOperationService
+    from ..infrastructure.services.library_asset_query_service import LibraryAssetQueryService
     from ..bootstrap.library_session import LibrarySession
-    from ..bootstrap.library_scan_service import LibraryScanService
+    from ..infrastructure.services.library_scan_service import LibraryScanService
     from ..application.ports import LibraryStateRepositoryPort
 
 
@@ -87,12 +88,16 @@ class LibraryRuntimeController(
         *,
         feature_switches: object | None = None,
         model_selection: object | None = None,
+        session_factory: Callable[[Path], object] | None = None,
     ) -> None:
         super().__init__(parent)
         #: 设置 → 智能 的人脸/OCR 开关；由 bootstrap 注入，缺省视为开启。
         self._feature_switches = feature_switches
         #: Which model pack each AI feature uses; injected by bootstrap.
         self._model_selection = model_selection
+        #: Builds the headless session bound by :meth:`bind_path`; injected by
+        #: bootstrap so this module never reaches into the composition root.
+        self._session_factory = session_factory
         self._roots: list[Path] = []
         self._albums: list[AlbumNode] = []
         self._children: Dict[Path, list[AlbumNode]] = {}
@@ -441,7 +446,7 @@ class LibraryRuntimeController(
             and asset_query_service is not None
             and self._services.location_service is default_location_service
         ):
-            from ..bootstrap.library_location_service import LibraryLocationService
+            from ..infrastructure.services.library_location_service import LibraryLocationService
 
             self._services = self._services.with_service(
                 "location_service",
@@ -597,10 +602,16 @@ class LibraryRuntimeController(
             self.bind_people_service(session.people)
             return
 
-        from ..bootstrap.library_session import create_headless_library_session
+        factory = self._session_factory
+        if factory is None:
+            LOGGER.debug(
+                "No session factory bound; skipping headless session for %s",
+                root,
+            )
+            return
 
         self.bind_library_session(
-            create_headless_library_session(root),
+            factory(root),
             owned=True,
         )
 

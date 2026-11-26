@@ -53,7 +53,7 @@ class FaceScanWorker(QThread):
         super().__init__(parent)
         self._library_root = Path(library_root)
         if people_service is None:
-            from ...bootstrap.library_people_service import create_people_service
+            from ...infrastructure.services.library_people_service import create_people_service
 
             people_service = create_people_service(self._library_root)
         self._people_service = people_service

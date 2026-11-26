@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
+from ....infrastructure.services.library_asset_query_service import LibraryAssetQueryService
 from ....config import RECENTLY_DELETED_DIR_NAME
 from ....media_classifier import classify_media
 from ....utils.geocoding import resolve_location_name

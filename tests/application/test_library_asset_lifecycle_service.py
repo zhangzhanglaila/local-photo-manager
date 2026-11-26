@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from iPhoto.bootstrap.library_asset_lifecycle_service import (
+from iPhoto.infrastructure.services.library_asset_lifecycle_service import (
     LibraryAssetLifecycleService,
 )
 from iPhoto.cache.index_store import get_global_repository, reset_global_repository

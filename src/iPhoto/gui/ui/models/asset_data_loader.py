@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QObject, QThreadPool, Signal, QTimer
 
-from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
+from ....infrastructure.services.library_asset_query_service import LibraryAssetQueryService
 from ..tasks.asset_loader_worker import (
     AssetLoaderSignals,
     AssetLoaderWorker,

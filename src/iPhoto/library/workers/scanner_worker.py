@@ -7,7 +7,7 @@ from typing import Iterable, List, Optional, TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from ...bootstrap.library_scan_service import (
+from ...infrastructure.services.library_scan_service import (
     LibraryScanService,
     merge_scan_chunk_with_repository,
 )

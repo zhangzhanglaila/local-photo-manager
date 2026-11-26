@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from ....bootstrap.library_asset_query_service import LibraryAssetQueryService
+from ....infrastructure.services.library_asset_query_service import LibraryAssetQueryService
 from .asset_loader_worker import compute_asset_rows
 
 LOGGER = logging.getLogger(__name__)

@@ -11,7 +11,7 @@ import pytest
 from PIL import Image
 
 from iPhoto.cache.index_store import get_global_repository, reset_global_repository
-from iPhoto.bootstrap.library_people_service import (
+from iPhoto.infrastructure.services.library_people_service import (
     create_people_asset_repository,
     create_people_service,
 )

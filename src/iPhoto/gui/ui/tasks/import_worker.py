@@ -8,8 +8,8 @@ import time
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from ....bootstrap.library_asset_lifecycle_service import LibraryAssetLifecycleService
-from ....bootstrap.library_scan_service import LibraryScanService
+from ....infrastructure.services.library_asset_lifecycle_service import LibraryAssetLifecycleService
+from ....infrastructure.services.library_scan_service import LibraryScanService
 
 # Max updates per second for progress signal
 MAX_UPDATES_PER_SEC = 10

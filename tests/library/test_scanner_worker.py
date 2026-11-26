@@ -63,8 +63,8 @@ def _patch_scan_and_repo(fake_rows, repo_side_effect=None):
             'iPhoto.infrastructure.services.filesystem_media_scanner.scan_album',
             side_effect=fake_scan_album,
         ),
-        patch('iPhoto.bootstrap.library_scan_service.get_global_repository', return_value=mock_store),
-        patch('iPhoto.bootstrap.library_scan_service.load_incremental_index_cache', return_value={}),
+        patch('iPhoto.infrastructure.services.library_scan_service.get_global_repository', return_value=mock_store),
+        patch('iPhoto.infrastructure.services.library_scan_service.load_incremental_index_cache', return_value={}),
         mock_store,
     )
 
@@ -216,8 +216,8 @@ def test_scanner_worker_cleanup_on_error(temp_album, qapp):
     worker = ScannerWorker(temp_album, ["*.jpg"], [], signals)
     
     with patch('iPhoto.infrastructure.services.filesystem_media_scanner.scan_album') as mock_scan, \
-         patch('iPhoto.bootstrap.library_scan_service.load_incremental_index_cache', return_value={}), \
-         patch('iPhoto.bootstrap.library_scan_service.get_global_repository'):
+         patch('iPhoto.infrastructure.services.library_scan_service.load_incremental_index_cache', return_value={}), \
+         patch('iPhoto.infrastructure.services.library_scan_service.get_global_repository'):
         mock_generator = Mock()
         mock_generator.close = Mock()
         mock_scan.return_value = mock_generator

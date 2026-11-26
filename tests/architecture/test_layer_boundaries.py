@@ -49,7 +49,7 @@ def test_gui_file_operation_service_planning_import_is_blocked(
     module = source / "gui" / "services" / "restoration_service.py"
     module.parent.mkdir(parents=True)
     module.write_text(
-        "from iPhoto.bootstrap.library_asset_lifecycle_service import LibraryAssetLifecycleService\n"
+        "from iPhoto.infrastructure.services.library_asset_lifecycle_service import LibraryAssetLifecycleService\n"
         "from iPhoto.media_classifier import IMAGE_EXTENSIONS\n",
         encoding="utf-8",
     )
@@ -58,7 +58,7 @@ def test_gui_file_operation_service_planning_import_is_blocked(
 
     assert any(
         "GUI file-operation service imports session planning dependency "
-        "iPhoto.bootstrap.library_asset_lifecycle_service" in violation
+        "iPhoto.infrastructure.services.library_asset_lifecycle_service" in violation
         for violation in violations
     )
     assert any(
@@ -99,7 +99,7 @@ def test_gui_people_bootstrap_factory_import_is_blocked(tmp_path: Path) -> None:
     module = source / "gui" / "coordinators" / "example.py"
     module.parent.mkdir(parents=True)
     module.write_text(
-        "from iPhoto.bootstrap.library_people_service import create_people_service\n",
+        "from iPhoto.infrastructure.services.library_people_service import create_people_service\n",
         encoding="utf-8",
     )
 
@@ -107,7 +107,7 @@ def test_gui_people_bootstrap_factory_import_is_blocked(tmp_path: Path) -> None:
 
     assert any(
         "GUI runtime imports People bootstrap factory "
-        "iPhoto.bootstrap.library_people_service" in violation
+        "iPhoto.infrastructure.services.library_people_service" in violation
         for violation in violations
     )
 
@@ -211,7 +211,7 @@ def test_gui_library_session_service_fallback_construction_is_blocked(
     module = source / "gui" / "services" / "example.py"
     module.parent.mkdir(parents=True)
     module.write_text(
-        "from iPhoto.bootstrap.library_scan_service import LibraryScanService\n"
+        "from iPhoto.infrastructure.services.library_scan_service import LibraryScanService\n"
         "service = LibraryScanService('/tmp/library')\n",
         encoding="utf-8",
     )

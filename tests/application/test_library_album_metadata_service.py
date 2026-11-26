@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from iPhoto.bootstrap.library_album_metadata_service import LibraryAlbumMetadataService
+from iPhoto.infrastructure.services.library_album_metadata_service import LibraryAlbumMetadataService
 from iPhoto.infrastructure.repositories.album_manifest_repository import (
     AlbumManifestRepository,
 )

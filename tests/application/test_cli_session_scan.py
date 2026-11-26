@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typer.testing import CliRunner
 
 from iPhoto import cli
-from iPhoto.bootstrap.library_scan_service import AlbumReport
+from iPhoto.infrastructure.services.library_scan_service import AlbumReport
 
 
 class _FakeScans:

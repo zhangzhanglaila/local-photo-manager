@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from ...bootstrap.library_album_metadata_service import LibraryAlbumMetadataService
+from ...infrastructure.services.library_album_metadata_service import LibraryAlbumMetadataService
 from .session_service_resolver import bound_album_metadata_service
 from ...utils.pathutils import paths_equal
 

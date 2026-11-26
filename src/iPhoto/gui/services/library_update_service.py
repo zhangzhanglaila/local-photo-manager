@@ -9,7 +9,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple, TYPE_CH
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
 
-from ...bootstrap.library_scan_service import LibraryScanService
+from ...infrastructure.services.library_scan_service import LibraryScanService
 from ...config import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
 from ...errors import IPhotoError
 from ...utils.pathutils import resolve_work_dir

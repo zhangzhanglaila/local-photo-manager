@@ -8,11 +8,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..config import ALBUM_MANIFEST_NAMES
-from ..media_classifier import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
-from ..utils.jsonio import read_json
+from ...config import ALBUM_MANIFEST_NAMES
+from ...media_classifier import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+from ...utils.jsonio import read_json
 from .library_asset_lifecycle_service import LibraryAssetLifecycleService
-from ..utils.pathutils import paths_equal
+from ...utils.pathutils import paths_equal
 
 MetadataLookup = Callable[[Path], dict[str, Any] | None]
 RestoreToRootPrompt = Callable[[str], bool]

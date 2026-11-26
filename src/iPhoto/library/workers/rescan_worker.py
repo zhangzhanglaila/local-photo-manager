@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from ...bootstrap.library_scan_service import LibraryScanService
+from ...infrastructure.services.library_scan_service import LibraryScanService
 from ...errors import IPhotoError
 
 

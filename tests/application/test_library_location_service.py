@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from iPhoto.bootstrap.library_location_service import LibraryLocationService
+from iPhoto.infrastructure.services.library_location_service import LibraryLocationService
 
 
 class _QueryService:

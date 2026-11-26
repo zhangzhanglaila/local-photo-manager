@@ -16,8 +16,8 @@ from typing import Any, Iterator
 
 import pytest
 
-from iPhoto.bootstrap import library_scan_service as scan_service_module
-from iPhoto.bootstrap.library_scan_service import LibraryScanService
+from iPhoto.infrastructure.services import library_scan_service as scan_service_module
+from iPhoto.infrastructure.services.library_scan_service import LibraryScanService
 from iPhoto.config import SCANNER_METADATA_VERSION
 
 
@@ -158,7 +158,7 @@ def test_scan_finished_hook_stamps_the_library_root(
     the scan is done, so the stamp must not depend on that path.
     """
 
-    from iPhoto.bootstrap.library_asset_lifecycle_service import (
+    from iPhoto.infrastructure.services.library_asset_lifecycle_service import (
         LibraryAssetLifecycleService,
     )
 

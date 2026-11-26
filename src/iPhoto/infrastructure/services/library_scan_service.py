@@ -8,42 +8,42 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..application.ports import AssetRepositoryPort, MediaScannerPort
-from ..application.use_cases.scan_library import (
+from ...application.ports import AssetRepositoryPort, MediaScannerPort
+from ...application.use_cases.scan_library import (
     ScanLibraryRequest,
     ScanLibraryResult,
     ScanLibraryUseCase,
 )
-from ..cache.index_store import get_global_repository
-from ..config import (
+from ...cache.index_store import get_global_repository
+from ...config import (
     ALBUM_MANIFEST_NAMES,
     DEFAULT_EXCLUDE,
     DEFAULT_INCLUDE,
     RECENTLY_DELETED_DIR_NAME,
     SCANNER_METADATA_VERSION,
 )
-from ..errors import (
+from ...errors import (
     AlbumNotFoundError,
     IndexCorruptedError,
     IPhotoError,
     ManifestInvalidError,
 )
-from ..index_sync_service import (
+from ...index_sync_service import (
     ensure_links,
     load_incremental_index_cache,
     prune_index_scope,
     update_index_snapshot,
 )
-from ..infrastructure.services.filesystem_media_scanner import FilesystemMediaScanner
-from ..io.scanner_adapter import process_media_paths
-from ..media_classifier import ALL_IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
-from ..path_normalizer import compute_album_path
-from ..utils.jsonio import read_json
-from ..utils.logging import get_logger
-from ..utils.pathutils import ensure_work_dir, resolve_work_dir
+from ...infrastructure.services.filesystem_media_scanner import FilesystemMediaScanner
+from ...io.scanner_adapter import process_media_paths
+from ...media_classifier import ALL_IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+from ...path_normalizer import compute_album_path
+from ...utils.jsonio import read_json
+from ...utils.logging import get_logger
+from ...utils.pathutils import ensure_work_dir, resolve_work_dir
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..domain.models.core import LiveGroup
+    from ...domain.models.core import LiveGroup
 
 LOGGER = get_logger()
 
