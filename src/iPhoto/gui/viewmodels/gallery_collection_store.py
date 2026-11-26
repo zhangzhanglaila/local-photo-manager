@@ -1074,8 +1074,8 @@ class GalleryCollectionStore:
             else -1.0
         )
         diag(
-            "[DIAG] load finished: gen=%s rows=%d end_to_end=%.0f ms superseded=%d",
-            generation, len(row_cache), elapsed, self._load_superseded,
+            "[DIAG] load failed: gen=%s end_to_end=%.0f ms superseded=%d error=%s",
+            generation, elapsed, self._load_superseded, error_msg,
         )
         self._load_superseded = 0
         if generation != self._load_generation:

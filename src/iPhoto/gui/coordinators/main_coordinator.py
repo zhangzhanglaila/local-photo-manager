@@ -1421,7 +1421,7 @@ class MainCoordinator(QObject):
         from iPhoto.agent.services import search_models
 
         library_root = Path(self._context.library.root())
-        model_dir = search_models.model_dir(searchself._active_search_spec())
+        model_dir = search_models.model_dir(self._active_search_spec())
         # Reuse the session's embedding service: it is warmed before the face scan
         # starts, so rebuilding a service here would reload the weights on every
         # single search.
@@ -1470,7 +1470,7 @@ class MainCoordinator(QObject):
                     session_service = None
                     if library_session is not None:
                         try:
-                            if search_models.is_installed(searchself._active_search_spec()):
+                            if search_models.is_installed(self._active_search_spec()):
                                 session_service = (
                                     library_session.get_embedding_service()
                                 )
@@ -1508,7 +1508,7 @@ class MainCoordinator(QObject):
 
                     all_embeddings = _load_search_embeddings(
                         self._library_root,
-                        model_name=_searchself._active_search_spec().dir_name,
+                        model_name=self._active_search_spec().dir_name,
                     )
 
                     if not all_embeddings:
@@ -2039,7 +2039,7 @@ class MainCoordinator(QObject):
         if callable(reset):
             reset()
         _SEARCH_EMBEDDINGS_CACHE.clear()
-        spec = searchself._active_search_spec()
+        spec = self._active_search_spec()
         if not search_models.is_installed(spec):
             self._status_bar.show_message(
                 tr("search.model.missing", mb=spec.download_mb), 8000
@@ -2104,12 +2104,15 @@ class MainCoordinator(QObject):
 
         from PySide6.QtCore import QRunnable, Slot
 
+        coordinator = self
+
         class SilentWorker(QRunnable):
-            def __init__(self, session, status_callback):
+            def __init__(self, session, status_callback, force_rebuild):
                 super().__init__()
                 self.setAutoDelete(True)
                 self._session = session
                 self._status_callback = status_callback
+                self._force_rebuild = bool(force_rebuild)
 
             @Slot()
             def run(self):
@@ -2132,9 +2135,9 @@ class MainCoordinator(QObject):
 
                     pending = embedding_repo.get_asset_ids_without_embeddings(
                         asset_ids,
-                        model_name=self._active_search_spec().dir_name,
+                        model_name=coordinator._active_search_spec().dir_name,
                     )
-                    status = self._context.search_index_status
+                    status = coordinator._context.search_index_status
 
                     if not pending:
                         total = embedding_repo.count()
@@ -2149,10 +2152,10 @@ class MainCoordinator(QObject):
                         embedding_repository=embedding_repo,
                         asset_repository=self._session.asset_runtime.assets,
                         library_root=self._session.library_root,
-                        force_rebuild=force_rebuild,
+                        force_rebuild=self._force_rebuild,
                     )
 
-                    tasks = self._context.background_tasks
+                    tasks = coordinator._context.background_tasks
 
                     tasks.start("index", tr("status.task.index"))
                     status.set_indexing(True, 0, int(len(pending)))
@@ -2180,7 +2183,7 @@ class MainCoordinator(QObject):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda: self._status_bar.show_message(message, 5000))
 
-        worker = SilentWorker(library_session, status_callback)
+        worker = SilentWorker(library_session, status_callback, force_rebuild)
         QThreadPool.globalInstance().start(worker)
 
     def _start_embedding_generation(self) -> None:
@@ -2199,6 +2202,8 @@ class MainCoordinator(QObject):
         # Run model loading and embedding generation in background
         from PySide6.QtCore import QRunnable, Slot
 
+        coordinator = self
+
         class InitWorker(QRunnable):
             def __init__(self, session, callback):
                 super().__init__()
@@ -2214,9 +2219,9 @@ class MainCoordinator(QObject):
 
                     # Check if model files exist first
                     from iPhoto.agent.services import search_models
-                    model_dir = search_models.model_dir(searchself._active_search_spec())
+                    model_dir = search_models.model_dir(coordinator._active_search_spec())
 
-                    if not search_models.is_installed(searchself._active_search_spec()):
+                    if not search_models.is_installed(coordinator._active_search_spec()):
                         self._callback("error", 0, 0, "模型文件不存在，请先下载模型")
                         return
 
@@ -2264,7 +2269,6 @@ class MainCoordinator(QObject):
                         embedding_repository=embedding_repo,
                         asset_repository=self._session.asset_runtime.assets,
                         library_root=self._session.library_root,
-                        force_rebuild=force_rebuild,
                     )
 
                     def on_progress(current, total, msg):
