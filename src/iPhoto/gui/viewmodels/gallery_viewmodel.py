@@ -766,12 +766,20 @@ class GalleryViewModel(BaseViewModel):
             List of asset IDs to display, ordered by relevance.
         """
         if not asset_ids:
-            # The gallery page shows the "no matches" panel; this message only
-            # stops the old grid from lingering behind it.
-            from ....i18n import tr
+            # Empty the grid for real: returning early left the previous search's
+            # photos on screen, so a 0-result search looked like a no-op.
+            from ...i18n import tr
 
             self.message_requested.emit(tr("search.no_results"), 3000)
+            root = self._context.library.root()
             self._store.cancel_pending_load()
+            self.current_section.value = "search_results"
+            self.static_selection.value = "Search Results"
+            self.active_root.value = root
+            self.current_query.value = AssetQuery(asset_ids=[])
+            self.current_direct_assets.value = None
+            self.can_return_to_map.value = False
+            self.clear_display()
             return
 
         root = self._context.library.root()

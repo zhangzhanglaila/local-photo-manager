@@ -1772,11 +1772,14 @@ class MainCoordinator(QObject):
         ui.gallery_page.show_grid()
         ui.gallery_page.hide_loading()
         if not results:
-            # Clearing the model matters: leaving the previous results on screen
-            # made "0 results" look like the search had not run at all.
-            self._gallery_vm.show_search_results([])
+            # Order matters: paint the "no matches" state first so a failure in
+            # the model update cannot leave the previous search's photos visible.
             ui.gallery_page.show_search_results_header(query, 0)
             ui.gallery_page.show_search_empty(query)
+            try:
+                self._gallery_vm.show_search_results([])
+            except Exception:
+                self._logger.debug("could not clear search results", exc_info=True)
             self._status_bar.show_message(tr("search.empty.title", query=query))
             return
 

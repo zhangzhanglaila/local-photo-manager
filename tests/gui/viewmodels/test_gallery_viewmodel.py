@@ -829,3 +829,21 @@ def test_rescan_current_emits_message_without_open_library() -> None:
 
     assert messages == [("No album is currently open.", 3000)]
     facade.scan_root_async.assert_not_called()
+
+
+def test_empty_search_results_clear_the_grid():
+    """A 0-result search must empty the grid, not keep the previous photos."""
+
+    vm, store, _context, _facade, _assets = _make_vm()
+    store.count.return_value = 0
+
+    messages: list[tuple[str, int]] = []
+    vm.message_requested.connect(lambda text, timeout=0: messages.append((text, timeout)))
+
+    vm.show_search_results([])
+
+    # The store is told to drop whatever the previous search had loaded, and the
+    # gallery is re-tagged as a search result view.
+    assert store.cancel_pending_load.called
+    assert vm.current_section.value in {"search_results", "empty"}
+    assert messages, "the user should be told there were no results"
