@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
+from ..application.library_context import LibraryContextFactory
 from ..application.ports import AlbumRepositoryPort, LibraryStateRepositoryPort
 from ..infrastructure.repositories.album_manifest_repository import (
     AlbumManifestRepository,
+)
+from ..infrastructure.repositories.library_context import (
+    IndexStoreLibraryContextFactory,
 )
 from ..infrastructure.repositories.library_state_repository import (
     IndexStoreLibraryStateRepository,
@@ -35,14 +40,17 @@ class LibraryAlbumMetadataService:
         album_repository: AlbumRepositoryPort | None = None,
         state_repository: LibraryStateRepositoryPort | None = None,
         state_repository_factory: Callable[[Path], LibraryStateRepositoryPort] | None = None,
+        contexts: LibraryContextFactory | None = None,
     ) -> None:
         self.library_root = (
             self._normalize_path(Path(library_root)) if library_root is not None else None
         )
         self._album_repository = album_repository or AlbumManifestRepository()
         self._state_repository = state_repository
-        self._state_repository_factory = (
-            state_repository_factory or IndexStoreLibraryStateRepository
+        self._contexts = contexts or IndexStoreLibraryContextFactory()
+        self._state_repository_factory = state_repository_factory or partial(
+            IndexStoreLibraryStateRepository,
+            contexts=self._contexts,
         )
 
     def set_cover(self, album_root: Path, rel: str) -> None:

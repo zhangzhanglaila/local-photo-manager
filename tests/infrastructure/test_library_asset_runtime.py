@@ -9,6 +9,9 @@ import pytest
 from iPhoto.cache.index_store import reset_global_repository
 from iPhoto.cache.index_store.repository import AssetRepository
 from iPhoto.errors import LibraryUnavailableError
+from iPhoto.infrastructure.repositories.library_context import (
+    IndexStoreLibraryContextFactory,
+)
 from iPhoto.infrastructure.services.library_asset_runtime import LibraryAssetRuntime
 
 
@@ -28,7 +31,7 @@ def test_unbound_runtime_never_touches_the_home_directory(
     fake_home.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
-    runtime = LibraryAssetRuntime()
+    runtime = LibraryAssetRuntime(contexts=IndexStoreLibraryContextFactory())
 
     assert runtime.is_bound is False
     assert runtime.thumbnail_service._disk_cache_path is None
@@ -39,10 +42,17 @@ def test_unbound_runtime_never_touches_the_home_directory(
         _ = runtime.repository
 
 
+def test_unbound_runtime_exposes_no_context() -> None:
+    runtime = LibraryAssetRuntime(contexts=IndexStoreLibraryContextFactory())
+
+    with pytest.raises(LibraryUnavailableError):
+        _ = runtime.context
+
+
 def test_unbound_runtime_serves_no_thumbnails(tmp_path: Path) -> None:
     from PySide6.QtCore import QSize
 
-    runtime = LibraryAssetRuntime()
+    runtime = LibraryAssetRuntime(contexts=IndexStoreLibraryContextFactory())
 
     assert runtime.thumbnail_service.get_thumbnail(tmp_path / "photo.jpg", QSize(64, 64)) is None
 
@@ -50,7 +60,7 @@ def test_unbound_runtime_serves_no_thumbnails(tmp_path: Path) -> None:
 def test_bind_library_root_none_unbinds(tmp_path: Path) -> None:
     library_root = tmp_path / "library"
     library_root.mkdir()
-    runtime = LibraryAssetRuntime(library_root)
+    runtime = LibraryAssetRuntime(library_root, contexts=IndexStoreLibraryContextFactory())
     assert runtime.is_bound is True
 
     runtime.bind_library_root(None)
@@ -64,7 +74,7 @@ def test_bind_library_root_none_unbinds(tmp_path: Path) -> None:
 def test_bind_library_root_rebuilds_repo_and_cache_path(tmp_path: Path) -> None:
     initial_root = tmp_path / "initial"
     initial_root.mkdir()
-    runtime = LibraryAssetRuntime(initial_root)
+    runtime = LibraryAssetRuntime(initial_root, contexts=IndexStoreLibraryContextFactory())
     initial_repository = runtime.repository
     initial_assets = runtime.assets
 
@@ -87,7 +97,7 @@ def test_bind_library_root_rebuilds_repo_and_cache_path(tmp_path: Path) -> None:
 def test_bind_library_root_uses_existing_legacy_work_dir(tmp_path: Path) -> None:
     initial_root = tmp_path / "initial"
     initial_root.mkdir()
-    runtime = LibraryAssetRuntime(initial_root)
+    runtime = LibraryAssetRuntime(initial_root, contexts=IndexStoreLibraryContextFactory())
     library_root = tmp_path / "library"
     legacy_work_dir = library_root / ".iphoto"
     legacy_work_dir.mkdir(parents=True)

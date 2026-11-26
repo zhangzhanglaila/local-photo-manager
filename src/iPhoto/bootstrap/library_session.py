@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from ..application.library_context import LibraryContextFactory
 from ..application.ports import (
     AssetRepositoryPort,
     AssetStateServicePort,
@@ -18,6 +19,9 @@ from ..application.ports import (
     MapRuntimePort,
 )
 from ..application.services.map_interaction_service import LibraryMapInteractionService
+from ..infrastructure.repositories.library_context import (
+    IndexStoreLibraryContextFactory,
+)
 from ..infrastructure.repositories.library_state_repository import (
     IndexStoreLibraryStateRepository,
 )
@@ -61,6 +65,7 @@ class LibrarySession:
     locations: LocationAssetServicePort | None = None
     search_index_status: object | None = None
     model_selection: object | None = None
+    contexts: LibraryContextFactory | None = None
     bind_asset_runtime: bool = True
     # Agent services (optional, initialized lazily)
     _search_service: object = field(default=None, repr=False)
@@ -69,13 +74,21 @@ class LibrarySession:
 
     def __post_init__(self) -> None:
         self.library_root = Path(self.library_root)
+        if self.contexts is None:
+            self.contexts = IndexStoreLibraryContextFactory()
         if self.asset_runtime is None:
-            self.asset_runtime = LibraryAssetRuntime(self.library_root)
+            self.asset_runtime = LibraryAssetRuntime(
+                self.library_root,
+                contexts=self.contexts,
+            )
             self.bind_asset_runtime = False
         if self.bind_asset_runtime:
             self.asset_runtime.bind_library_root(self.library_root)
         if self.state_repository is None:
-            self.state_repository = IndexStoreLibraryStateRepository(self.library_root)
+            self.state_repository = IndexStoreLibraryStateRepository(
+                self.library_root,
+                contexts=self.contexts,
+            )
         if self.asset_queries is None:
             self.asset_queries = LibraryAssetQueryService(self.library_root)
         if self.asset_state is None:
@@ -351,9 +364,11 @@ def create_headless_library_session(root: Path) -> LibrarySession:
     """Create a library session for non-GUI entry points such as the CLI."""
 
     library_root = Path(root)
+    contexts = IndexStoreLibraryContextFactory()
     return LibrarySession(
         library_root,
-        asset_runtime=LibraryAssetRuntime(library_root),
+        asset_runtime=LibraryAssetRuntime(library_root, contexts=contexts),
+        contexts=contexts,
         bind_asset_runtime=False,
         # A headless session has no map surface, so it must not load the native
         # widget DLL. That load is fatal rather than catchable when the DLL's
@@ -367,7 +382,10 @@ def create_headless_library_session(root: Path) -> LibrarySession:
 def create_library_state_repository(root: Path) -> LibraryStateRepositoryPort:
     """Create the current state adapter for compatibility entry points."""
 
-    return IndexStoreLibraryStateRepository(Path(root))
+    return IndexStoreLibraryStateRepository(
+        Path(root),
+        contexts=IndexStoreLibraryContextFactory(),
+    )
 
 
 __all__ = [

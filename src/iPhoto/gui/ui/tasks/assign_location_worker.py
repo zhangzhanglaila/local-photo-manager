@@ -13,6 +13,9 @@ from iPhoto.application.services.assign_location_service import (
     AssignLocationService,
     AssignedLocationResult,
 )
+from iPhoto.infrastructure.repositories.library_context import (
+    IndexStoreLibraryContextFactory,
+)
 from iPhoto.infrastructure.repositories.library_state_repository import (
     IndexStoreLibraryStateRepository,
 )
@@ -56,7 +59,10 @@ class AssignLocationWorker(QRunnable):
     def run(self) -> None:  # pragma: no cover - exercised through GUI integration
         try:
             service = AssignLocationService(
-                IndexStoreLibraryStateRepository(self._request.library_root),
+                IndexStoreLibraryStateRepository(
+                    self._request.library_root,
+                    contexts=IndexStoreLibraryContextFactory(),
+                ),
                 ExifToolLocationMetadataService(),
             )
             result = service.assign(

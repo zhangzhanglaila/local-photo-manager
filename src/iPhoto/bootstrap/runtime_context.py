@@ -75,9 +75,12 @@ def _create_language_store(settings: "SettingsManager") -> "LanguageStore":
 
 
 def _create_asset_runtime() -> "LibraryAssetRuntime":
+    from ..infrastructure.repositories.library_context import (
+        IndexStoreLibraryContextFactory,
+    )
     from ..infrastructure.services.library_asset_runtime import LibraryAssetRuntime
 
-    return LibraryAssetRuntime()
+    return LibraryAssetRuntime(contexts=IndexStoreLibraryContextFactory())
 
 
 def _create_search_index_status() -> "SearchIndexStatus":
