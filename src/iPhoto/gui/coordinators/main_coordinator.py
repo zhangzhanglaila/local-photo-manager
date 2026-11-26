@@ -1491,7 +1491,10 @@ class MainCoordinator(QObject):
                     )
                     service = session_service
                     if service is None:
-                        service = CLIPEmbeddingService(model_dir=self._model_dir)
+                        service = CLIPEmbeddingService(
+                            model_dir=self._model_dir,
+                            family=getattr(self._model_spec, "family", "clip"),
+                        )
                     loader = getattr(service, "load", None)
                     if callable(loader):
                         loader()
