@@ -80,7 +80,7 @@ class LibraryRuntimeController(
     peopleIndexUpdated = Signal()
     peopleSnapshotCommitted = Signal(object)
     faceScanStatusChanged = Signal(str)
-    ocrScanStatusChanged = Signal(str)
+    ocrScanStatusChanged = Signal(object)
 
     def __init__(
         self,

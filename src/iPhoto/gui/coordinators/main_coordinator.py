@@ -28,6 +28,7 @@ from iPhoto.application.dtos import GeotaggedAsset
 from iPhoto.config import SearchSettings
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
+from iPhoto.application.dtos import ScanStatus
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
@@ -1348,19 +1349,23 @@ class MainCoordinator(QObject):
             tr("search.similar_query"), "all", similar_to=asset_id
         )
 
-    def _on_ocr_scan_status(self, message: str) -> None:
+    def _on_ocr_scan_status(self, status: object) -> None:
         """Surface the OCR backfill in the status bar.
 
         Skipped while the user is looking at search results so the result count
-        is not replaced by background-scan chatter.
+        is not replaced by background-scan chatter. The scan layer sends a
+        :class:`ScanStatus` key instead of a finished sentence, so "this is the
+        last message" comes from the payload rather than from searching the text
+        for a word like ``完成`` (which broke as soon as the UI was translated).
         """
 
-        if not message:
+        if not isinstance(status, ScanStatus) or not status.key:
             return
         visible = getattr(self, "_is_search_page_visible", None)
         if callable(visible) and visible():
             return
-        if "完成" in message:
+        message = tr(status.key, **dict(status.params))
+        if status.completed:
             self._status_bar.show_message(message, 5000)
         else:
             self._status_bar.show_message(message)

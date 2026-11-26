@@ -12,6 +12,7 @@ from ..utils.logging import get_logger
 from .workers.face_scan_worker import FaceScanWorker
 from .workers.scanner_worker import ScannerSignals, ScannerWorker
 from ..utils.pathutils import paths_equal
+from ..application.dtos import ScanStatus
 
 if TYPE_CHECKING:
     pass
@@ -484,7 +485,7 @@ class ScanCoordinatorMixin:
             and getattr(self, "_ocr_scan_pending_start", False)
         ):
             self._ocr_scan_pending_start = False
-            self.ocrScanStatusChanged.emit("正在识别图片文字...")
+            self.ocrScanStatusChanged.emit(ScanStatus("status.ocr.running"))
             self._scan_thread_pool.start(ocr_scanner)
 
     def _preload_search_model(self) -> None:
@@ -628,7 +629,7 @@ class ScanCoordinatorMixin:
         # a count so the status bar shows the OCR backfill is still moving.
         if processed and processed % 50 == 0:
             self.ocrScanStatusChanged.emit(
-                f"正在识别图片文字... 已处理 {processed} 张"
+                ScanStatus("status.ocr.progress", {"count": processed})
             )
 
     def _on_ocr_finished(self, processed: int, failed: int) -> None:
@@ -636,7 +637,11 @@ class ScanCoordinatorMixin:
         if processed > 0:
             LOGGER.info("OCR scan complete: %d images processed, %d failed", processed, failed)
             self.ocrScanStatusChanged.emit(
-                f"图片文字识别完成（本次处理 {processed} 张）"
+                ScanStatus(
+                    "status.ocr.done",
+                    {"count": processed},
+                    completed=True,
+                )
             )
         else:
-            self.ocrScanStatusChanged.emit("")
+            self.ocrScanStatusChanged.emit(ScanStatus(""))

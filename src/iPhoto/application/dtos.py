@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Literal
@@ -102,3 +103,18 @@ class MapMarkerActivation:
     kind: MapMarkerActivationKind
     asset_relative: Optional[str] = None
     assets: tuple[GeotaggedAsset, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class ScanStatus:
+    """Structured progress text for a background AI scan.
+
+    Carries an i18n ``key`` plus its parameters instead of a finished sentence,
+    so the view decides *how* to show it (and whether it is the final message)
+    from the payload rather than by searching the rendered text for a word.
+    ``key`` is empty when the status should be cleared.
+    """
+
+    key: str
+    params: Mapping[str, int] = field(default_factory=dict)
+    completed: bool = False

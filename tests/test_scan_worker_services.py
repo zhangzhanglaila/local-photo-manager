@@ -28,7 +28,7 @@ class _Host(QObject, ScanCoordinatorMixin):
     scanBatchFailed = Signal(object, int)
     faceScanStatusChanged = Signal(str)
     faceDownloadProgress = Signal(int, int)
-    ocrScanStatusChanged = Signal(str)
+    ocrScanStatusChanged = Signal(object)
 
     def __init__(self, root: Path, registry: LibraryServiceRegistry) -> None:
         QObject.__init__(self)

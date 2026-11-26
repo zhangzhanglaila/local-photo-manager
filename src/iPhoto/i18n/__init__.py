@@ -99,6 +99,9 @@ _ZH: dict[str, str] = {
     "status.scan_complete": "文件扫描完成。",
     "status.scan_failed": "扫描失败。",
     "status.scan_batch_failed": "有 {count} 个项目保存到数据库失败",
+    "status.ocr.running": "正在识别图片文字…",
+    "status.ocr.progress": "正在识别图片文字… 已处理 {count} 张",
+    "status.ocr.done": "图片文字识别完成（本次处理 {count} 张）",
 
     # -- Status bar: Load --
     "status.loading_items": "正在加载项目…",
@@ -617,6 +620,9 @@ _EN: dict[str, str] = {
     "status.scan_complete": "File scan complete.",
     "status.scan_failed": "Scan failed.",
     "status.scan_batch_failed": "{count} items failed to save to database",
+    "status.ocr.running": "Reading text in photos…",
+    "status.ocr.progress": "Reading text in photos… {count} processed",
+    "status.ocr.done": "Text recognition finished ({count} processed)",
 
     # -- Status bar: Load --
     "status.loading_items": "Loading items…",
