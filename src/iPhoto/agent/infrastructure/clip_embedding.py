@@ -73,30 +73,64 @@ def _classes_for_family(family: str):
     return CLIPModel, CLIPProcessor, CLIPTokenizer
 
 
+def _as_feature_tensor(result):
+    """Normalise what a ``get_*_features`` call returns into a 2-D tensor.
+
+    transformers v5 returns a ``ModelOutput`` for SigLIP (and still a plain
+    tensor for CLIP). A ModelOutput also proxies tensor methods to its first
+    field — ``last_hidden_state`` — so blindly calling ``.float()`` produced a
+    ``(batch, tokens, hidden)`` array that silently broke similarity scores.
+    """
+
+    import torch
+
+    if isinstance(result, torch.Tensor):
+        return result
+    for attribute in ("pooler_output", "image_embeds", "text_embeds"):
+        value = getattr(result, attribute, None)
+        if isinstance(value, torch.Tensor):
+            return value
+    hidden = getattr(result, "last_hidden_state", None)
+    if isinstance(hidden, torch.Tensor):
+        # Mean-pool over the token axis as a last resort.
+        return hidden.mean(dim=1)
+    raise TypeError(f"unsupported feature output: {type(result)!r}")
+
+
 def _image_features(model, inputs):
-    """Return the projected image features of *model* as a tensor."""
+    """Return the projected image features of *model* as a 2-D tensor."""
 
     getter = getattr(model, "get_image_features", None)
     if callable(getter):
         try:
-            return getter(**inputs)
-        except TypeError:
+            features = _as_feature_tensor(getter(**inputs))
+            if features.dim() == 2:
+                return features
+        except (TypeError, AttributeError):
             pass
     outputs = model.vision_model(**inputs)
-    return model.visual_projection(outputs.pooler_output)
+    pooler = getattr(outputs, "pooler_output", None)
+    if pooler is not None and hasattr(model, "visual_projection"):
+        return model.visual_projection(pooler)
+    return _as_feature_tensor(outputs)
 
 
 def _text_features(model, inputs):
-    """Return the projected text features of *model* as a tensor."""
+    """Return the projected text features of *model* as a 2-D tensor."""
 
     getter = getattr(model, "get_text_features", None)
     if callable(getter):
         try:
-            return getter(**inputs)
-        except TypeError:
+            features = _as_feature_tensor(getter(**inputs))
+            if features.dim() == 2:
+                return features
+        except (TypeError, AttributeError):
             pass
     outputs = model.text_model(**inputs)
-    return model.text_projection(outputs.pooler_output)
+    pooler = getattr(outputs, "pooler_output", None)
+    if pooler is not None and hasattr(model, "text_projection"):
+        return model.text_projection(pooler)
+    return _as_feature_tensor(outputs)
 
 
 def _move_inputs(inputs, device, dtype):
@@ -319,9 +353,23 @@ class CLIPEmbeddingService:
 
             # Process text. SigLIP has a fixed 64-token context and expects
             # max-length padding; CLIP-family models take dynamic padding.
-            padding = "max_length" if self._family == "siglip" else True
-            processor = self._processor if self._family != "clip" else self._tokenizer
-            inputs = processor(text, return_tensors="pt", padding=padding, truncation=True)
+            # Always go through the tokenizer: SiglipProcessor's first positional
+            # argument is ``images``, so passing text to the processor tried to
+            # load "beach" as an image.
+            tokenizer = self._tokenizer or getattr(self._processor, "tokenizer", None)
+            payload = [text] if self._family != "clip" else text
+            kwargs = {"truncation": True, "return_tensors": "pt"}
+            if self._family == "siglip":
+                # SigLIP's tokenizer reports an "unlimited" model_max_length, so
+                # padding="max_length" padded to a nonsense length and produced
+                # embeddings that were only ~0.02 aligned. The model was trained
+                # with a 64-token context.
+                limit = int(getattr(tokenizer, "model_max_length", 0) or 0)
+                kwargs["padding"] = "max_length"
+                kwargs["max_length"] = limit if 0 < limit <= 512 else 64
+            else:
+                kwargs["padding"] = True
+            inputs = tokenizer(payload, **kwargs)
             inputs = _move_inputs(inputs, self._device, self._dtype)
 
             # Generate embedding using the model's own text tower

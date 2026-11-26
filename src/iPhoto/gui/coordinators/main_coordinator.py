@@ -1559,6 +1559,9 @@ class MainCoordinator(QObject):
 
                     import numpy as _np
 
+                    from iPhoto.agent.services.search_models import (
+                        active_model as _active_search_model,
+                    )
                     from iPhoto.agent.services.search_ranking import (
                         labels_for_query,
                         other_labels,
@@ -1567,6 +1570,9 @@ class MainCoordinator(QObject):
                         translate_query,
                         translation_is_partial,
                     )
+
+                    def _search_models_for_family():
+                        return _active_search_model()
 
                     matrix = _np.stack([item["embedding"] for item in all_embeddings])
 
@@ -1598,8 +1604,10 @@ class MainCoordinator(QObject):
                             return
 
                         sim_scores = matrix @ query_embedding
+                        _family = _search_models_for_family().family
                         floor, margin, margin_tolerance, zscore = precision_params(
-                            self._precision
+                            self._precision,
+                            family=_family,
                         )
                         try:
                             settings = SearchSettings.from_env()

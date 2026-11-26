@@ -54,7 +54,7 @@ class SearchService:
         self,
         query: str,
         top_k: int = _DEFAULT_TOP_K,
-        threshold: float = _MIN_SIMILARITY_THRESHOLD,
+        threshold: float | None = None,
     ) -> List[SearchResult]:
         """Search for photos matching a natural language query.
 
@@ -74,6 +74,12 @@ class SearchService:
         """
         import time
         start_time = time.time()
+
+        if threshold is None:
+            from .search_models import active_model
+            from .search_ranking import precision_params
+
+            threshold = precision_params("balanced", family=active_model().family)[0]
 
         if not query.strip():
             return []

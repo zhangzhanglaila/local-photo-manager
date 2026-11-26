@@ -154,3 +154,26 @@ def test_translation_prefers_compound_terms_and_drops_fillers() -> None:
 def test_unknown_chinese_is_left_for_ocr() -> None:
     assert translate_query("张三") == "张三"
     assert translation_is_partial("张三") is True
+
+
+def test_siglip_uses_its_own_cosine_floor() -> None:
+    """SigLIP matches score ~0.12, so a 0.24 floor would return nothing."""
+
+    clip_floor = precision_params("balanced")[0]
+    siglip_floor = precision_params("balanced", family="siglip")[0]
+
+    assert siglip_floor < clip_floor
+    assert siglip_floor <= 0.1
+
+
+def test_siglip_scores_survive_its_floor() -> None:
+    rng = np.random.default_rng(3)
+    background = rng.normal(0.03, 0.015, size=1500).astype(np.float32)
+    matches = np.array([0.13, 0.12, 0.115], dtype=np.float32)
+    scores = np.concatenate([background, matches])
+
+    floor, margin, _tol, zscore = precision_params("balanced", family="siglip")
+    kept = select_results(scores, floor=floor, margin=margin, zscore=zscore)
+
+    assert set(range(1500, 1503)).issubset(set(kept))
+    assert len(kept) < 60, len(kept)

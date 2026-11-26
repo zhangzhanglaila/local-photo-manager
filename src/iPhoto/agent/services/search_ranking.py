@@ -38,6 +38,19 @@ PRECISION_TIERS: dict[str, tuple[float, float, float | None, float]] = {
     "loose": (0.23, 0.08, -0.02, 1.6),
 }
 
+#: Cosine ranges depend on how a model was trained. SigLIP's sigmoid objective
+#: puts *matching* pairs around 0.10-0.15 and unrelated ones around 0.03, so the
+#: CLIP floors (0.23-0.25) would reject every result and the CLIP-appropriate
+#: ones return half the library for SigLIP. Floors are therefore per family; the
+#: relative ``zscore`` term stays the same because it adapts to each query.
+FAMILY_TIERS: dict[str, dict[str, tuple[float, float, float | None, float]]] = {
+    "siglip": {
+        "strict": (0.10, 0.02, 0.0, 2.2),
+        "balanced": (0.08, 0.03, -0.005, 2.0),
+        "loose": (0.06, 0.04, -0.01, 1.6),
+    },
+}
+
 DEFAULT_PRECISION = "balanced"
 
 #: Filler words removed before translating so "我的猫" behaves like "猫".
@@ -191,10 +204,13 @@ QUERY_LABEL_GROUPS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
 
 def precision_params(
     tier: str | None,
+    *,
+    family: str = "clip",
 ) -> tuple[float, float, float | None, float]:
-    """Return ``(floor, margin, margin_tolerance, zscore)`` for *tier*."""
+    """Return ``(floor, margin, margin_tolerance, zscore)`` for *tier*/*family*."""
 
-    return PRECISION_TIERS.get(tier or "", PRECISION_TIERS[DEFAULT_PRECISION])
+    table = FAMILY_TIERS.get(family, PRECISION_TIERS)
+    return table.get(tier or "", table[DEFAULT_PRECISION])
 
 
 def labels_for_query(query: str) -> tuple[str, ...] | None:
