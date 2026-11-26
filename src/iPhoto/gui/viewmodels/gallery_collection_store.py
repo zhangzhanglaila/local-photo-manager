@@ -170,7 +170,7 @@ class GalleryCollectionStore:
             return
         self.cancel_pending_load()
         self._library_root = root
-        self._reset_window_state()
+        self.reset_visible_window()
         self.data_changed.emit()
         # ⭐ 库根改变后，如果已有活动根和 asset_query_service，触发加载
         if (
@@ -187,7 +187,7 @@ class GalleryCollectionStore:
         if self._asset_query_service is asset_query_service:
             return
         self._asset_query_service = asset_query_service
-        self._reset_window_state()
+        self.reset_visible_window()
         self.data_changed.emit()
         # ⭐ 服务刚绑定上，如果有 pending load 就触发它
         if (
@@ -299,7 +299,7 @@ class GalleryCollectionStore:
             self._active_root, self._library_root,
             self._asset_query_service is not None, query,
         )
-        self._reset_window_state()
+        self.reset_visible_window()
         self._load_initial_window()
 
     def _load_direct_assets(self, assets: list, library_root: Path) -> None:
@@ -311,7 +311,7 @@ class GalleryCollectionStore:
         self._current_query = None
         self._library_root = library_root
         self._direct_mode = True
-        self._reset_window_state()
+        self.reset_visible_window()
 
         next_index = 0
         for asset in stored_assets:
@@ -949,7 +949,7 @@ class GalleryCollectionStore:
             else:
                 if self._asset_query_service is None:
                     old_total = self._total_count
-                    self._reset_window_state()
+                    self.reset_visible_window()
                     if emit_signals and old_total != 0:
                         self.count_changed.emit(old_total, 0)
                         self.data_changed.emit()
@@ -1112,7 +1112,7 @@ class GalleryCollectionStore:
         self._store_total(total)
 
         if total <= 0:
-            self._reset_window_state()
+            self.reset_visible_window()
             self._total_count = 0
             if self._emit_signals_on_load and old_total != 0:
                 self.count_changed.emit(old_total, 0)
@@ -1588,7 +1588,7 @@ class GalleryCollectionStore:
         self._cached_count = None
         self._cached_count_key = None
 
-    def _reset_window_state(self) -> None:
+    def reset_visible_window(self) -> None:
         self._generation += 1
         self._row_cache.clear()
         # Do NOT zero the row count here. The model reports ``count()`` as its row

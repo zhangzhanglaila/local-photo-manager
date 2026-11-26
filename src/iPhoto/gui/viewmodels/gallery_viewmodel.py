@@ -804,7 +804,7 @@ class GalleryViewModel(BaseViewModel):
         self._store.cancel_pending_load()
         # 重置存储状态以清空显示
         old_count = self._store.count()
-        self._store._reset_window_state()
+        self._store.reset_visible_window()
         # 发出信号通知视图更新
         self._store.count_changed.emit(old_count, 0)
         self._store.data_changed.emit()

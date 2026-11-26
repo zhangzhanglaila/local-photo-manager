@@ -28,12 +28,15 @@ class GalleryListModelAdapter(QAbstractListModel):
         store: GalleryCollectionStore,
         thumbnail_service: ThumbnailCacheService,
         edit_service_getter: Callable[[], EditServicePort | None] | None = None,
+        on_model_populated: Callable[[], None] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._store = store
         self._thumbnails = thumbnail_service
         self._edit_service_getter = edit_service_getter
+        #: Called once rows exist, so the view can drop its loading layer.
+        self._on_model_populated = on_model_populated
         self._thumb_size = QSize(256, 256)  # Reduced from 512 for better performance
         self._current_row = -1
         self._last_snapshot: Optional[tuple[int, int]] = None
@@ -52,6 +55,7 @@ class GalleryListModelAdapter(QAbstractListModel):
         asset_query_service,
         thumbnail_service: ThumbnailCacheService,
         edit_service_getter: Callable[[], EditServicePort | None] | None = None,
+        on_model_populated: Callable[[], None] | None = None,
         library_root: Optional[Path] = None,
         parent=None,
     ) -> "GalleryListModelAdapter":
@@ -60,6 +64,7 @@ class GalleryListModelAdapter(QAbstractListModel):
             store,
             thumbnail_service,
             edit_service_getter=edit_service_getter,
+            on_model_populated=on_model_populated,
             parent=parent,
         )
 
@@ -377,22 +382,20 @@ class GalleryListModelAdapter(QAbstractListModel):
             QTimer.singleShot(0, self._dismiss_loading_overlays)
 
     def _dismiss_loading_overlays(self) -> None:
-        """通知 grid view 清除所有加载/扫描图层。
+        """Tell the view it can drop its loading/scanning layers.
 
-        当模型有数据后，立即清除 _loading_label / _scanning_label / _empty_label，
-        避免用户看到持续显示的"加载中"或"扫描中"图层。
+        The adapter used to scan every top-level widget for the grid view. The view
+        registers the callback instead, so the model no longer needs to know the
+        widget tree (or another widget's private attributes).
         """
-        # 找到 grid view 并调用 dismiss_loading_state
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        if app is None:
+
+        callback = self._on_model_populated
+        if callback is None:
             return
-        for widget in app.allWidgets():
-            if hasattr(widget, "dismiss_loading_state") and hasattr(widget, "_loading_label"):
-                try:
-                    widget.dismiss_loading_state()
-                except Exception:
-                    pass
+        try:
+            callback()
+        except Exception:  # pragma: no cover - overlay cleanup is best effort
+            pass
 
     def _on_window_changed(self, first: int, last: int) -> None:
         # Same thread-safety guard as _on_source_changed.

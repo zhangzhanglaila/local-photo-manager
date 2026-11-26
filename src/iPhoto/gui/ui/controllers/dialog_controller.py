@@ -167,50 +167,19 @@ class DialogController:
             return a == b
 
     def _should_rescan_library(self, root: Path) -> bool:
-        """检查是否需要对库进行重新扫描。
+        """Return True when the library index is missing, empty or unreadable."""
 
-        Returns:
-            True 如果数据库不存在或为空，需要扫描
-        """
-        from ...utils.pathutils import resolve_work_dir, get_custom_workspace_dir
+        from ....cache.index_store import IndexStore, index_db_path
 
-        # 先检查自定义工作目录中的数据库
-        custom_dir = get_custom_workspace_dir(root)
-        if custom_dir is not None:
-            custom_db = custom_dir / "global_index.db"
-            if custom_db.exists():
-                try:
-                    # 检查数据库是否为空
-                    import sqlite3
-                    conn = sqlite3.connect(custom_db)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM assets")
-                    count = cursor.fetchone()[0]
-                    conn.close()
-                    if count > 0:
-                        return False  # 有数据，不需要扫描
-                except Exception:
-                    pass  # 数据库损坏，需要重新扫描
-
-        # 回退到传统工作目录检测
-        work_dir = resolve_work_dir(root)
-        if work_dir is not None:
-            db_path = work_dir / "global_index.db"
-            if db_path.exists():
-                try:
-                    # 检查数据库是否为空
-                    import sqlite3
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM assets")
-                    count = cursor.fetchone()[0]
-                    conn.close()
-                    if count > 0:
-                        return False  # 有数据，不需要扫描
-                except Exception:
-                    pass  # 数据库损坏，需要重新扫描
-
-        return True  # 数据库不存在或为空，需要扫描
+        if not index_db_path(root).exists():
+            return True
+        store = IndexStore(root)
+        try:
+            return store.count() == 0
+        except Exception:  # noqa: BLE001 - a corrupt database means "rescan"
+            return True
+        finally:
+            store.close()
 
     def _persist_library_paths(self) -> None:
         """Save all bound library roots to settings."""
@@ -221,9 +190,9 @@ class DialogController:
             self._context.settings.set("basic_library_path", str(roots[0]))
 
     def _start_initial_scan_if_needed(self, bound_root: Path) -> None:
-        work_dir = resolve_work_dir(bound_root)
-        db_path = work_dir / "global_index.db" if work_dir is not None else None
-        if db_path is not None and db_path.exists():
+        from ....cache.index_store import index_db_path
+
+        if index_db_path(bound_root).exists():
             return
         self._start_scan_if_needed(bound_root)
 

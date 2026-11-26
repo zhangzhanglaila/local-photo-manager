@@ -141,6 +141,7 @@ class MainCoordinator(QObject):
             asset_query_service=self._asset_query_service(),
             thumbnail_service=self._context.asset_runtime.thumbnail_service,
             edit_service_getter=edit_service_getter,
+            on_model_populated=window.ui.grid_view.dismiss_loading_state,
             library_root=lib_root,
             parent=window.ui.grid_view,
         )
@@ -2879,22 +2880,15 @@ def _build_location_index(
 
 
 def _read_all_asset_rows(library_root: Path) -> list[dict]:
-    """Read asset rows straight from the index store (no UI thread needed)."""
-
-    import sqlite3
+    """Read every asset row through the repository (no raw SQL in the GUI layer)."""
 
     from iPhoto.cache.index_store import IndexStore
-    from iPhoto.cache.index_store.repository import GLOBAL_INDEX_DB_NAME
 
-    db_path = Path(IndexStore(library_root).path)
-    if not db_path.exists():
-        return []
-    connection = sqlite3.connect(str(db_path))
-    connection.row_factory = sqlite3.Row
+    store = IndexStore(library_root)
     try:
-        return [dict(row) for row in connection.execute("SELECT * FROM assets")]
+        return list(store.read_all())
     finally:
-        connection.close()
+        store.close()
 
 
 def _match_location_hits(
