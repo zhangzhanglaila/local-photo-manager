@@ -187,7 +187,7 @@ class LibrarySession:
 
             if not search_models.is_installed(spec):
                 logger.info("Search model %s not installed at %s", spec.key, model_dir)
-                self._show_model_download_dialog(model_dir)
+                self._show_model_download_dialog(spec)
                 return None
 
             logger.info("Loading %s model from: %s", spec.family, model_dir)
@@ -201,231 +201,114 @@ class LibrarySession:
             logger.warning("Failed to initialize embedding service: %s", e)
             return None
 
-    def _show_model_download_dialog(self, model_dir: Path) -> None:
-        """Show dialog to user about missing CLIP model."""
-        try:
-            from ..agent.infrastructure.clip_downloader import get_download_instructions, download_model
-            from ..gui.ui.widgets import dialogs
+    def _show_model_download_dialog(self, spec) -> None:
+        """Offer to fetch a missing search model, with a manual fallback."""
 
-            model_path = model_dir / "clip-vit-base-patch32"
+        from ..agent.infrastructure.search_model_download import model_page_urls
+        from ..agent.services import search_models
+        from ..gui.ui.widgets import dialogs
+        from ..i18n import tr
 
-            choice = dialogs.ask_choice(
-                None,
-                (
-                    "语义搜索功能需要下载 CLIP 模型（约 350MB）。\n\n"
-                    f"模型目录: {model_path}\n\n"
-                    "是否现在下载？\n\n"
-                    "下载后可以搜索任意内容，如：\n"
-                    "- 黄鹤楼、海边、日落\n"
-                    "- 狗、猫、美食\n"
-                    "- 穿红衣服的人"
-                ),
-                title="语义搜索需要下载模型",
-                choices=[("取消", "cancel"), ("手动下载", "manual"), ("自动下载", "auto")],
-            )
-
-            if choice == "auto":
-                self._download_model(model_dir)
-            elif choice == "manual":
-                self._show_manual_download_instructions(model_dir)
-
-        except Exception as e:
-            logger.error("Failed to show download dialog: %s", e)
-
-    def _download_model(self, model_dir: Path) -> None:
-        """Download CLIP model in background."""
-        try:
-            from PySide6.QtCore import QThread, Signal
-            from ..agent.infrastructure.clip_downloader import download_model
-            from ..gui.ui.widgets.progress_dialog import ProgressDialog
-
-            class DownloadThread(QThread):
-                progress_updated = Signal(int, int, str)
-                finished = Signal(bool)
-
-                def __init__(self, model_dir):
-                    super().__init__()
-                    self._model_dir = model_dir
-
-                def run(self):
-                    def progress_callback(current, total, message):
-                        self.progress_updated.emit(current, total, message)
-
-                    success = download_model(
-                        model_dir=self._model_dir,
-                        progress_callback=progress_callback,
-                    )
-                    self.finished.emit(success)
-
-            # Non-blocking progress card in the application chrome.
-            progress = ProgressDialog(
-                None,
-                title="下载模型",
-                message="正在下载 CLIP 模型...",
-                dismiss_label="后台下载",
-            )
-            progress.set_progress(0, 100)
-
-            # Create and start download thread
-            self._download_thread = DownloadThread(model_dir)
-
-            # Connect signals
-            self._download_thread.progress_updated.connect(
-                lambda current, total, msg: (
-                    progress.set_progress(current, 100),
-                    progress.set_message(msg),
-                )
-            )
-
-            self._download_thread.finished.connect(
-                lambda success: self._on_download_finished(success, progress, model_dir)
-            )
-
-            # Show dialog non-blocking
-            progress.show()
-
-            # Start download
-            self._download_thread.start()
-
-        except Exception as e:
-            logger.error("Failed to start download: %s", e)
-
-    def _on_download_finished(self, success: bool, progress, model_dir: Path = None) -> None:
-        """Handle download completion."""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QApplication, QLabel, QHBoxLayout
-
-        if success:
-            progress.set_message("下载完成！")
-            progress.set_progress(100, 100)
-            from ..gui.ui.widgets import dialogs
-
-            dialogs.show_information(
-                None,
-                "CLIP 模型下载完成！\n\n请重新启动应用以使用语义搜索。",
-                title="下载完成",
-            )
-        else:
-            progress.set_message("下载失败")
-
-            model_path = model_dir / "clip-vit-base-patch32" if model_dir else "项目目录/extension/models/clip-vit-base-patch32"
-
-            # Create a dialog with selectable text
-            dialog = QDialog()
-            dialog.setWindowTitle("下载失败")
-            dialog.setMinimumSize(650, 500)
-
-            layout = QVBoxLayout(dialog)
-
-            # Title
-            title = QLabel("CLIP 模型下载失败")
-            title.setStyleSheet("font-size: 14px; font-weight: bold;")
-            layout.addWidget(title)
-
-            # Error message with selectable text
-            error_text = QTextEdit()
-            error_text.setReadOnly(True)
-            error_text.setStyleSheet("font-family: Consolas, monospace; font-size: 12px;")
-            error_text.setText(
-                "可能原因：\n"
-                "1. 网络连接问题\n"
-                "2. HuggingFace 被屏蔽（需要VPN）\n"
-                "3. 磁盘空间不足\n\n"
-                "========================================\n"
-                "手动下载方法（复制以下命令到CMD执行）：\n"
-                "========================================\n\n"
-                "【方法1】HuggingFace 镜像（推荐）\n"
-                "----------------------------------------\n"
-                "pip install huggingface_hub\n\n"
-                "set HF_ENDPOINT=https://hf-mirror.com\n\n"
-                f"python -c \"from huggingface_hub import snapshot_download; snapshot_download('openai/clip-vit-base-patch32', local_dir=r'{model_path}')\"\n\n\n"
-                "【方法2】ModelScope（国内镜像）\n"
-                "----------------------------------------\n"
-                "pip install modelscope\n\n"
-                f"python -c \"from modelscope import snapshot_download; snapshot_download('AI-ModelScope/clip-vit-base-patch32', cache_dir=r'{model_dir}')\"\n\n\n"
-                f"下载位置：{model_path}\n\n"
-                "下载完成后重启应用即可。"
-            )
-            layout.addWidget(error_text)
-
-            # Buttons
-            btn_layout = QHBoxLayout()
-
-            copy_btn = QPushButton("复制全部内容")
-            copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(error_text.toPlainText()))
-            btn_layout.addWidget(copy_btn)
-
-            close_btn = QPushButton("关闭")
-            close_btn.clicked.connect(dialog.close)
-            btn_layout.addWidget(close_btn)
-
-            layout.addLayout(btn_layout)
-
-            dialog.exec()
-
-        progress.close()
-
-    def _show_manual_download_instructions(self, model_dir: Path) -> None:
-        """Show manual download instructions."""
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton, QApplication
-
-        model_path = model_dir / "clip-vit-base-patch32"
-
-        instructions = (
-            "手动下载 CLIP 模型\n"
-            "========================================\n\n"
-            "下载位置（必须放这里）：\n"
-            f"{model_path}\n\n"
-            "方法1：使用 HuggingFace 镜像（推荐）\n"
-            "----------------------------------------\n"
-            "1. 打开命令行（CMD 或 PowerShell）\n"
-            "2. 执行以下命令：\n\n"
-            "pip install huggingface_hub\n"
-            "set HF_ENDPOINT=https://hf-mirror.com\n"
-            f"python -c \"from huggingface_hub import snapshot_download; snapshot_download('openai/clip-vit-base-patch32', local_dir=r'{model_path}')\"\n\n"
-            "方法2：使用 ModelScope（国内镜像）\n"
-            "----------------------------------------\n"
-            "1. 打开命令行\n"
-            "2. 执行以下命令：\n\n"
-            "pip install modelscope\n"
-            f"python -c \"from modelscope import snapshot_download; snapshot_download('AI-ModelScope/clip-vit-base-patch32', cache_dir=r'{model_dir}')\"\n\n"
-            "方法3：手动下载文件\n"
-            "----------------------------------------\n"
-            "1. 访问 https://hf-mirror.com/openai/clip-vit-base-patch32\n"
-            "2. 下载所有文件\n"
-            f"3. 放到 {model_path} 目录下\n\n"
-            "下载完成后重启应用即可使用语义搜索。"
+        target = search_models.model_dir(spec)
+        choice = dialogs.ask_choice(
+            None,
+            tr(
+                "search.model.download_prompt",
+                name=spec.dir_name,
+                mb=spec.download_mb,
+                path=str(target),
+            ),
+            title=tr("search.model.title"),
+            choices=[
+                (tr("dialog.cancel"), "cancel"),
+                (tr("search.model.download"), "manual"),
+                (tr("search.model.download_and_use"), "auto"),
+            ],
         )
 
-        dialog = QDialog()
-        dialog.setWindowTitle("手动下载 CLIP 模型")
-        dialog.setMinimumSize(700, 500)
+        if choice == "auto":
+            self._download_search_model(spec)
+        elif choice == "manual":
+            links = ", ".join(url for _label, url in model_page_urls(spec))
+            dialogs.show_information(
+                None,
+                tr("search.model.manual_body", links=links, path=str(target)),
+                title=tr("search.model.download"),
+            )
 
-        layout = QVBoxLayout(dialog)
+    def _download_search_model(self, spec) -> None:
+        """Download *spec* in the background, reporting byte progress."""
 
-        text_edit = QTextEdit()
-        text_edit.setPlainText(instructions)
-        text_edit.setReadOnly(True)
-        text_edit.setStyleSheet("font-family: Consolas, monospace;")
-        layout.addWidget(text_edit)
+        from PySide6.QtCore import QThread, Signal
 
-        # Button row
-        btn_layout = QHBoxLayout()
+        from ..agent.infrastructure.search_model_download import download_search_model
+        from ..gui.ui.widgets.progress_dialog import ProgressDialog
+        from ..i18n import tr
 
-        copy_btn = QPushButton("复制命令到剪贴板")
-        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(instructions))
-        btn_layout.addWidget(copy_btn)
+        class _DownloadThread(QThread):
+            progress = Signal(object, str)  # fraction | None, message
+            done = Signal(bool, str)  # succeeded, error
 
-        open_folder_btn = QPushButton("打开下载目录")
-        open_folder_btn.clicked.connect(lambda: os.startfile(str(model_path)) if os.name == 'nt' else None)
-        btn_layout.addWidget(open_folder_btn)
+            def run(self) -> None:
+                try:
+                    download_search_model(
+                        spec,
+                        progress=lambda fraction, message: self.progress.emit(
+                            fraction, message
+                        ),
+                    )
+                except Exception as exc:  # noqa: BLE001 - reported to the user
+                    self.done.emit(False, str(exc))
+                else:
+                    self.done.emit(True, "")
 
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(dialog.close)
-        btn_layout.addWidget(close_btn)
+        progress = ProgressDialog(
+            None,
+            title=tr("search.model.download"),
+            message=tr("search.model.downloading", name=spec.dir_name, mb=spec.download_mb),
+            dismiss_label=tr("search.model.download"),
+        )
+        progress.set_progress(0, 100)
+        thread = _DownloadThread(self)
+        self._download_thread = thread
 
-        layout.addLayout(btn_layout)
+        def _on_progress(fraction, message: str) -> None:
+            percent = 0 if fraction is None else int(fraction * 100)
+            progress.set_progress(percent, 100)
+            if message:
+                progress.set_message(message)
 
-        dialog.exec()
+        thread.progress.connect(_on_progress)
+        thread.done.connect(
+            lambda ok, error: self._on_download_finished(ok, error, progress, spec)
+        )
+        progress.show()
+        thread.start()
+
+    def _on_download_finished(self, success: bool, error: str, progress, spec) -> None:
+        """Close the progress card and tell the user how it went."""
+
+        from ..agent.services import search_models
+        from ..gui.ui.widgets import dialogs
+        from ..i18n import tr
+
+        progress.close()
+        if success:
+            dialogs.show_information(
+                None,
+                tr("search.model.download_done", name=spec.dir_name),
+                title=tr("search.model.download"),
+            )
+            return
+        dialogs.show_information(
+            None,
+            tr(
+                "search.model.download_failed_hint",
+                error=error,
+                path=str(search_models.model_dir(spec)),
+            ),
+            title=tr("search.model.download_failed"),
+        )
 
     @property
     def assets(self) -> AssetRepositoryPort:

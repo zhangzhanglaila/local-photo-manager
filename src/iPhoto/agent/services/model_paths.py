@@ -15,6 +15,7 @@ be migrated later.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,8 +24,15 @@ _LEGACY_WARNED = False
 
 
 def install_root() -> Path:
-    """Canonical model directory: the one shown to the user."""
+    """Canonical model directory: the one shown to the user.
 
+    `IPHOTO_MODELS_DIR` moves every pack at once (packaging, tests, users who
+    keep models on another drive); without it the checkout/install layout decides.
+    """
+
+    override = os.environ.get("IPHOTO_MODELS_DIR")
+    if override:
+        return Path(override).expanduser()
     # src/iPhoto/agent/services/model_paths.py -> repo root at parents[4]
     return Path(__file__).resolve().parents[4] / "extension" / "models"
 

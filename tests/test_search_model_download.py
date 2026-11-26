@@ -19,6 +19,7 @@ def test_existing_model_is_not_downloaded(tmp_path: Path, monkeypatch):
     target = search_models.model_dir(spec, install_root=tmp_path)
     target.mkdir(parents=True)
     (target / "config.json").write_text("{}", encoding="utf-8")
+    (target / "model.safetensors").write_bytes(b"")
 
     calls: list[str] = []
     monkeypatch.setattr(
@@ -37,6 +38,7 @@ def test_huggingface_is_tried_first(tmp_path: Path, monkeypatch):
 
     def fake_hf(_spec, directory, **_kwargs):
         (directory / "config.json").write_text("{}", encoding="utf-8")
+        (directory / "model.safetensors").write_bytes(b"")
 
     monkeypatch.setattr(search_model_download, "_download_from_huggingface", fake_hf)
     monkeypatch.setattr(
@@ -57,6 +59,7 @@ def test_modelscope_is_the_fallback(tmp_path: Path, monkeypatch):
 
     def fake_modelscope(_spec, directory, **_kwargs):
         (directory / "config.json").write_text("{}", encoding="utf-8")
+        (directory / "model.safetensors").write_bytes(b"")
 
     monkeypatch.setattr(search_model_download, "_download_from_huggingface", failing_hf)
     monkeypatch.setattr(search_model_download, "_download_from_modelscope", fake_modelscope)

@@ -44,10 +44,9 @@ def _inline_threads(monkeypatch: pytest.MonkeyPatch):
 def _model_available(monkeypatch: pytest.MonkeyPatch):
     """Pretend the CLIP model is downloaded so the preload proceeds."""
 
-    import iPhoto.agent.infrastructure.clip_downloader as downloader
+    from iPhoto.agent.services import search_models
 
-    monkeypatch.setattr(downloader, "is_model_available", lambda *_a, **_k: True)
-    monkeypatch.setattr(downloader, "get_model_dir", lambda root: Path(str(root)))
+    monkeypatch.setattr(search_models, "is_installed", lambda *_a, **_k: True)
 
 
 class _Service:

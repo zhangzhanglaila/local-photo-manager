@@ -55,6 +55,7 @@ def test_installed_detection_uses_the_model_directory(tmp_path: Path):
     target = search_models.model_dir(spec, install_root=install_root)
     target.mkdir(parents=True)
     (target / "config.json").write_text("{}", encoding="utf-8")
+    (target / "model.safetensors").write_bytes(b"")
 
     assert search_models.is_installed(spec, install_root=install_root) is True
     assert spec in search_models.installed_models(install_root=install_root)

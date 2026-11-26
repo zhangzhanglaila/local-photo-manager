@@ -135,16 +135,33 @@ def model_dir(spec: SearchModelSpec, *, install_root: Path | None = None) -> Pat
 
     if install_root is not None:
         return models_root(install_root) / spec.dir_name
+    import os
+
+    override = os.environ.get("IPHOTO_CLIP_MODEL_DIR")
+    if override:
+        return Path(override).expanduser() / spec.dir_name
     from .model_paths import resolve_dir
 
     return resolve_dir(spec.dir_name)
 
 
 def is_installed(spec: SearchModelSpec, *, install_root: Path | None = None) -> bool:
-    """True when the weights are on disk (config.json is a reliable sentinel)."""
+    """True when config **and** weights are on disk.
+
+    `config.json` alone is not enough: an interrupted download leaves the config
+    behind without any tensors, and the encoder would then fail at load time with
+    a confusing error instead of offering the download again.
+    """
 
     directory = model_dir(spec, install_root=install_root)
-    return (directory / "config.json").is_file()
+    if not (directory / "config.json").is_file():
+        return False
+    return (
+        (directory / "model.safetensors").is_file()
+        or (directory / "pytorch_model.bin").is_file()
+        or any(directory.glob("*.safetensors"))
+        or any(directory.glob("pytorch_model*.bin"))
+    )
 
 
 def installed_models(*, install_root: Path | None = None) -> list[SearchModelSpec]:

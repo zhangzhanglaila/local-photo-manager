@@ -1407,13 +1407,10 @@ class MainCoordinator(QObject):
         from PySide6.QtCore import QThread, Signal
 
         # Get paths before starting thread
-        # Resolve through the downloader so a packaged build and the
-        # IPHOTO_CLIP_MODEL_DIR override both work (a hardcoded parents[4] pointed
-        # outside the install directory once bundled).
-        from iPhoto.agent.infrastructure.clip_downloader import get_model_path
+        from iPhoto.agent.services import search_models
 
         library_root = Path(self._context.library.root())
-        model_dir = get_model_path(library_root)
+        model_dir = search_models.model_dir(search_models.active_model())
         # Reuse the session's embedding service: it is warmed before the face scan
         # starts, so rebuilding a service here would reload the weights on every
         # single search.
@@ -1449,10 +1446,7 @@ class MainCoordinator(QObject):
                 try:
                     from iPhoto.agent.infrastructure.clip_embedding import CLIPEmbeddingService
                     from iPhoto.bootstrap.embedding_index import load_stored_embeddings
-                    from iPhoto.agent.infrastructure.clip_downloader import (
-                        get_model_dir,
-                        is_model_available,
-                    )
+                    from iPhoto.agent.services import search_models
                     import time
 
                     # Reuse the session's embedding service when the weights are
@@ -1463,9 +1457,7 @@ class MainCoordinator(QObject):
                     session_service = None
                     if library_session is not None:
                         try:
-                            if is_model_available(
-                                get_model_dir(library_session.library_root)
-                            ):
+                            if search_models.is_installed(search_models.active_model()):
                                 session_service = (
                                     library_session.get_embedding_service()
                                 )
@@ -2210,10 +2202,10 @@ class MainCoordinator(QObject):
                     self._callback("loading_model", 0, 0, "正在加载 AI 模型（约350MB）...")
 
                     # Check if model files exist first
-                    from iPhoto.agent.infrastructure.clip_downloader import get_model_path, is_model_available, get_model_dir
-                    model_dir = get_model_dir(self._session.library_root)
+                    from iPhoto.agent.services import search_models
+                    model_dir = search_models.model_dir(search_models.active_model())
 
-                    if not is_model_available(model_dir):
+                    if not search_models.is_installed(search_models.active_model()):
                         self._callback("error", 0, 0, "模型文件不存在，请先下载模型")
                         return
 

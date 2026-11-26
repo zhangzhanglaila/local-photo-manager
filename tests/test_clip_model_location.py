@@ -1,43 +1,57 @@
-"""CLIP model location must work in a source checkout and in a standalone build.
+"""Search-model location must work in a checkout, a packaged build and via overrides.
 
 The path used to be a hardcoded ``parents[4]``, which resolves *above* the install
-directory once bundled, so a packaged app could never find the model. Resolution now
-follows the same rule as the face models and the map extension: explicit override,
-then the packaged location, then the checkout.
+directory once bundled. Resolution now goes through ``search_models.model_dir`` /
+``model_paths``, with ``IPHOTO_MODELS_DIR`` (all packs) and
+``IPHOTO_CLIP_MODEL_DIR`` (search only) as explicit overrides.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
-from iPhoto.agent.infrastructure.clip_downloader import get_model_dir
+from iPhoto.agent.services import search_models
 
 
-def test_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture(autouse=True)
+def _clear_overrides(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("IPHOTO_MODELS_DIR", raising=False)
+    monkeypatch.delenv("IPHOTO_CLIP_MODEL_DIR", raising=False)
+
+
+def test_clip_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     target = tmp_path / "custom"
     monkeypatch.setenv("IPHOTO_CLIP_MODEL_DIR", str(target))
+    spec = search_models.resolve_spec("clip-b32")
 
-    assert get_model_dir(tmp_path) == target
+    assert search_models.model_dir(spec) == target / spec.dir_name
+
+
+def test_models_dir_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target = tmp_path / "all-models"
+    monkeypatch.setenv("IPHOTO_MODELS_DIR", str(target))
+
+    assert search_models.models_root() == target
 
 
 def test_checkout_resolves_to_the_repository_root() -> None:
-    resolved = get_model_dir(Path("."))
+    resolved = search_models.models_root()
 
-    # The module lives under src/iPhoto/agent/infrastructure, so the repository root is
-    # four levels up — not ``src`` (which only holds the face models).
+    # The canonical root is <repo>/extension/models — not src/extension/models,
+    # which is only read for compatibility with older installs.
     assert resolved.name == "models"
     assert resolved.parent.name == "extension"
-    assert (resolved / "clip-vit-base-patch32").exists() or not resolved.exists()
+    assert resolved.parent.parent.name != "src"
 
 
-def test_resolution_is_stable_without_the_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("IPHOTO_CLIP_MODEL_DIR", raising=False)
+def test_resolution_is_stable_without_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("IPHOTO_MODELS_DIR", raising=False)
 
-    first = get_model_dir(tmp_path)
-    second = get_model_dir(tmp_path)
+    first = search_models.models_root()
+    second = search_models.models_root()
 
     assert first == second
-    assert os.environ.get("IPHOTO_CLIP_MODEL_DIR") is None

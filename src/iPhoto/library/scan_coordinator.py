@@ -494,12 +494,9 @@ class ScanCoordinatorMixin:
                 # Only warm an already downloaded model: `get_embedding_service`
                 # opens a download dialog when files are missing, and that must not
                 # happen on a background thread.
-                from iPhoto.agent.infrastructure.clip_downloader import (
-                    get_model_dir,
-                    is_model_available,
-                )
+                from iPhoto.agent.services import search_models
 
-                if not is_model_available(get_model_dir(session.library_root)):
+                if not search_models.is_installed(search_models.active_model()):
                     LOGGER.info("CLIP model not downloaded; skipping preload")
                     return
 
