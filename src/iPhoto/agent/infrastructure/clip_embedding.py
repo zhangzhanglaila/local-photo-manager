@@ -212,6 +212,14 @@ class CLIPEmbeddingService:
                     self._model.to(device)
                     self._device = device
                     self._dtype = dtype
+                    try:
+                        from ..services.search_status import search_status
+
+                        search_status().set_device(
+                            device, getattr(dtype, "__name__", str(dtype)).replace("torch.", "")
+                        )
+                    except Exception:  # pragma: no cover - status is display only
+                        pass
                     self._processor = processor_cls.from_pretrained(str(self._model_dir))
                     if tokenizer_cls is not None:
                         self._tokenizer = tokenizer_cls.from_pretrained(str(self._model_dir))

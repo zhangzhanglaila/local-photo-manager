@@ -387,6 +387,10 @@ class SettingsDialog(QDialog):
                             tr("settings.row.search_model"),
                             self._search_model_value(),
                         ),
+                        self._value_row(
+                            tr("settings.row.search_index_state"),
+                            self._index_state_value(),
+                        ),
                         self._action_row(
                             tr("search.model.switch"), self._switch_model_action()
                         ),
@@ -528,6 +532,64 @@ class SettingsDialog(QDialog):
         combo.currentIndexChanged.connect(lambda index: actions[index].trigger())
         return combo
 
+    def _index_state_value(self) -> QLabel:
+        """Live coverage / rebuild progress for the active model."""
+
+        label = QLabel("", self)
+        label.setObjectName("settingsPathLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._index_state_label = label
+        self._refresh_search_rows()
+        from ....agent.services.search_status import search_status
+
+        search_status().changed.connect(self._refresh_search_rows)
+        self.finished.connect(self._disconnect_status)
+        return label
+
+    def _disconnect_status(self, _result: int = 0) -> None:
+        from ....agent.services.search_status import search_status
+
+        try:
+            search_status().changed.disconnect(self._refresh_search_rows)
+        except (RuntimeError, TypeError):
+            pass
+
+    def _refresh_search_rows(self) -> None:
+        """Keep the model and index rows honest after a switch or a progress tick."""
+
+        label = getattr(self, "_model_value_label", None)
+        state_label = getattr(self, "_index_state_label", None)
+        spec = search_models.active_model()
+        state = (
+            ""
+            if search_models.is_installed(spec)
+            else tr("search.model.not_installed_suffix")
+        )
+        if label is not None:
+            label.setText(f"{model_title(spec)}{state} · {current_device_label()}")
+
+        if state_label is None:
+            return
+        from ....agent.services.search_status import search_status
+
+        status = search_status()
+        if status.running and status.total:
+            percent = int(status.done * 100 / status.total)
+            state_label.setText(
+                tr(
+                    "search.model.indexing_now",
+                    percent=percent,
+                    done=status.done,
+                    total=status.total,
+                )
+            )
+        elif status.total:
+            state_label.setText(
+                tr("search.model.coverage", done=status.done, total=status.total)
+            )
+        else:
+            state_label.setText(tr("search.model.coverage_unknown"))
+
     def _search_model_value(self) -> QLabel:
         """Show the active search model plus the device that will run it."""
 
@@ -544,6 +606,7 @@ class SettingsDialog(QDialog):
         label.setObjectName("settingsPathLabel")
         label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         label.setWordWrap(False)
+        self._model_value_label = label
         return label
 
     def _switch_model_action(self) -> QAction:
@@ -558,6 +621,7 @@ class SettingsDialog(QDialog):
                 return
             if self._settings is not None:
                 self._settings.set(search_models.SETTINGS_KEY, key)
+                self._refresh_search_rows()
             else:  # pragma: no cover - settings are always present in the app
                 search_models.set_active_model(key)
 

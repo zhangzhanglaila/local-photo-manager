@@ -490,6 +490,10 @@ _ZH: dict[str, str] = {
     'search.model.reason.auth': '没有访问权限',
     'search.model.reason.unknown': '未知错误',
     'search.model.not_installed_suffix': '（未下载）',
+    'settings.row.search_index_state': '索引状态',
+    'search.model.indexing_now': '正在重建索引：{percent}%（{done}/{total}）',
+    'search.model.coverage_unknown': '尚未建立索引',
+    'search.model.device_pending': '设备待加载',
 }
 
 _EN: dict[str, str] = {
@@ -964,6 +968,10 @@ _EN: dict[str, str] = {
     'search.model.reason.auth': 'not authorised',
     'search.model.reason.unknown': 'unknown error',
     'search.model.not_installed_suffix': ' (not downloaded)',
+    'settings.row.search_index_state': 'Index status',
+    'search.model.indexing_now': 'Rebuilding index: {percent}% ({done}/{total})',
+    'search.model.coverage_unknown': 'Not indexed yet',
+    'search.model.device_pending': 'device pending',
 }
 
 

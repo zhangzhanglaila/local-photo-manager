@@ -1931,6 +1931,9 @@ class MainCoordinator(QObject):
             return
         spec = search_models.set_active_model(str(value) if value else None)
         self._logger.info("search model switched to %s", spec.key)
+        from iPhoto.agent.services.search_status import search_status
+
+        search_status().set_model(spec.key)
         session = getattr(self._context, "library_session", None)
         reset = getattr(session, "reset_embedding_service", None)
         if callable(reset):
@@ -2040,10 +2043,18 @@ class MainCoordinator(QObject):
                     all_assets = self._session.asset_runtime.assets.read_all()
                     image_assets = [a for a in all_assets if a.get("media_type") == 0]
                     asset_ids = [a["id"] for a in image_assets]
-                    pending = embedding_repo.get_asset_ids_without_embeddings(asset_ids)
+                    from iPhoto.agent.services import search_models as _models
+
+                    pending = embedding_repo.get_asset_ids_without_embeddings(
+                        asset_ids,
+                        model_name=_models.active_model().dir_name,
+                    )
+
+                    from iPhoto.agent.services.search_status import search_status
 
                     if not pending:
                         total = embedding_repo.count()
+                        search_status().set_indexing(False, len(asset_ids), len(asset_ids))
                         self._status_callback(f"AI 索引已就绪 ({total} 张照片)")
                         return
 
@@ -2057,11 +2068,15 @@ class MainCoordinator(QObject):
                         force_rebuild=force_rebuild,
                     )
 
+                    search_status().set_indexing(True, 0, int(len(pending)))
+
                     def on_progress(current, total, msg):
                         pct = int(current / total * 100) if total > 0 else 0
+                        search_status().set_indexing(True, current, total)
                         self._status_callback(f"AI 索引生成中: {current}/{total} ({pct}%)")
 
                     def on_finished(processed, failed):
+                        search_status().set_indexing(False, len(asset_ids), len(asset_ids))
                         self._status_callback(f"AI 索引生成完成 ({processed} 张照片)")
 
                     worker.signals.progress.connect(on_progress)

@@ -97,17 +97,29 @@ def model_details(spec: search_models.SearchModelSpec) -> str:
 
 
 def current_device_label() -> str:
-    """Return ``CUDA (…)`` / ``CPU (fp32)`` without forcing a torch import."""
+    """Return ``CUDA · fp16`` / ``CPU · fp32`` for the running encoder.
+
+    The status object is filled in when the encoder loads, so this never has to
+    import torch (seconds and ~700 MB) just to draw a label.
+    """
+
+    from ....agent.services.search_status import search_status
+
+    status = search_status()
+    if status.device:
+        dtype = status.dtype or "fp32"
+        return f"{status.device.upper()} · {dtype}"
 
     torch = sys.modules.get("torch")
-    if torch is None:
-        return "CPU (fp32)"
-    try:
-        if torch.cuda.is_available():
-            return f"CUDA ({torch.cuda.get_device_name(0)})"
-    except Exception:  # pragma: no cover - driver issues
-        pass
-    return "CPU (fp32)"
+    if torch is not None:
+        try:
+            if torch.cuda.is_available():
+                return "CUDA · fp16"
+        except Exception:  # pragma: no cover - driver issues
+            pass
+        return "CPU · fp32"
+    # Not loaded yet: say so instead of claiming CPU, which read as "GPU unused".
+    return tr("search.model.device_pending")
 
 
 class _DownloadSignals(QObject):
