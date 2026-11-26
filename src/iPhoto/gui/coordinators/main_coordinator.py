@@ -2331,26 +2331,13 @@ class MainCoordinator(QObject):
 
     def _handle_find_duplicates(self) -> None:
         """Handle find duplicates action."""
-        # Check if semantic search is enabled
-        if not self._context.settings.get("agent.semantic_search_enabled", False):
-            self._status_bar.show_message(
-                tr("search.not_available", default="Please enable semantic search first")
-            )
-            return
-
         library_session = getattr(self._context, "library_session", None)
         if library_session is None:
             return
 
-        embedding_service = library_session.get_embedding_service()
-        embedding_repo = library_session.get_embedding_repository()
-
-        if embedding_service is None or embedding_repo is None:
-            self._status_bar.show_message(
-                tr("search.not_available", default="Agent services not available")
-            )
-            return
-
+        # Duplicate detection and smart albums read album metadata only; they no
+        # longer need the CLIP embedding service, and gating them on it made both
+        # features unavailable (and could trigger a model-download dialog).
         # Run duplicate detection in background
         from iPhoto.agent.services.organize_service import OrganizeService
         from PySide6.QtCore import QRunnable, Slot
@@ -2372,8 +2359,6 @@ class MainCoordinator(QObject):
                     self._callback([])
 
         organize_service = OrganizeService(
-            embedding_service=embedding_service,
-            embedding_repository=embedding_repo,
             asset_repository=library_session.asset_runtime.assets,
             library_root=library_session.library_root,
         )
@@ -2423,26 +2408,13 @@ class MainCoordinator(QObject):
         group_by : str
             How to group photos: 'event', 'location', 'time', 'theme'.
         """
-        # Check if semantic search is enabled
-        if not self._context.settings.get("agent.semantic_search_enabled", False):
-            self._status_bar.show_message(
-                tr("search.not_available", default="Please enable semantic search first")
-            )
-            return
-
         library_session = getattr(self._context, "library_session", None)
         if library_session is None:
             return
 
-        embedding_service = library_session.get_embedding_service()
-        embedding_repo = library_session.get_embedding_repository()
-
-        if embedding_service is None or embedding_repo is None:
-            self._status_bar.show_message(
-                tr("search.not_available", default="Agent services not available")
-            )
-            return
-
+        # Duplicate detection and smart albums read album metadata only; they no
+        # longer need the CLIP embedding service, and gating them on it made both
+        # features unavailable (and could trigger a model-download dialog).
         # Run smart album creation in background
         from iPhoto.agent.services.organize_service import OrganizeService
         from PySide6.QtCore import QRunnable, Slot
@@ -2465,8 +2437,6 @@ class MainCoordinator(QObject):
                     self._callback([])
 
         organize_service = OrganizeService(
-            embedding_service=embedding_service,
-            embedding_repository=embedding_repo,
             asset_repository=library_session.asset_runtime.assets,
             library_root=library_session.library_root,
         )
