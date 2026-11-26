@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -96,6 +97,7 @@ class TaskStatusButton(QWidget):
 
         self._popup = TaskPopup(self)
         self._popup.hide()
+        QApplication.instance().installEventFilter(self)
 
         self._applying_style = False
         self._last_task_id: str | None = None
@@ -154,6 +156,19 @@ class TaskStatusButton(QWidget):
             self._popup.refresh()
 
     # ------------------------------------------------------------------
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if self._popup.isVisible():
+            if event.type() == QEvent.Type.MouseButtonPress:
+                target = event.globalPosition().toPoint() if hasattr(event, "globalPosition") else None
+                if target is not None:
+                    inside = self._popup.geometry().contains(self._popup.mapFromGlobal(target))
+                    on_entry = self.rect().contains(self.mapFromGlobal(target))
+                    if not inside and not on_entry:
+                        self._popup.hide()
+            elif event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+                self._popup.hide()
+        return super().eventFilter(watched, event)
+
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
             self._toggle_popup()
@@ -166,18 +181,22 @@ class TaskStatusButton(QWidget):
             self._popup.hide()
             return
         self._popup.refresh()
-        anchor = self.mapToGlobal(QPoint(0, 0))
-        height = self._popup.sizeHint().height()
-        x = anchor.x()
+        window = self.window()
+        self._popup.setParent(window)
+        anchor = self.mapTo(window, QPoint(0, 0))
+        popup = self._popup
+        width = popup.width()
+        height = popup.sizeHint().height()
+        # Right edge aligned with the entry, opened upwards, clamped inside the
+        # window so it never hangs over the desktop or past the app border.
+        x = anchor.x() + self.width() - width
         y = anchor.y() - height - 8
-        screen = self.screen()
-        if screen is not None:
-            bounds = screen.availableGeometry()
-            x = max(bounds.left() + 8, min(x, bounds.right() - self._popup.width() - 8))
-            y = max(bounds.top() + 8, min(y, bounds.bottom() - height - 8))
-        self._popup.move(x, y)
-        self._popup.show()
-        self._popup.raise_()
+        margin = 12
+        x = max(margin, min(x, window.width() - width - margin))
+        y = max(margin, min(y, window.height() - height - margin))
+        popup.move(x, y)
+        popup.show()
+        popup.raise_()
 
 
 class TaskRow(QWidget):
@@ -240,12 +259,13 @@ class TaskPopup(QFrame):
     """Card listing running and recently finished tasks."""
 
     def __init__(self, anchor: QWidget) -> None:
-        super().__init__(anchor, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        # A child of the main window, not a top-level Popup: a popup window has
+        # its own square background and can spill outside the rounded app shell,
+        # which looked broken. As a child it is clipped by the window and the
+        # corners show the window background through the border radius.
+        super().__init__(anchor.window() if anchor is not None else None)
         self.setObjectName("taskPopup")
-        # A translucent window plus an inner shell is what makes the rounded
-        # corners real; painting a radius on the top-level frame left the square
-        # window background visible behind the corners.
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedWidth(360)
 
         outer = QVBoxLayout(self)
@@ -301,6 +321,12 @@ class TaskPopup(QFrame):
         self.adjustSize()
 
     # ------------------------------------------------------------------
+    def showEvent(self, event) -> None:  # noqa: N802
+        # Re-read the palette on every open: the window theme may have changed
+        # while the popup was hidden.
+        self._apply_style()
+        super().showEvent(event)
+
     def changeEvent(self, event) -> None:  # noqa: N802
         if event.type() == QEvent.Type.PaletteChange and not self._applying_style:
             self._applying_style = True
@@ -313,7 +339,7 @@ class TaskPopup(QFrame):
     def _apply_style(self) -> None:
         tokens = dialog_tokens(self.palette())
         self.setStyleSheet(
-            "QFrame#taskPopup { background: transparent; }"
+            "QFrame#taskPopup { background: transparent; border: none; }"
             f"QFrame#taskPopupShell {{ background-color: {tokens['shell']};"
             f"  border: 1px solid {tokens['divider']}; border-radius: 12px; }}"
             f"QLabel#taskPopupTitle {{ font-size: 12px; font-weight: 600; color: {tokens['text']}; }}"
