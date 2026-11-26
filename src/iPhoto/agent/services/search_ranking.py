@@ -280,32 +280,19 @@ def select_results(
     return [int(index) for index in indices[order].tolist()]
 
 
-#: Families whose text tower understands Chinese directly.
+#: Families whose text tower understands Chinese directly. Only the
+#: English-only CLIP tower needs the built-in glossary; for these the query is
+#: encoded exactly as typed.
 MULTILINGUAL_FAMILIES = frozenset({"siglip", "chinese_clip"})
 
 
-def query_texts(family: str, query: str, translated: str) -> list[str]:
-    """Return the texts to encode for *query* on *family*.
+def needs_translation(family: str) -> bool:
+    """Whether *family* has to go through the Chinese→English glossary.
 
-    Multilingual models read the query as typed, and on SigLIP the raw Chinese
-    often beats the translated English, so both are encoded and the best score
-    per photo is kept. English-only CLIP gets just the translation.
-    """
-
-    if family in MULTILINGUAL_FAMILIES:
-        texts = [query]
-        if translated not in texts:
-            texts.append(translated)
-        return texts
-    return [translated]
-
-
-def translation_penalty_applies(family: str) -> bool:
-    """Whether a partially translated query needs the stricter cutoff.
-
-    A multilingual model reading the raw query is not guessing, so the penalty
-    only applies to English-only families (it was also the reason SigLIP
-    searches returned nothing: the penalty was a CLIP-scale 0.265 floor).
+    SigLIP and Chinese-CLIP embed Chinese natively. Translating first is not
+    just wasted work there: the glossary rewrites "茉酸奶" to "yogurt" and drops
+    the brand, so the search would look for a generic word instead of what the
+    user asked for.
     """
 
     return family not in MULTILINGUAL_FAMILIES

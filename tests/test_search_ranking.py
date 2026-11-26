@@ -179,19 +179,20 @@ def test_siglip_scores_survive_its_floor() -> None:
     assert len(kept) < 60, len(kept)
 
 
-def test_multilingual_families_encode_the_raw_query() -> None:
-    from iPhoto.agent.services.search_ranking import query_texts
+def test_multilingual_families_skip_the_glossary() -> None:
+    """SigLIP and Chinese-CLIP read Chinese directly; CLIP needs the glossary."""
 
-    assert query_texts("siglip", "腿", "leg") == ["腿", "leg"]
-    # English-only CLIP can only use the translation.
-    assert query_texts("clip", "腿", "leg") == ["leg"]
-    # Identical strings are not encoded twice.
-    assert query_texts("siglip", "cat", "cat") == ["cat"]
+    from iPhoto.agent.services.search_ranking import needs_translation
+
+    assert needs_translation("clip") is True
+    assert needs_translation("siglip") is False
+    assert needs_translation("chinese_clip") is False
 
 
-def test_translation_penalty_only_applies_to_english_only_models() -> None:
-    from iPhoto.agent.services.search_ranking import translation_penalty_applies
+def test_glossary_can_lose_meaning_which_is_why_siglip_skips_it() -> None:
+    """The glossary rewrites a brand away, so it must not run on multilingual models."""
 
-    assert translation_penalty_applies("clip") is True
-    assert translation_penalty_applies("siglip") is False
-    assert translation_penalty_applies("chinese_clip") is False
+    from iPhoto.agent.services.search_ranking import needs_translation, translate_query
+
+    assert translate_query("茉酸奶") != "茉酸奶"
+    assert needs_translation("siglip") is False
