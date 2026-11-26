@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QSize, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QPalette
+from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPalette
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -268,7 +268,16 @@ class SearchModelDialog(QDialog):
         body_layout.addWidget(self._progress_row)
         body_layout.addSpacing(8)
 
-        layout.addWidget(body, 1)
+        # The whole body scrolls (never the model list alone): short lists are
+        # shown in full, and only a dialog that would not fit the screen scrolls.
+        scroll = QScrollArea(self._shell)
+        scroll.setObjectName("searchModelScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(body)
+        layout.addWidget(scroll, 1)
+        self._scroll = scroll
 
         # -- footer -----------------------------------------------------
         actions = QWidget(self._shell)
@@ -354,9 +363,15 @@ class SearchModelDialog(QDialog):
         self._fit()
 
     def _fit(self) -> None:
-        """Grow/shrink to the current content (no inner scrolling anywhere)."""
+        """Grow to the content; only scroll when the screen cannot show it."""
 
+        self._autosize_list()
         self.adjustSize()
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            limit = int(screen.availableGeometry().height() * 0.8)
+            if self.height() > limit:
+                self.resize(self.width(), limit)
 
     def _refresh_state(self) -> None:
         spec = self._spec()

@@ -43,6 +43,9 @@ from .search_model_dialog import (
 
 _ACCELERATOR_RE = re.compile(r"\s*\(&[A-Za-z0-9]\)\s*$")
 
+#: ``FaceModelSpec.speed`` is a 1-3 rank; the translations are named.
+_SPEED_KEYS = {1: "medium", 2: "fast", 3: "fastest"}
+
 _ACCENT_LIGHT = "#7B5E3B"
 _ACCENT_DARK = "#C9A86C"
 
@@ -417,7 +420,11 @@ class SettingsDialog(QDialog):
                         ),
                         self._value_row(
                             tr("settings.row.face_model"),
-                            self._model_combo(face_models),
+                            self._packs_value("face"),
+                        ),
+                        self._action_row(
+                            tr("settings.row.face_model_switch"),
+                            self._switch_packs_action("face"),
                         ),
                         self._value_row(
                             tr("settings.row.face_index_state"),
@@ -438,7 +445,11 @@ class SettingsDialog(QDialog):
                         ),
                         self._value_row(
                             tr("settings.row.ocr_model"),
-                            self._model_combo(ocr_models),
+                            self._packs_value("ocr"),
+                        ),
+                        self._action_row(
+                            tr("settings.row.ocr_model_switch"),
+                            self._switch_packs_action("ocr"),
                         ),
                         self._value_row(
                             tr("settings.row.ocr_index_state"),
@@ -640,41 +651,115 @@ class SettingsDialog(QDialog):
         else:
             state_label.setText(tr("search.model.coverage_unknown"))
 
-    def _model_combo(self, registry) -> QComboBox:
-        """A dropdown listing the packs of one model registry.
+    def _packs_registry(self, feature: str):
+        return face_models if feature == "face" else ocr_models
 
-        *registry* exposes ``available_models()``, ``resolve_spec()``,
-        ``is_installed()`` and ``SETTINGS_KEY``; the selected key is persisted so
-        the scan picks it up on its next run.
-        """
+    def _packs_value(self, feature: str) -> QLabel:
+        """Show the selected pack as a value row, like 搜索模型 does."""
 
-        combo = QComboBox(self)
-        specs = list(registry.available_models())
-        active = registry.resolve_spec(
-            self._settings.get(registry.SETTINGS_KEY, None)
-            if self._settings is not None
-            else None
+        label = QLabel("", self)
+        label.setObjectName("settingsPathLabel")
+        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        label.setWordWrap(False)
+        if not hasattr(self, "_pack_labels"):
+            self._pack_labels: dict[str, QLabel] = {}
+        self._pack_labels[feature] = label
+        self._refresh_pack_rows()
+        return label
+
+    def _refresh_pack_rows(self) -> None:
+        for feature, label in getattr(self, "_pack_labels", {}).items():
+            registry = self._packs_registry(feature)
+            spec = registry.resolve_spec(
+                self._settings.get(registry.SETTINGS_KEY, None)
+                if self._settings is not None
+                else None
+            )
+            label.setText(f"{spec.title} · {spec.summary}")
+
+    def _switch_packs_action(self, feature: str) -> QAction:
+        registry = self._packs_registry(feature)
+        title = tr(
+            "settings.row.face_model_switch"
+            if feature == "face"
+            else "settings.row.ocr_model_switch"
         )
-        for spec in specs:
-            label = spec.title
-            if not registry.is_installed(spec):
-                label = f"{label}{tr('search.model.not_installed_suffix')}"
-            combo.addItem(f"{label} · {spec.summary}", spec.key)
-        index = next(
-            (i for i, spec in enumerate(specs) if spec.key == active.key), 0
-        )
-        combo.setCurrentIndex(index)
+        action = QAction(title, self)
 
-        def _select(position: int) -> None:
-            key = combo.itemData(position)
-            if not key:
+        def _run() -> None:
+            from .model_chooser_dialog import ModelChooserDialog, ModelOption
+
+            options = [
+                ModelOption(
+                    key=spec.key,
+                    title=spec.title,
+                    summary=spec.summary,
+                    details=self._pack_details(feature, spec),
+                    installed=registry.is_installed(spec),
+                )
+                for spec in registry.available_models()
+            ]
+            current = registry.resolve_spec(
+                self._settings.get(registry.SETTINGS_KEY, None)
+                if self._settings is not None
+                else None
+            )
+            dialog = ModelChooserDialog(
+                self,
+                title=title,
+                subtitle=tr(
+                    "settings.model_dialog.face_subtitle"
+                    if feature == "face"
+                    else "settings.model_dialog.ocr_subtitle"
+                ),
+                options=options,
+                current_key=current.key,
+                on_open_folder=lambda _key: self._open_models_folder(feature),
+            )
+            if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
+            key = dialog.selected_key()
             if self._settings is not None:
                 self._settings.set(registry.SETTINGS_KEY, key)
             registry.set_active_model(key)
+            self._refresh_pack_rows()
 
-        combo.currentIndexChanged.connect(_select)
-        return combo
+        action.triggered.connect(_run)
+        return action
+
+    def _pack_details(self, feature: str, spec) -> str:
+        if feature == "face":
+            return tr(
+                "settings.model_dialog.face_details",
+                name=spec.title,
+                mb=spec.download_mb,
+                quality=tr(f"search.model.quality.{spec.quality}"),
+                speed=tr(f"search.model.speed.{_SPEED_KEYS[spec.speed]}"),
+                state=(
+                    tr("search.model.installed")
+                    if face_models.is_installed(spec)
+                    else tr("search.model.missing", mb=spec.download_mb)
+                ),
+            )
+        return tr(
+            "settings.model_dialog.ocr_details",
+            name=spec.title,
+            mb=int(round(spec.total_mb)),
+            state=(
+                tr("search.model.installed")
+                if ocr_models.is_installed(spec)
+                else tr("search.model.missing", mb=int(round(spec.total_mb)))
+            ),
+        )
+
+    def _open_models_folder(self, feature: str) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        registry = self._packs_registry(feature)
+        root = registry.models_root()
+        root.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(root)))
 
     def _ai_toggle(self, key: str, getter) -> QCheckBox:
         """A checkbox bound to one of the local-AI switches."""

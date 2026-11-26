@@ -214,41 +214,63 @@ def test_state_row_reports_coverage(dialog, monkeypatch):
     assert "12/40" in widget._ai_state_labels["face"].text()
 
 
-def test_model_rows_list_the_packs(dialog):
-    """Face and OCR each get their own model dropdown, like the search block."""
+def test_model_rows_show_the_active_pack(dialog):
+    """Face and OCR present their model like 搜索模型: a value row, not a dropdown."""
 
     from PySide6.QtWidgets import QComboBox
-
-    from iPhoto.agent.services import face_models, ocr_models
 
     widget, _settings = dialog
-    combos = widget._pages[4].findChildren(QComboBox)
-    data = [[combo.itemData(i) for i in range(combo.count())] for combo in combos]
+    page = widget._pages[4]
 
-    assert ["buffalo_l", "buffalo_s"] in data
-    assert any(ocr_models.BUILTIN_KEY in row for row in data)
-    assert face_models.SETTINGS_KEY == "agent.face.model"
+    assert "buffalo_l" in widget._pack_labels["face"].text()
+    assert "PP-OCRv3" in widget._pack_labels["ocr"].text()
+    # Only the search-precision dropdown is left; the model pickers are rows.
+    assert len(page.findChildren(QComboBox)) == 1
 
 
-def test_choosing_a_face_pack_persists_it(dialog):
-    from PySide6.QtWidgets import QComboBox
+def test_switching_the_face_pack_goes_through_the_chooser(dialog, monkeypatch):
+    from PySide6.QtWidgets import QDialog
 
     from iPhoto.agent.services import face_models
+    from iPhoto.gui.ui.widgets import model_chooser_dialog as chooser
 
     widget, settings = dialog
-    combo = next(
-        combo
-        for combo in widget._pages[4].findChildren(QComboBox)
-        if combo.itemData(0) == "buffalo_l"
-    )
+    seen: dict[str, object] = {}
 
-    index = next(
-        i for i in range(combo.count()) if combo.itemData(i) == "buffalo_s"
-    )
-    combo.setCurrentIndex(index)
+    class _FakeDialog(chooser.ModelChooserDialog):
+        def exec(self):  # noqa: D102 - test double
+            seen["options"] = [option.key for option in self._options]
+            self._selected_key = "buffalo_s"
+            return QDialog.DialogCode.Accepted
 
+    monkeypatch.setattr(chooser, "ModelChooserDialog", _FakeDialog)
+
+    widget._switch_packs_action("face").trigger()
+
+    assert seen["options"] == ["buffalo_l", "buffalo_s"]
     assert settings.values[face_models.SETTINGS_KEY] == "buffalo_s"
     assert face_models.active_model().key == "buffalo_s"
+    assert "buffalo_s" in widget._pack_labels["face"].text()
+    face_models.set_active_model("buffalo_l")
+
+
+def test_chooser_dialog_shows_every_pack_without_inner_scrolling(qapp):
+    from iPhoto.gui.ui.widgets.model_chooser_dialog import (
+        ModelChooserDialog,
+        ModelOption,
+    )
+
+    options = [
+        ModelOption(key="a", title="Pack A", summary="1 MB", details="a"),
+        ModelOption(key="b", title="Pack B", summary="2 MB", details="b"),
+    ]
+    dialog = ModelChooserDialog(None, title="t", subtitle="s", options=options, current_key="a")
+    try:
+        # All rows fit: the list has no scrollbar of its own.
+        assert dialog._list.count() == 2
+        assert dialog._list.verticalScrollBarPolicy().name == "ScrollBarAlwaysOff"
+    finally:
+        dialog.close()
 
 
 def test_face_registry_falls_back_to_an_installed_pack(monkeypatch):
