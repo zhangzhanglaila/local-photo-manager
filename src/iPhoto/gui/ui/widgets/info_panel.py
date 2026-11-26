@@ -12,7 +12,18 @@ from typing import Any, Mapping, Optional
 from ....i18n import tr
 
 from PySide6.QtCore import QDateTime, QEvent, QLocale, QObject, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QGuiApplication, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPalette, QPixmap, QShowEvent
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QGuiApplication,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPixmap,
+    QShowEvent,
+)
 from ..theme_mode import is_dark
 from PySide6.QtWidgets import (
     QDialog,
@@ -57,6 +68,10 @@ _LENS_SPEC_RE = re.compile(
 
 _PLUS_CIRCLE_ICON_PATH = Path(__file__).resolve().parents[1] / "icon" / "plus.circle.svg"
 _FACE_AVATAR_DIAMETER = 48
+#: Stable menu action ids. Dispatch reads the id, so a translated label can never
+#: change behaviour (the labels themselves come from ``_menu_action_labels``).
+_NOT_THIS_CHOOSE_ID = "not_this_person:choose"
+_NOT_THIS_NEW_ID = "not_this_person:new"
 
 
 def _parse_svg_dimension(value: str) -> float:
@@ -152,13 +167,19 @@ class _FaceAvatarWidget(QLabel):
         chosen = menu.exec(event.globalPos())
         if chosen is None:
             return
-        if chosen.text() == "Delete":
+        self._handle_menu_choice(chosen)
+
+    def _handle_menu_choice(self, chosen: QAction) -> None:
+        """Dispatch one chosen menu item by its action id, never by its label."""
+
+        action_id = chosen.data()
+        if action_id == "delete_face":
             self.deleteRequested.emit(self._annotation)
             return
-        if chosen.text() == "Choose Someone Else…":
+        if action_id == _NOT_THIS_CHOOSE_ID:
             self._prompt_choose_person()
             return
-        if chosen.text() == "New Person…":
+        if action_id == _NOT_THIS_NEW_ID:
             self._prompt_new_person()
 
     def _build_context_menu(self) -> QMenu | None:
@@ -182,12 +203,15 @@ class _FaceAvatarWidget(QLabel):
                 MenuActionSpec(
                     action_id="not_this_person",
                     label=not_this_label,
-                    children=tuple(
+                    children=(
                         MenuActionSpec(
-                            action_id=f"not_this_person:{submenu_label}",
-                            label=submenu_label,
-                        )
-                        for submenu_label in submenu_labels
+                            action_id=_NOT_THIS_CHOOSE_ID,
+                            label=submenu_labels[0],
+                        ),
+                        MenuActionSpec(
+                            action_id=_NOT_THIS_NEW_ID,
+                            label=submenu_labels[1],
+                        ),
                     ),
                 ),
             ],

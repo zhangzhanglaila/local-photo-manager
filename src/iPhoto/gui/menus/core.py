@@ -110,6 +110,9 @@ def populate_menu(
             continue
         action = menu.addAction(spec.label)
         action.setEnabled(spec.is_enabled(context))
+        # Every item carries its id, so surfaces dispatch on identity instead of
+        # comparing the localized label they just rendered.
+        action.setData(spec.action_id)
         if spec.on_trigger is not None:
             action.triggered.connect(lambda _checked=False, handler=spec.on_trigger: handler(context))
         visible_count += 1
