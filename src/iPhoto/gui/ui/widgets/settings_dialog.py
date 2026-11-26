@@ -533,8 +533,14 @@ class SettingsDialog(QDialog):
 
         spec = search_models.active_model()
         # Keep it short: quality/language/size live in the chooser, the row only
-        # needs "which model" and "where it runs".
-        label = QLabel(f"{model_title(spec)} · {current_device_label()}", self)
+        # needs "which model" and "where it runs". A model that is not on disk is
+        # called out instead of pretending it is usable.
+        state = (
+            ""
+            if search_models.is_installed(spec)
+            else tr("search.model.not_installed_suffix")
+        )
+        label = QLabel(f"{model_title(spec)}{state} · {current_device_label()}", self)
         label.setObjectName("settingsPathLabel")
         label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         label.setWordWrap(False)

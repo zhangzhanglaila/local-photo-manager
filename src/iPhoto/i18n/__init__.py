@@ -481,6 +481,15 @@ _ZH: dict[str, str] = {
     'search.model.downloading': '正在下载 {name}（约 {mb} MB）…',
     'search.model.open_folder': '打开文件夹',
     'search.model.download_failed_hint': '下载失败（{error}）。\n可以把模型文件手动放到：{path}\n然后回到这里点「重试下载」旁边的「下载并使用」。',
+    'search.model.downloading_percent': '正在下载：{percent}%',
+    'search.model.download_failed_reason': '下载失败：{reason}\n目标文件夹：{path}\n可以点下面的链接手动下载，把文件放进这个文件夹后再点「重试下载」。',
+    'search.model.manual_links': '手动下载：{links}',
+    'search.model.reason.timeout': '连接超时，网络不可达或需要代理',
+    'search.model.reason.dns': '域名解析失败，可能没有网络',
+    'search.model.reason.network': '网络连接被拒绝或中断',
+    'search.model.reason.auth': '没有访问权限',
+    'search.model.reason.unknown': '未知错误',
+    'search.model.not_installed_suffix': '（未下载）',
 }
 
 _EN: dict[str, str] = {
@@ -946,6 +955,15 @@ _EN: dict[str, str] = {
     'search.model.downloading': 'Downloading {name} (~{mb} MB)…',
     'search.model.open_folder': 'Open folder',
     'search.model.download_failed_hint': 'Download failed ({error}).\nYou can place the model files in: {path}\nThen choose “Download and use” again.',
+    'search.model.downloading_percent': 'Downloading: {percent}%',
+    'search.model.download_failed_reason': 'Download failed: {reason}\nTarget folder: {path}\nUse the links below to download manually, put the files in that folder, then retry.',
+    'search.model.manual_links': 'Manual download: {links}',
+    'search.model.reason.timeout': 'connection timed out (network unreachable or proxy required)',
+    'search.model.reason.dns': 'DNS lookup failed (no network?)',
+    'search.model.reason.network': 'connection refused or interrupted',
+    'search.model.reason.auth': 'not authorised',
+    'search.model.reason.unknown': 'unknown error',
+    'search.model.not_installed_suffix': ' (not downloaded)',
 }
 
 

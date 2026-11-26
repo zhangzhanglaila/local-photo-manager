@@ -99,9 +99,28 @@ class RuntimeContext:
         try:
             from ..agent.services import search_models
 
-            search_models.set_active_model(
+            configured = search_models.set_active_model(
                 self.settings.get(search_models.SETTINGS_KEY, None)
             )
+            # A failed download used to leave the setting pointing at a model
+            # that is not on disk, so the UI claimed a model that could not run.
+            if not search_models.is_installed(configured):
+                usable = next(
+                    (
+                        spec
+                        for spec in search_models.available_models()
+                        if search_models.is_installed(spec)
+                    ),
+                    None,
+                )
+                if usable is not None and usable.key != configured.key:
+                    _logger.warning(
+                        "search model %s is not installed; falling back to %s",
+                        configured.key,
+                        usable.key,
+                    )
+                    search_models.set_active_model(usable.key)
+                    self.settings.set(search_models.SETTINGS_KEY, usable.key)
         except Exception:  # pragma: no cover - never block startup on this
             pass
         self.facade.bind_library(self.library)

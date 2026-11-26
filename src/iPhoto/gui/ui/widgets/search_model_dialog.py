@@ -2,9 +2,8 @@
 
 Shared by the first-run wizard and the settings window. It explains the same
 trade-offs (language, quality, speed, download size) in one place, shows whether
-the weights are already on disk, and can download them with a progress bar —
-including a manual fallback (folder + model page) when the network blocks both
-sources.
+the weights are already on disk, and downloads them with a real percentage —
+with clickable model pages and a target folder when the network is blocked.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from ....agent.infrastructure.search_model_download import (
     SearchModelDownloadError,
     download_search_model,
+    model_page_urls,
 )
 from ....agent.services import search_models
 from ....i18n import tr
@@ -40,6 +41,7 @@ _ACCENT_LIGHT = "#7B5E3B"
 _ACCENT_DARK = "#C9A86C"
 _ERROR_COLOR = "#CD4949"
 _OK_COLOR = "#3E9E6A"
+_MARGIN = 24
 
 
 def model_title(spec: search_models.SearchModelSpec) -> str:
@@ -109,11 +111,12 @@ def current_device_label() -> str:
 
 
 class _DownloadSignals(QObject):
-    finished = Signal(bool, str)  # ok, message
+    progress = Signal(object, str)  # fraction (float | None), message
+    finished = Signal(bool, str)
 
 
 class _DownloadThread(QThread):
-    """Download the weights off the UI thread so the progress bar animates."""
+    """Download the weights off the UI thread and report byte progress."""
 
     def __init__(self, spec: search_models.SearchModelSpec) -> None:
         super().__init__()
@@ -121,8 +124,11 @@ class _DownloadThread(QThread):
         self.signals = _DownloadSignals()
 
     def run(self) -> None:  # pragma: no cover - exercised through the dialog
+        def on_progress(fraction, message: str) -> None:
+            self.signals.progress.emit(fraction, message)
+
         try:
-            download_search_model(self._spec)
+            download_search_model(self._spec, progress=on_progress)
         except SearchModelDownloadError as exc:
             self.signals.finished.emit(False, str(exc))
         except Exception as exc:  # noqa: BLE001
@@ -145,7 +151,7 @@ class SearchModelDialog(QDialog):
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.setFixedWidth(560)
+        self.setFixedWidth(580)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -158,9 +164,10 @@ class SearchModelDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # -- header -----------------------------------------------------
         header = QWidget(self._shell)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(24, 20, 14, 0)
+        header_layout.setContentsMargins(_MARGIN, 20, 14, 0)
         header_layout.setSpacing(8)
         title = QLabel(tr("search.model.title"), header)
         title.setObjectName("searchModelTitle")
@@ -173,19 +180,28 @@ class SearchModelDialog(QDialog):
         header_layout.addWidget(self._close_button, 0, Qt.AlignmentFlag.AlignTop)
         layout.addWidget(header)
 
-        subtitle = QLabel(tr("search.model.subtitle"), self._shell)
+        # -- scrollable body -------------------------------------------
+        body = QWidget(self._shell)
+        body.setObjectName("searchModelBody")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(_MARGIN, 8, _MARGIN, 0)
+        body_layout.setSpacing(10)
+
+        subtitle = QLabel(tr("search.model.subtitle"), body)
         subtitle.setObjectName("searchModelSubtitle")
         subtitle.setWordWrap(True)
-        subtitle.setContentsMargins(24, 8, 24, 0)
-        layout.addWidget(subtitle)
+        body_layout.addWidget(subtitle)
 
-        self._list = QListWidget(self._shell)
+        self._list = QListWidget(body)
         self._list.setObjectName("searchModelList")
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self._list.setUniformItemSizes(True)
         self._list.setWordWrap(False)
         self._list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # The list never scrolls on its own: the whole dialog scrolls, so long
+        # item text is not cut off by a cramped inner viewport.
+        self._list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for spec in search_models.available_models():
             marker = model_title(spec)
             if search_models.is_installed(spec):
@@ -195,39 +211,57 @@ class SearchModelDialog(QDialog):
             self._list.addItem(item)
             if spec.key == self._current_key:
                 self._list.setCurrentItem(item)
-        self._list.setMinimumHeight(140)
+        self._autosize_list()
         self._list.currentItemChanged.connect(self._on_selection_changed)
-        list_wrap = QWidget(self._shell)
-        list_layout = QVBoxLayout(list_wrap)
-        list_layout.setContentsMargins(24, 12, 24, 0)
-        list_layout.addWidget(self._list)
-        layout.addWidget(list_wrap)
+        body_layout.addWidget(self._list)
 
-        self._details = QLabel("", self._shell)
+        self._details = QLabel("", body)
         self._details.setObjectName("searchModelDetails")
         self._details.setWordWrap(True)
-        self._details.setContentsMargins(24, 10, 24, 0)
-        layout.addWidget(self._details)
+        body_layout.addWidget(self._details)
 
-        self._status = QLabel("", self._shell)
+        self._status = QLabel("", body)
         self._status.setObjectName("searchModelStatus")
         self._status.setWordWrap(True)
-        self._status.setContentsMargins(24, 6, 24, 0)
         self._status.hide()
-        layout.addWidget(self._status)
+        body_layout.addWidget(self._status)
 
-        self._progress = QProgressBar(self._shell)
-        self._progress.setObjectName("searchModelProgress")
-        self._progress.setRange(0, 0)  # indeterminate while downloading
-        self._progress.setTextVisible(False)
-        self._progress.setFixedHeight(6)
-        self._progress.setContentsMargins(24, 8, 24, 0)
-        self._progress.hide()
-        layout.addWidget(self._progress)
+        self._links = QLabel("", body)
+        self._links.setObjectName("searchModelLinks")
+        self._links.setWordWrap(True)
+        self._links.setTextFormat(Qt.TextFormat.RichText)
+        self._links.setOpenExternalLinks(True)
+        self._links.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        self._links.hide()
+        body_layout.addWidget(self._links)
 
+        # Progress row inside a wrapper so the bar keeps the dialog's margins.
+        self._progress_row = QWidget(body)
+        progress_layout = QVBoxLayout(self._progress_row)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(4)
+        self._progress_label = QLabel("", self._progress_row)
+        self._progress_label.setObjectName("searchModelProgressLabel")
+        self._progress_bar = QProgressBar(self._progress_row)
+        self._progress_bar.setObjectName("searchModelProgress")
+        self._progress_bar.setRange(0, 1000)
+        self._progress_bar.setValue(0)
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setFixedHeight(6)
+        progress_layout.addWidget(self._progress_label)
+        progress_layout.addWidget(self._progress_bar)
+        self._progress_row.hide()
+        body_layout.addWidget(self._progress_row)
+        body_layout.addSpacing(8)
+
+        layout.addWidget(body, 1)
+
+        # -- footer -----------------------------------------------------
         actions = QWidget(self._shell)
         actions_layout = QHBoxLayout(actions)
-        actions_layout.setContentsMargins(24, 18, 24, 20)
+        actions_layout.setContentsMargins(_MARGIN, 14, _MARGIN, 20)
         actions_layout.setSpacing(8)
         self._folder_button = QPushButton(tr("search.model.open_folder"), actions)
         self._folder_button.setObjectName("searchModelSecondary")
@@ -262,8 +296,28 @@ class SearchModelDialog(QDialog):
         self._apply_close_icon()
         self.setStyleSheet(self._stylesheet())
         self._refresh_state()
+        self._fit()
 
     # ------------------------------------------------------------------
+    def _autosize_list(self) -> None:
+        """Grow the list to its content so it never scrolls internally.
+
+        ``sizeHintForRow`` ignores the stylesheet padding, so the height is taken
+        from the rendered item rectangle once the widget is on screen.
+        """
+
+        rows = self._list.count()
+        if rows <= 0:
+            return
+        last = self._list.item(rows - 1)
+        rect = self._list.visualItemRect(last)
+        if rect.height() > 0:
+            height = rect.top() + rect.height() + 10
+        else:
+            row_height = (self._list.sizeHintForRow(0) or 30) + 16
+            height = row_height * rows + 10
+        self._list.setFixedHeight(max(height, 60))
+
     def selected_key(self) -> str:
         return self._selected_key
 
@@ -275,7 +329,6 @@ class SearchModelDialog(QDialog):
     def _accept_selection(self) -> None:
         spec = self._spec()
         if not search_models.is_installed(spec):
-            # Selecting a missing model means "get it for me".
             self._start_download()
             return
         self._selected_key = spec.key
@@ -283,77 +336,112 @@ class SearchModelDialog(QDialog):
 
     def _on_selection_changed(self, _current, _previous) -> None:
         self._status.hide()
+        self._links.hide()
+        self._progress_row.hide()
         self._refresh_state()
+        self._fit()
+
+    def _fit(self) -> None:
+        """Grow/shrink to the current content (no inner scrolling anywhere)."""
+
+        self.adjustSize()
 
     def _refresh_state(self) -> None:
         spec = self._spec()
         installed = search_models.is_installed(spec)
         self._details.setText(model_details(spec))
         self._download_button.setVisible(not installed)
-        self._use_button.setEnabled(installed)
+        self._download_button.setEnabled(self._thread is None)
+        self._use_button.setEnabled(installed and self._thread is None)
         self._use_button.setText(
             tr("search.model.use") if installed else tr("search.model.download_and_use")
         )
-        self._use_button.setVisible(True)
+
+    def _set_links_visible(self, visible: bool) -> None:
+        if not visible:
+            self._links.hide()
+            return
+        spec = self._spec()
+        links = " · ".join(
+            f'<a href="{url}">{label}</a>' for label, url in model_page_urls(spec)
+        )
+        self._links.setText(tr("search.model.manual_links", links=links))
+        self._links.show()
 
     # ------------------------------------------------------------------
     def _start_download(self) -> None:
         spec = self._spec()
         if self._thread is not None:
             return
-        # Files copied in by hand are picked up on retry instead of downloading
-        # them a second time.
         if search_models.is_installed(spec):
             self._status.setText(tr("search.model.installed"))
             self._set_status_color(_OK_COLOR)
             self._status.show()
             self._refresh_state()
             return
+
         self._download_button.setEnabled(False)
         self._use_button.setEnabled(False)
-        self._progress.show()
-        self._status.setText(tr("search.model.downloading", name=model_title(spec), mb=spec.download_mb))
-        self._set_status_color(None)
-        self._status.show()
+        self._progress_bar.setValue(0)
+        self._progress_label.setText(
+            tr("search.model.downloading", name=model_title(spec), mb=spec.download_mb)
+        )
+        self._progress_row.show()
+        self._status.hide()
+        self._links.hide()
 
         thread = _DownloadThread(spec)
         self._thread = thread
+        thread.signals.progress.connect(self._on_download_progress)
         thread.signals.finished.connect(self._on_download_finished)
         thread.start()
+        self._fit()
+
+    def _on_download_progress(self, fraction, message: str) -> None:
+        if fraction is None:
+            self._progress_bar.setRange(0, 0)
+            return
+        if self._progress_bar.maximum() == 0:
+            self._progress_bar.setRange(0, 1000)
+        self._progress_bar.setValue(int(max(0.0, min(1.0, float(fraction))) * 1000))
+        percent = int(round(float(fraction) * 100))
+        self._progress_label.setText(
+            tr("search.model.downloading_percent", percent=percent)
+            + (f"  ·  {message}" if message else "")
+        )
 
     def _on_download_finished(self, ok: bool, message: str) -> None:
         self._thread = None
-        self._progress.hide()
-        self._download_button.setEnabled(True)
+        self._progress_row.hide()
         spec = self._spec()
-        self._status.show()
         if ok and search_models.is_installed(spec):
             self._status.setText(tr("search.model.download_done", name=model_title(spec)))
             self._set_status_color(_OK_COLOR)
+            self._status.show()
             self._refresh_state()
             self._use_button.setEnabled(True)
+            self._fit()
             return
 
-        # Both sources failed: tell the user where to put the files and how to
-        # get them, instead of leaving the dialog unresponsive.
         directory = search_models.model_dir(spec)
+        reason = _reason_text(message)
         self._status.setText(
             tr(
-                "search.model.download_failed_hint",
+                "search.model.download_failed_reason",
+                reason=reason,
                 path=str(directory),
-                error=message[:200] or tr("search.model.download_failed"),
             )
         )
         self._set_status_color(_ERROR_COLOR)
+        self._status.show()
+        self._set_links_visible(True)
         self._refresh_state()
         self._download_button.setText(tr("search.model.retry"))
+        self._fit()
 
     def _set_status_color(self, colour: str | None) -> None:
-        palette = self.palette()
         if colour is None:
-            colour = palette.color(QPalette.ColorRole.WindowText).name()
-            self._status.setStyleSheet(f"color: {palette.color(QPalette.ColorRole.WindowText).name()};")
-            return
+            colour = self.palette().color(QPalette.ColorRole.WindowText).name()
         self._status.setStyleSheet(f"color: {colour};")
 
     def _open_model_folder(self) -> None:
@@ -371,6 +459,8 @@ class SearchModelDialog(QDialog):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        self._autosize_list()
+        self._fit()
         parent = self.parentWidget()
         if parent is not None:
             frame = parent.window().frameGeometry()
@@ -400,9 +490,16 @@ class SearchModelDialog(QDialog):
             f"  border-radius: 14px; border: 1px solid {tokens['divider']}; }}"
             f"QLabel#searchModelTitle {{ font-size: 16px; font-weight: 600; color: {tokens['text']}; }}"
             f"QLabel#searchModelSubtitle {{ font-size: 12px; color: {tokens['muted']}; }}"
-            f"QLabel#searchModelDetails {{ font-size: 12px; color: {tokens['muted']};"
-            "  min-height: 54px; }"
-            f"QLabel#searchModelStatus {{ font-size: 12px; }}"
+            f"QLabel#searchModelDetails {{ font-size: 12px; color: {tokens['muted']}; }}"
+            "QLabel#searchModelStatus { font-size: 12px; }"
+            f"QLabel#searchModelLinks {{ font-size: 12px; color: {tokens['muted']}; }}"
+            f"QLabel#searchModelProgressLabel {{ font-size: 11px; color: {tokens['muted']}; }}"
+            "QScrollArea#searchModelScroll, QWidget#searchModelBody { background: transparent; }"
+            f"QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}"
+            f"QScrollBar::handle:vertical {{ background: {tokens['divider']}; border-radius: 5px;"
+            "  min-height: 32px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
             f"QProgressBar#searchModelProgress {{ border: none; background-color: {tokens['secondary']};"
             "  border-radius: 3px; }"
             f"QProgressBar#searchModelProgress::chunk {{ background-color: {accent}; border-radius: 3px; }}"
@@ -426,6 +523,22 @@ class SearchModelDialog(QDialog):
             f"QPushButton#searchModelPrimary:disabled {{ background-color: {tokens['secondary']};"
             f"  color: {tokens['muted']}; }}"
         )
+
+
+def _reason_text(message: str) -> str:
+    """Turn the downloader's Chinese sentence into one short reason."""
+
+    text = (message or "").strip()
+    lowered = text.lower()
+    if "timed out" in lowered or "timeout" in lowered or "10060" in lowered:
+        return tr("search.model.reason.timeout")
+    if "getaddrinfo" in lowered or "11001" in lowered:
+        return tr("search.model.reason.dns")
+    if "connection" in lowered or "10054" in lowered or "refused" in lowered:
+        return tr("search.model.reason.network")
+    if "401" in lowered or "403" in lowered:
+        return tr("search.model.reason.auth")
+    return text[:200] or tr("search.model.reason.unknown")
 
 
 __all__ = [

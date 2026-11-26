@@ -35,7 +35,7 @@ def test_huggingface_is_tried_first(tmp_path: Path, monkeypatch):
     spec = _spec()
     target = search_models.model_dir(spec, install_root=tmp_path)
 
-    def fake_hf(_spec, directory):
+    def fake_hf(_spec, directory, **_kwargs):
         (directory / "config.json").write_text("{}", encoding="utf-8")
 
     monkeypatch.setattr(search_model_download, "_download_from_huggingface", fake_hf)
@@ -52,10 +52,10 @@ def test_modelscope_is_the_fallback(tmp_path: Path, monkeypatch):
     spec = _spec()
     target = search_models.model_dir(spec, install_root=tmp_path)
 
-    def failing_hf(_spec, _directory):
+    def failing_hf(_spec, _directory, **_kwargs):
         raise OSError("huggingface.co unreachable")
 
-    def fake_modelscope(_spec, directory):
+    def fake_modelscope(_spec, directory, **_kwargs):
         (directory / "config.json").write_text("{}", encoding="utf-8")
 
     monkeypatch.setattr(search_model_download, "_download_from_huggingface", failing_hf)

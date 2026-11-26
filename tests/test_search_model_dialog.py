@@ -104,7 +104,7 @@ def test_successful_download_enables_use(qapp: QApplication, monkeypatch):
         state["installed"] = True
         dialog._on_download_finished(True, "")
         assert dialog._use_button.isEnabled() is True
-        assert dialog._progress.isVisibleTo(dialog) is False
+        assert dialog._progress_row.isVisibleTo(dialog) is False
     finally:
         dialog.close()
 
@@ -116,3 +116,32 @@ def test_summary_and_details_mention_size_and_state():
     details = model_details(spec)
     assert "SigLIP 2 Base" in details
     assert str(spec.download_mb) in details
+
+
+def test_progress_reports_a_real_percentage(qapp: QApplication, monkeypatch):
+    monkeypatch.setattr(module.search_models, "is_installed", lambda spec, **kw: False)
+    dialog = SearchModelDialog(current_key="clip-b32")
+    try:
+        _select(dialog, "siglip2-base")
+        dialog._progress_row.show()
+        dialog._on_download_progress(0.42, "pytorch_model.bin")
+        assert dialog._progress_bar.value() == 420
+        assert "42" in dialog._progress_label.text()
+    finally:
+        dialog.close()
+
+
+def test_failure_shows_clickable_model_pages(qapp: QApplication, monkeypatch):
+    monkeypatch.setattr(module.search_models, "is_installed", lambda spec, **kw: False)
+    dialog = SearchModelDialog(current_key="clip-b32")
+    try:
+        _select(dialog, "siglip2-base")
+        dialog._on_download_finished(False, "<urlopen error [WinError 10060]>")
+        assert dialog._links.isVisibleTo(dialog) is True
+        text = dialog._links.text()
+        assert "https://huggingface.co/google/siglip2-base-patch16-224" in text
+        assert "https://modelscope.cn/models/google/siglip2-base-patch16-224" in text
+        # The reason is spelled out instead of dumping the raw exception chain.
+        assert "超时" in dialog._status.text() or "timed out" in dialog._status.text()
+    finally:
+        dialog.close()
