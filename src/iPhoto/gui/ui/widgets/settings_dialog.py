@@ -32,7 +32,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ....agent.services import ai_features, face_models, ocr_models, search_models
+from ....agent.services import (
+    ai_features,
+    face_models,
+    ocr_models,
+    search_models,
+)
+from ....agent.services.ai_devices import onnx_device
 from ....i18n import tr
 from ..icon import load_icon
 from .search_model_dialog import (
@@ -675,7 +681,12 @@ class SettingsDialog(QDialog):
                 if self._settings is not None
                 else None
             )
-            label.setText(f"{spec.title} · {spec.summary}")
+            state = (
+                ""
+                if registry.is_installed(spec)
+                else tr("search.model.not_installed_suffix")
+            )
+            label.setText(f"{spec.title}{state} · {onnx_device()}")
 
     def _switch_packs_action(self, feature: str) -> QAction:
         registry = self._packs_registry(feature)
@@ -733,6 +744,7 @@ class SettingsDialog(QDialog):
                 "settings.model_dialog.face_details",
                 name=spec.title,
                 mb=spec.download_mb,
+                device=onnx_device(),
                 quality=tr(f"search.model.quality.{spec.quality}"),
                 speed=tr(f"search.model.speed.{_SPEED_KEYS[spec.speed]}"),
                 state=(
@@ -745,6 +757,7 @@ class SettingsDialog(QDialog):
             "settings.model_dialog.ocr_details",
             name=spec.title,
             mb=int(round(spec.total_mb)),
+            device=onnx_device(),
             state=(
                 tr("search.model.installed")
                 if ocr_models.is_installed(spec)

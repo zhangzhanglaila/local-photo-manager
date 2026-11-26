@@ -530,8 +530,8 @@ _ZH: dict[str, str] = {
     'settings.row.ocr_model_switch': '切换 OCR 模型…',
     'settings.model_dialog.face_subtitle': '选择用于识别人脸和聚类人物的模型包。',
     'settings.model_dialog.ocr_subtitle': 'PP-OCRv5 mobile 为默认模型（首次使用自动下载约 21 MB）。把其它模型包放进 extension\\models\\ocr-<名称>\\ 也会出现在这里。',
-    'settings.model_dialog.face_details': '{name} · 约 {mb} MB\n精度：{quality}\u3000速度：{speed}\n状态：{state}',
-    'settings.model_dialog.ocr_details': '{name} · 约 {mb} MB\n状态：{state}',
+    'settings.model_dialog.face_details': '{name} · 约 {mb} MB · {device}\n精度：{quality}　速度：{speed}\n状态：{state}',
+    'settings.model_dialog.ocr_details': '{name} · 约 {mb} MB · {device}\n状态：{state}',
 }
 
 _EN: dict[str, str] = {
@@ -1046,8 +1046,8 @@ _EN: dict[str, str] = {
     'settings.row.ocr_model_switch': 'Switch OCR model…',
     'settings.model_dialog.face_subtitle': 'Pick the pack used for face detection and people clustering.',
     'settings.model_dialog.ocr_subtitle': 'PP-OCRv5 mobile is the default (~21 MB, downloaded on first use). Packs dropped into extension\\models\\ocr-<name>\\ also appear here.',
-    'settings.model_dialog.face_details': '{name} · about {mb} MB\naccuracy: {quality}   speed: {speed}\nstate: {state}',
-    'settings.model_dialog.ocr_details': '{name} · about {mb} MB\nstate: {state}',
+    'settings.model_dialog.face_details': '{name} · about {mb} MB · {device}\naccuracy: {quality}   speed: {speed}\nstate: {state}',
+    'settings.model_dialog.ocr_details': '{name} · about {mb} MB · {device}\nstate: {state}',
 }
 
 

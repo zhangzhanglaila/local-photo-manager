@@ -97,29 +97,16 @@ def model_details(spec: search_models.SearchModelSpec) -> str:
 
 
 def current_device_label() -> str:
-    """Return ``CUDA · fp16`` / ``CPU · fp32`` for the running encoder.
+    """Return ``CUDA`` or ``CPU`` for the running encoder.
 
-    The status object is filled in when the encoder loads, so this never has to
-    import torch (seconds and ~700 MB) just to draw a label.
+    Only the device is shown: "float16" is the arithmetic precision, not
+    something a user should have to decode in a settings row. The precision is
+    still reported in the log and in the model dialog details.
     """
 
-    from ....agent.services.search_status import search_status
+    from ....agent.services.ai_devices import search_device
 
-    status = search_status()
-    if status.device:
-        dtype = status.dtype or "fp32"
-        return f"{status.device.upper()} · {dtype}"
-
-    torch = sys.modules.get("torch")
-    if torch is not None:
-        try:
-            if torch.cuda.is_available():
-                return "CUDA · fp16"
-        except Exception:  # pragma: no cover - driver issues
-            pass
-        return "CPU · fp32"
-    # Not loaded yet: say so instead of claiming CPU, which read as "GPU unused".
-    return tr("search.model.device_pending")
+    return search_device()
 
 
 class _DownloadSignals(QObject):

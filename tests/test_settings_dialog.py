@@ -182,8 +182,10 @@ def test_settings_rows_report_model_device_and_index_progress(chrome, qapp):
         qapp.processEvents()
 
         model_text = dialog._model_value_label.text()
+        # Only the device: "float16" is precision, not something to decode here.
         assert "CUDA" in model_text
-        assert "float16" in model_text
+        assert "float16" not in model_text
+        assert "MB" not in model_text
 
         index_text = dialog._index_state_label.text()
         assert "28%" in index_text

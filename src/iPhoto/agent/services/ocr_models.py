@@ -50,10 +50,9 @@ class OCRModelSpec:
 
     @property
     def summary(self) -> str:
-        size = f"{int(round(self.total_mb))} MB"
-        if self.version and self.model_type:
-            return f"{size} · {self.version} {self.model_type}"
-        return size
+        """Size only: the title already names the model generation."""
+
+        return f"{int(round(self.total_mb))} MB"
 
     @property
     def languages(self) -> str:

@@ -222,10 +222,35 @@ def test_model_rows_show_the_active_pack(dialog):
     widget, _settings = dialog
     page = widget._pages[4]
 
-    assert "buffalo_l" in widget._pack_labels["face"].text()
-    assert "PP-OCRv5" in widget._pack_labels["ocr"].text()
-    # Only the search-precision dropdown is left; the model pickers are rows.
-    assert len(page.findChildren(QComboBox)) == 1
+    face_row = widget._pack_labels["face"].text()
+    ocr_row = widget._pack_labels["ocr"].text()
+    assert "buffalo_l" in face_row
+    assert "PP-OCRv5" in ocr_row
+    # Rows show name + device only; the size lives in the chooser dialog.
+    for row in (face_row, ocr_row):
+        assert "MB" not in row
+        assert row.endswith(("CPU", "CUDA", "未下载"))
+
+
+def test_the_model_dialogs_report_size_and_device(dialog):
+    from iPhoto.agent.services import face_models, ocr_models
+    from iPhoto.agent.services.ai_devices import onnx_device
+
+    widget, _settings = dialog
+    face_details = widget._pack_details("face", face_models.active_model())
+    ocr_details = widget._pack_details("ocr", ocr_models.active_model())
+
+    for details in (face_details, ocr_details):
+        assert "MB" in details
+        assert onnx_device() in details
+
+
+def test_only_the_precision_row_is_still_a_dropdown(dialog):
+    from PySide6.QtWidgets import QComboBox
+
+    widget, _settings = dialog
+
+    assert len(widget._pages[4].findChildren(QComboBox)) == 1
 
 
 def test_switching_the_face_pack_goes_through_the_chooser(dialog, monkeypatch):
