@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ....agent.services import ai_features, search_models
+from ....agent.services import ai_features, face_models, ocr_models, search_models
 from ....i18n import tr
 from ..icon import load_icon
 from .search_model_dialog import (
@@ -409,11 +409,15 @@ class SettingsDialog(QDialog):
                     ],
                 ),
                 (
-                    tr("settings.section.local_ai"),
+                    tr("settings.section.faces"),
                     [
                         self._value_row(
-                            tr("settings.row.face_recognition"),
+                            tr("settings.row.face_enable"),
                             self._ai_toggle(ai_features.FACE_KEY, ai_features.face_enabled),
+                        ),
+                        self._value_row(
+                            tr("settings.row.face_model"),
+                            self._model_combo(face_models),
                         ),
                         self._value_row(
                             tr("settings.row.face_index_state"),
@@ -423,9 +427,18 @@ class SettingsDialog(QDialog):
                             tr("settings.row.face_rebuild"),
                             self._ai_rebuild_action("face"),
                         ),
+                    ],
+                ),
+                (
+                    tr("settings.section.ocr"),
+                    [
                         self._value_row(
                             tr("settings.row.ocr"),
                             self._ai_toggle(ai_features.OCR_KEY, ai_features.ocr_enabled),
+                        ),
+                        self._value_row(
+                            tr("settings.row.ocr_model"),
+                            self._model_combo(ocr_models),
                         ),
                         self._value_row(
                             tr("settings.row.ocr_index_state"),
@@ -626,6 +639,42 @@ class SettingsDialog(QDialog):
             )
         else:
             state_label.setText(tr("search.model.coverage_unknown"))
+
+    def _model_combo(self, registry) -> QComboBox:
+        """A dropdown listing the packs of one model registry.
+
+        *registry* exposes ``available_models()``, ``resolve_spec()``,
+        ``is_installed()`` and ``SETTINGS_KEY``; the selected key is persisted so
+        the scan picks it up on its next run.
+        """
+
+        combo = QComboBox(self)
+        specs = list(registry.available_models())
+        active = registry.resolve_spec(
+            self._settings.get(registry.SETTINGS_KEY, None)
+            if self._settings is not None
+            else None
+        )
+        for spec in specs:
+            label = spec.title
+            if not registry.is_installed(spec):
+                label = f"{label}{tr('search.model.not_installed_suffix')}"
+            combo.addItem(f"{label} · {spec.summary}", spec.key)
+        index = next(
+            (i for i, spec in enumerate(specs) if spec.key == active.key), 0
+        )
+        combo.setCurrentIndex(index)
+
+        def _select(position: int) -> None:
+            key = combo.itemData(position)
+            if not key:
+                return
+            if self._settings is not None:
+                self._settings.set(registry.SETTINGS_KEY, key)
+            registry.set_active_model(key)
+
+        combo.currentIndexChanged.connect(_select)
+        return combo
 
     def _ai_toggle(self, key: str, getter) -> QCheckBox:
         """A checkbox bound to one of the local-AI switches."""

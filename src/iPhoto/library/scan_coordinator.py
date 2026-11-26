@@ -603,8 +603,10 @@ class ScanCoordinatorMixin:
             if not _ocr_enabled():
                 LOGGER.debug("OCR disabled in settings, skipping OCR scan")
                 return None
+            from ..agent.services import ocr_models
+
             ocr_repo = get_ocr_repository(library_root)
-            ocr_engine = OCREngine()
+            ocr_engine = OCREngine(spec=ocr_models.active_model())
             return OCRWorker(ocr_engine, ocr_repo, library_root)
         except ImportError:
             LOGGER.debug("OCR dependencies not available, skipping OCR scan")

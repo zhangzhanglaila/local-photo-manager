@@ -167,7 +167,16 @@ def test_smart_page_shows_face_and_text_rows(dialog):
     widget._nav.setCurrentRow(4)
     text = " ".join(_labels(widget))
 
-    for expected in ("人脸识别", "人脸索引状态", "补全人脸索引", "文字识别", "文字索引状态", "补全文字索引"):
+    for expected in (
+        "启用人脸识别",
+        "人脸模型",
+        "人脸索引状态",
+        "补全人脸索引",
+        "启用 OCR",
+        "OCR 模型",
+        "OCR 索引状态",
+        "补全 OCR 索引",
+    ):
         assert expected in text, expected
 
 
@@ -203,3 +212,109 @@ def test_state_row_reports_coverage(dialog, monkeypatch):
     widget._refresh_ai_rows()
 
     assert "12/40" in widget._ai_state_labels["face"].text()
+
+
+def test_model_rows_list_the_packs(dialog):
+    """Face and OCR each get their own model dropdown, like the search block."""
+
+    from PySide6.QtWidgets import QComboBox
+
+    from iPhoto.agent.services import face_models, ocr_models
+
+    widget, _settings = dialog
+    combos = widget._pages[4].findChildren(QComboBox)
+    data = [[combo.itemData(i) for i in range(combo.count())] for combo in combos]
+
+    assert ["buffalo_l", "buffalo_s"] in data
+    assert any(ocr_models.BUILTIN_KEY in row for row in data)
+    assert face_models.SETTINGS_KEY == "agent.face.model"
+
+
+def test_choosing_a_face_pack_persists_it(dialog):
+    from PySide6.QtWidgets import QComboBox
+
+    from iPhoto.agent.services import face_models
+
+    widget, settings = dialog
+    combo = next(
+        combo
+        for combo in widget._pages[4].findChildren(QComboBox)
+        if combo.itemData(0) == "buffalo_l"
+    )
+
+    index = next(
+        i for i in range(combo.count()) if combo.itemData(i) == "buffalo_s"
+    )
+    combo.setCurrentIndex(index)
+
+    assert settings.values[face_models.SETTINGS_KEY] == "buffalo_s"
+    assert face_models.active_model().key == "buffalo_s"
+
+
+def test_face_registry_falls_back_to_an_installed_pack(monkeypatch):
+    """Never point the scan at a pack that is not on disk."""
+
+    from iPhoto.agent.services import face_models
+
+    monkeypatch.setattr(
+        face_models, "is_installed", lambda spec: spec.key == "buffalo_s"
+    )
+
+    assert face_models.set_active_model("buffalo_l").key == "buffalo_s"
+    face_models.set_active_model("buffalo_l")  # restore for other tests
+    monkeypatch.undo()
+    face_models.set_active_model("buffalo_l")
+
+
+def test_ocr_registry_discovers_packs_on_disk(tmp_path, monkeypatch):
+    from iPhoto.agent.services import ocr_models
+
+    pack = tmp_path / "ocr-ppocr-v4"
+    pack.mkdir()
+    (pack / "ch_PP-OCRv4_det_infer.onnx").write_bytes(b"x" * 100)
+    (pack / "ch_PP-OCRv4_rec_infer.onnx").write_bytes(b"x" * 200)
+    monkeypatch.setattr(ocr_models, "models_root", lambda: tmp_path)
+
+    specs = ocr_models.available_models()
+    keys = [spec.key for spec in specs]
+
+    assert keys[0] == ocr_models.BUILTIN_KEY
+    assert "ocr-ppocr-v4" in keys
+    discovered = ocr_models.resolve_spec("ocr-ppocr-v4")
+    assert discovered.det is not None and discovered.rec is not None
+    assert ocr_models.is_installed(discovered)
+
+
+def test_ocr_pack_without_detector_is_ignored(tmp_path, monkeypatch):
+    from iPhoto.agent.services import ocr_models
+
+    pack = tmp_path / "ocr-broken"
+    pack.mkdir()
+    (pack / "ch_PP-OCRv4_rec_infer.onnx").write_bytes(b"x")
+    monkeypatch.setattr(ocr_models, "models_root", lambda: tmp_path)
+
+    assert [spec.key for spec in ocr_models.available_models()] == [
+        ocr_models.BUILTIN_KEY
+    ]
+
+
+def test_ocr_engine_passes_paths_for_a_disk_pack(tmp_path):
+    from iPhoto.ai.ocr.ocr_engine import OCREngine
+    from iPhoto.agent.services.ocr_models import OCRModelSpec
+
+    det = tmp_path / "det.onnx"
+    rec = tmp_path / "rec.onnx"
+    spec = OCRModelSpec(
+        key="custom",
+        title="custom",
+        total_mb=1.0,
+        directory=tmp_path,
+        det=det,
+        rec=rec,
+    )
+
+    kwargs = OCREngine(spec=spec)._engine_kwargs()
+
+    assert kwargs == {"det_model_path": str(det), "rec_model_path": str(rec)}
+    # The bundled pack must not override RapidOCR's own defaults.
+    assert OCREngine()._engine_kwargs() == {}

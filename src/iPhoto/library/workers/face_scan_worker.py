@@ -132,8 +132,11 @@ class FaceScanWorker(QThread):
         def _on_download_progress(downloaded: int, total: int) -> None:
             self.downloadProgress.emit(downloaded, total)
 
+        from ...agent.services import face_models
+
         pipeline = FaceClusterPipeline(
             model_root=paths.model_dir,
+            model_pack=face_models.active_model().dir_name,
             on_download_progress=_on_download_progress,
         )
         coordinator = self._people_service.coordinator

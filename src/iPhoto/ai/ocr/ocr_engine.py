@@ -20,11 +20,28 @@ class OCREngine:
     for subsequent calls. Thread-safe via a lock.
     """
 
-    def __init__(self, model_cache_dir: Path | None = None) -> None:
+    def __init__(self, model_cache_dir: Path | None = None, spec=None) -> None:
         self._cache_dir = model_cache_dir or DEFAULT_MODEL_CACHE_DIR
         self._engine = None
         self._lock = threading.Lock()
         self._loaded = False
+        #: Selected OCR pack; ``None`` means "use the bundled PP-OCRv3 models".
+        self._spec = spec
+
+    def _engine_kwargs(self) -> dict[str, str]:
+        """Return the model paths for the selected pack (empty for bundled)."""
+
+        spec = self._spec
+        if spec is None or spec.builtin:
+            return {}
+        kwargs: dict[str, str] = {}
+        if spec.det is not None:
+            kwargs["det_model_path"] = str(spec.det)
+        if spec.rec is not None:
+            kwargs["rec_model_path"] = str(spec.rec)
+        if spec.cls is not None:
+            kwargs["cls_model_path"] = str(spec.cls)
+        return kwargs
 
     def _ensure_loaded(self) -> bool:
         """Load RapidOCR models if not already loaded."""
@@ -52,7 +69,10 @@ class OCREngine:
                 apply_library_thread_limits()
 
                 _LOGGER.info("Loading RapidOCR model (first use, ~10s)...")
-                self._engine = RapidOCR()
+                kwargs = self._engine_kwargs()
+                if kwargs:
+                    _LOGGER.info("OCR model pack: %s", kwargs)
+                self._engine = RapidOCR(**kwargs)
                 self._loaded = True
                 _LOGGER.info("RapidOCR model loaded successfully")
                 return True
