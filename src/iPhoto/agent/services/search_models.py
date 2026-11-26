@@ -86,9 +86,6 @@ SEARCH_MODELS: dict[str, SearchModelSpec] = {
     ),
 }
 
-_active_key: str = DEFAULT_SEARCH_MODEL_KEY
-
-
 def available_models() -> list[SearchModelSpec]:
     """Return the models offered by the UI, cheapest first."""
 
@@ -101,23 +98,6 @@ def resolve_spec(key: str | None) -> SearchModelSpec:
     if key and key in SEARCH_MODELS:
         return SEARCH_MODELS[key]
     return SEARCH_MODELS[DEFAULT_SEARCH_MODEL_KEY]
-
-
-def set_active_model(key: str | None) -> SearchModelSpec:
-    """Remember the model the app is currently using and return its spec."""
-
-    global _active_key
-    spec = resolve_spec(key)
-    _active_key = spec.key
-    return spec
-
-
-def active_model_key() -> str:
-    return _active_key
-
-
-def active_model() -> SearchModelSpec:
-    return resolve_spec(_active_key)
 
 
 def models_root(install_root: Path | None = None) -> Path:
@@ -173,13 +153,10 @@ __all__ = [
     "SEARCH_MODELS",
     "SETTINGS_KEY",
     "SearchModelSpec",
-    "active_model",
-    "active_model_key",
     "available_models",
     "installed_models",
     "is_installed",
     "model_dir",
     "models_root",
     "resolve_spec",
-    "set_active_model",
 ]

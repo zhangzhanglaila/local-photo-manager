@@ -776,8 +776,8 @@ class MainCoordinator(QObject):
         self._context.settings.settingsChanged.connect(
             self._on_search_model_setting_changed
         )
-        _search_models.set_active_model(
-            self._context.settings.get(_search_models.SETTINGS_KEY, None)
+        self._context.model_selection.apply(
+            "search", self._context.settings.get(_search_models.SETTINGS_KEY, None)
         )
         current_lang = self._context.settings.get("ui.language", "zh")
         if current_lang == "en":
@@ -840,6 +840,11 @@ class MainCoordinator(QObject):
 
     def _active_session(self):
         return getattr(self._context, "library_session", None)
+
+    def _active_search_spec(self):
+        """Search model currently selected, as recorded by bootstrap."""
+
+        return self._context.model_selection.spec("search")
 
     def _library_root(self) -> Path | None:
         session = self._active_session()
@@ -1410,7 +1415,7 @@ class MainCoordinator(QObject):
         from iPhoto.agent.services import search_models
 
         library_root = Path(self._context.library.root())
-        model_dir = search_models.model_dir(search_models.active_model())
+        model_dir = search_models.model_dir(searchself._active_search_spec())
         # Reuse the session's embedding service: it is warmed before the face scan
         # starts, so rebuilding a service here would reload the weights on every
         # single search.
@@ -1425,12 +1430,14 @@ class MainCoordinator(QObject):
                 query_text,
                 model_path,
                 lib_root,
+                model_spec,
                 *,
                 precision="balanced",
                 scope_album_path=None,
                 similar_to=None,
             ):
                 super().__init__()
+                self._model_spec = model_spec
                 self._query = query_text
                 self._model_dir = model_path
                 self._library_root = lib_root
@@ -1457,7 +1464,7 @@ class MainCoordinator(QObject):
                     session_service = None
                     if library_session is not None:
                         try:
-                            if search_models.is_installed(search_models.active_model()):
+                            if search_models.is_installed(searchself._active_search_spec()):
                                 session_service = (
                                     library_session.get_embedding_service()
                                 )
@@ -1495,7 +1502,7 @@ class MainCoordinator(QObject):
 
                     all_embeddings = _load_search_embeddings(
                         self._library_root,
-                        model_name=_search_models.active_model().dir_name,
+                        model_name=_searchself._active_search_spec().dir_name,
                     )
 
                     if not all_embeddings:
@@ -1551,9 +1558,6 @@ class MainCoordinator(QObject):
 
                     import numpy as _np
 
-                    from iPhoto.agent.services.search_models import (
-                        active_model as _active_search_model,
-                    )
                     from iPhoto.agent.services.search_ranking import (
                         needs_translation as _needs_translation,
                         labels_for_query,
@@ -1564,8 +1568,6 @@ class MainCoordinator(QObject):
                         translation_is_partial,
                     )
 
-                    def _search_models_for_family():
-                        return _active_search_model()
 
                     matrix = _np.stack([item["embedding"] for item in all_embeddings])
 
@@ -1589,7 +1591,7 @@ class MainCoordinator(QObject):
                             sim_scores, floor=0.65, margin=0.08
                         )
                     else:
-                        _family = _search_models_for_family().family
+                        _family = self._model_spec.family
                         # Only the English-only CLIP tower needs the built-in
                         # glossary. SigLIP embeds Chinese natively, and the
                         # glossary drops meaning there ("茉酸奶" → "yogurt"),
@@ -1745,6 +1747,7 @@ class MainCoordinator(QObject):
             query,
             model_dir,
             library_root,
+            self._active_search_spec(),
             precision=self._search_precision(),
             scope_album_path=(
                 self._current_album_rel_path() if scope == "album" else None
@@ -1975,7 +1978,9 @@ class MainCoordinator(QObject):
             return
         if key != search_models.SETTINGS_KEY:
             return
-        spec = search_models.set_active_model(str(value) if value else None)
+        spec = self._context.model_selection.apply(
+            "search", str(value) if value else None
+        )
         self._logger.info("search model switched to %s", spec.key)
 
         self._context.search_index_status.set_model(spec.key)
@@ -2028,7 +2033,7 @@ class MainCoordinator(QObject):
         if callable(reset):
             reset()
         _SEARCH_EMBEDDINGS_CACHE.clear()
-        spec = search_models.active_model()
+        spec = searchself._active_search_spec()
         if not search_models.is_installed(spec):
             self._status_bar.show_message(
                 tr("search.model.missing", mb=spec.download_mb), 8000
@@ -2121,7 +2126,7 @@ class MainCoordinator(QObject):
 
                     pending = embedding_repo.get_asset_ids_without_embeddings(
                         asset_ids,
-                        model_name=_models.active_model().dir_name,
+                        model_name=self._active_search_spec().dir_name,
                     )
                     status = self._context.search_index_status
 
@@ -2203,9 +2208,9 @@ class MainCoordinator(QObject):
 
                     # Check if model files exist first
                     from iPhoto.agent.services import search_models
-                    model_dir = search_models.model_dir(search_models.active_model())
+                    model_dir = search_models.model_dir(searchself._active_search_spec())
 
-                    if not search_models.is_installed(search_models.active_model()):
+                    if not search_models.is_installed(searchself._active_search_spec()):
                         self._callback("error", 0, 0, "模型文件不存在，请先下载模型")
                         return
 

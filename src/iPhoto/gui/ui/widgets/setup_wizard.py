@@ -173,6 +173,7 @@ class SetupWizard(QDialog):
         *,
         initial_library: Optional[Path] = None,
         initial_workspace: Optional[Path] = None,
+        settings=None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("setup.title"))
@@ -180,6 +181,7 @@ class SetupWizard(QDialog):
         self.resize(860, 580)
         self.setModal(True)
 
+        self._settings = settings
         self._library_paths: list[Path] = [initial_library] if initial_library else []
         self._workspace_base: Optional[Path] = initial_workspace
         self._enable_clip = True
@@ -406,7 +408,12 @@ class SetupWizard(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        self._search_model_key = search_models.active_model_key()
+        stored = (
+            self._settings.get(search_models.SETTINGS_KEY, None)
+            if self._settings is not None
+            else None
+        )
+        self._search_model_key = search_models.resolve_spec(stored).key
         self._clip_check = QCheckBox(
             tr("setup.ai_clip", mb=CLIP_MODEL_MB), body
         )

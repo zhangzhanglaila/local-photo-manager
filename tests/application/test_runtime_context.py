@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from iPhoto.agent.services.model_selection import ModelSelection
 from iPhoto.gui.viewmodels.search_index_status import SearchIndexStatus
 from iPhoto.bootstrap.runtime_context import RuntimeContext
 from iPhoto.events.bus import EventBus
@@ -179,6 +180,7 @@ def _runtime_context(root: Path) -> tuple[RuntimeContext, _FakeLibrary, _FakeAss
     context.event_bus = EventBus(__import__("logging").getLogger("EventBus"))
     context.asset_runtime = asset_runtime
     context.search_index_status = SearchIndexStatus()
+    context.model_selection = ModelSelection()
     context._container = None
     context._pending_basic_library_path = root
     # ``__new__`` bypasses the dataclass initialiser, so every field declared

@@ -11,12 +11,6 @@ from iPhoto.agent.services import search_models
 from iPhoto.utils import pathutils
 
 
-@pytest.fixture(autouse=True)
-def _restore_active_model():
-    yield
-    search_models.set_active_model(search_models.DEFAULT_SEARCH_MODEL_KEY)
-
-
 def test_defaults_when_nothing_is_configured():
     assert search_models.resolve_spec(None).key == search_models.DEFAULT_SEARCH_MODEL_KEY
     assert search_models.resolve_spec("nope").key == search_models.DEFAULT_SEARCH_MODEL_KEY
@@ -36,14 +30,17 @@ def test_models_are_offered_cheapest_first():
     assert sizes == sorted(sizes)
 
 
-def test_active_model_follows_the_setting(tmp_path: Path):
-    spec = search_models.set_active_model("siglip2-base")
-    assert spec.family == "siglip"
-    assert search_models.active_model_key() == "siglip2-base"
-    assert search_models.active_model().dimension == 768
+def test_active_model_follows_the_selection() -> None:
+    from iPhoto.agent.services.model_selection import ModelSelection
 
-    search_models.set_active_model("unknown-key")
-    assert search_models.active_model_key() == search_models.DEFAULT_SEARCH_MODEL_KEY
+    selection = ModelSelection()
+    spec = selection.apply("search", "siglip2-base")
+    assert spec.family == "siglip"
+    assert selection.key("search") == "siglip2-base"
+    assert selection.spec("search").dimension == 768
+
+    selection.apply("search", "unknown-key")
+    assert selection.key("search") == search_models.DEFAULT_SEARCH_MODEL_KEY
 
 
 def test_installed_detection_uses_the_model_directory(tmp_path: Path):

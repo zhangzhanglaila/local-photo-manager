@@ -151,20 +151,6 @@ def is_installed(spec: OCRModelSpec) -> bool:
     return spec.det is not None and spec.rec is not None and spec.det.exists()
 
 
-_active_key: Optional[str] = None
-
-
-def set_active_model(key: str | None) -> OCRModelSpec:
-    global _active_key
-    spec = resolve_spec(key)
-    _active_key = spec.key
-    return spec
-
-
-def active_model() -> OCRModelSpec:
-    return resolve_spec(_active_key)
-
-
 __all__ = [
     "BUILTIN_KEY",
     "BUILTIN_MB",
@@ -173,11 +159,9 @@ __all__ = [
     "BUILTIN_VERSION",
     "OCRModelSpec",
     "SETTINGS_KEY",
-    "active_model",
     "available_models",
     "is_installed",
     "models_root",
     "rapidocr_dir",
     "resolve_spec",
-    "set_active_model",
 ]

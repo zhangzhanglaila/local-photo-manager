@@ -48,6 +48,7 @@ class FaceScanWorker(QThread):
         parent=None,
         *,
         people_service: PeopleService | None = None,
+        model_pack: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._library_root = Path(library_root)
@@ -56,6 +57,8 @@ class FaceScanWorker(QThread):
 
             people_service = create_people_service(self._library_root)
         self._people_service = people_service
+        #: InsightFace pack chosen in 设置 → 智能, injected by the scan coordinator.
+        self._model_pack = model_pack or "buffalo_l"
         self._queue: queue.Queue[dict] = queue.Queue()
         self._queued_ids: set[str] = set()
         self._input_closed = False
@@ -136,7 +139,7 @@ class FaceScanWorker(QThread):
 
         pipeline = FaceClusterPipeline(
             model_root=paths.model_dir,
-            model_pack=face_models.active_model().dir_name,
+            model_pack=self._model_pack,
             on_download_progress=_on_download_progress,
         )
         coordinator = self._people_service.coordinator

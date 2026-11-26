@@ -226,12 +226,14 @@ class SettingsDialog(QDialog):
         parent: QWidget | None = None,
         settings=None,
         search_status=None,
+        model_selection=None,
     ) -> None:
         super().__init__(parent)
         self._header = header
         self._library = library
         self._settings = settings
         self._search_status = search_status
+        self._model_selection = model_selection
         self._pages: list[QWidget] = []
 
         self.setWindowTitle(tr("dialog.settings_title"))
@@ -625,7 +627,7 @@ class SettingsDialog(QDialog):
 
         label = getattr(self, "_model_value_label", None)
         state_label = getattr(self, "_index_state_label", None)
-        spec = search_models.active_model()
+        spec = self._active_spec("search")
         state = (
             ""
             if search_models.is_installed(spec)
@@ -665,6 +667,28 @@ class SettingsDialog(QDialog):
 
     def _packs_registry(self, feature: str):
         return face_models if feature == "face" else ocr_models
+
+    def _active_spec(self, feature: str):
+        """Active pack for *feature* from the injected selection.
+
+        Falls back to the settings value (then the registry default) when the
+        dialog is built without a runtime context, as some previews do.
+        """
+
+        selection = self._model_selection
+        if selection is not None:
+            return selection.spec(feature)
+        registry = search_models if feature == "search" else self._packs_registry(feature)
+        if self._settings is not None:
+            return registry.resolve_spec(
+                self._settings.get(registry.SETTINGS_KEY, None)
+            )
+        return registry.resolve_spec(None)
+
+    def _apply_selection(self, feature: str, key: str | None) -> None:
+        selection = self._model_selection
+        if selection is not None:
+            selection.apply(feature, key)
 
     def _packs_value(self, feature: str) -> QLabel:
         """Show the selected pack as a value row, like 搜索模型 does."""
@@ -738,7 +762,7 @@ class SettingsDialog(QDialog):
             key = dialog.selected_key()
             if self._settings is not None:
                 self._settings.set(registry.SETTINGS_KEY, key)
-            registry.set_active_model(key)
+            self._apply_selection(feature, key)
             self._refresh_pack_rows()
 
         action.triggered.connect(_run)
@@ -899,16 +923,15 @@ class SettingsDialog(QDialog):
             return None
         try:
             from ....agent.services.search_coverage import compute_coverage
-            from ....agent.services.search_models import active_model
 
-            return compute_coverage(root, active_model().dir_name)
+            return compute_coverage(root, self._active_spec("search").dir_name)
         except Exception:  # pragma: no cover - display only
             return None
 
     def _search_model_value(self) -> QLabel:
         """Show the active search model plus the device that will run it."""
 
-        spec = search_models.active_model()
+        spec = self._active_spec("search")
         # Keep it short: quality/language/size live in the chooser, the row only
         # needs "which model" and "where it runs". A model that is not on disk is
         # called out instead of pretending it is usable.
@@ -931,17 +954,18 @@ class SettingsDialog(QDialog):
         action = QAction(tr("search.model.switch"), self)
 
         def _run() -> None:
-            dialog = SearchModelDialog(self, current_key=search_models.active_model_key())
+            dialog = SearchModelDialog(self, current_key=self._active_spec("search").key)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             key = dialog.selected_key()
-            if key == search_models.active_model_key():
+            if key == self._active_spec("search").key:
                 return
             if self._settings is not None:
                 self._settings.set(search_models.SETTINGS_KEY, key)
+                self._apply_selection("search", key)
                 self._refresh_search_rows()
             else:  # pragma: no cover - settings are always present in the app
-                search_models.set_active_model(key)
+                self._apply_selection("search", key)
 
         action.triggered.connect(_run)
         return action

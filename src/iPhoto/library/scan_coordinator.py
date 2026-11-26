@@ -65,6 +65,16 @@ class ScanCoordinatorMixin:
         switches = getattr(self, "_feature_switches", None)
         return True if switches is None else switches.ocr_enabled()
 
+    def _ai_model_selection(self):
+        """Return the injected model selection, or a standalone default."""
+
+        selection = getattr(self, "_model_selection", None)
+        if selection is None:
+            from ..agent.services.model_selection import ModelSelection
+
+            selection = ModelSelection()
+        return selection
+
     def start_session_scan(
         self,
         root: Path,
@@ -169,6 +179,7 @@ class ScanCoordinatorMixin:
                 face_library_root,
                 self,
                 people_service=self._services.people_service,
+                model_pack=self._ai_model_selection().spec("face").dir_name,
             )
             face_worker.statusChanged.connect(self._on_face_scan_status_changed)
             face_worker.downloadProgress.connect(self._on_face_download_progress)
@@ -496,7 +507,9 @@ class ScanCoordinatorMixin:
                 # happen on a background thread.
                 from iPhoto.agent.services import search_models
 
-                if not search_models.is_installed(search_models.active_model()):
+                if not search_models.is_installed(
+                    self._ai_model_selection().spec("search")
+                ):
                     LOGGER.info("CLIP model not downloaded; skipping preload")
                     return
 
@@ -600,10 +613,8 @@ class ScanCoordinatorMixin:
             if not self._ai_ocr_enabled():
                 LOGGER.debug("OCR disabled in settings, skipping OCR scan")
                 return None
-            from ..agent.services import ocr_models
-
             ocr_repo = get_ocr_repository(library_root)
-            ocr_engine = OCREngine(spec=ocr_models.active_model())
+            ocr_engine = OCREngine(spec=self._ai_model_selection().spec("ocr"))
             return OCRWorker(ocr_engine, ocr_repo, library_root)
         except ImportError:
             LOGGER.debug("OCR dependencies not available, skipping OCR scan")

@@ -23,6 +23,16 @@ _LOGGER = logging.getLogger(__name__)
 _LEGACY_WARNED = False
 
 
+def _package_root() -> Path:
+    """The `src` directory that contains `iPhoto`.
+
+    The one place in the code base that knows how deep this package sits; every
+    other module asks :func:install_root instead of doing its own arithmetic.
+    """
+
+    return Path(__file__).resolve().parents[3]
+
+
 def install_root() -> Path:
     """Canonical model directory: the one shown to the user.
 
@@ -33,15 +43,14 @@ def install_root() -> Path:
     override = os.environ.get("IPHOTO_MODELS_DIR")
     if override:
         return Path(override).expanduser()
-    # src/iPhoto/agent/services/model_paths.py -> repo root at parents[4]
-    return Path(__file__).resolve().parents[4] / "extension" / "models"
+    return _package_root().parent / "extension" / "models"
 
 
 def legacy_roots() -> tuple[Path, ...]:
     """Older locations that are still read for compatibility."""
 
     # The tree that faces/OCR used before this module existed.
-    return (Path(__file__).resolve().parents[3] / "extension" / "models",)
+    return (_package_root() / "extension" / "models",)
 
 
 def candidate_roots() -> tuple[Path, ...]:

@@ -30,6 +30,7 @@ class SearchService:
         asset_repository,
         embedding_repository,
         ocr_repository=None,
+        model=None,
     ) -> None:
         """Initialize the search service.
 
@@ -49,6 +50,13 @@ class SearchService:
         self._asset_repository = asset_repository
         self._embedding_repository = embedding_repository
         self._ocr_repository = ocr_repository
+        #: Search pack whose vectors this service may compare (injected by the
+        #: session; falls back to the registry default for standalone use).
+        if model is None:
+            from .search_models import resolve_spec
+
+            model = resolve_spec(None)
+        self._model = model
 
     def search(
         self,
@@ -76,10 +84,9 @@ class SearchService:
         start_time = time.time()
 
         if threshold is None:
-            from .search_models import active_model
             from .search_ranking import precision_params
 
-            threshold = precision_params("balanced", family=active_model().family)[0]
+            threshold = precision_params("balanced", family=self._model.family)[0]
 
         if not query.strip():
             return []
@@ -90,11 +97,9 @@ class SearchService:
             _LOGGER.warning("Failed to generate embedding for query: %s", query)
             return []
 
-        # Only vectors from the active model: other models live in another space.
-        from . import search_models
-
+        # Only vectors from this service's model: other models live in another space.
         all_embeddings = self._embedding_repository.get_all_embeddings(
-            model_name=search_models.active_model().dir_name
+            model_name=self._model.dir_name
         )
         _LOGGER.info("Loaded %d embeddings in %.3f seconds", len(all_embeddings), time.time() - start_time)
 

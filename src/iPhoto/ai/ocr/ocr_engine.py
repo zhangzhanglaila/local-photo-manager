@@ -38,7 +38,7 @@ class OCREngine:
 
         from ...agent.services import ocr_models
 
-        spec = self._spec or ocr_models.active_model()
+        spec = self._spec or ocr_models.resolve_spec(None)
         from ..onnx_threads import rapidocr_engine_params
 
         params: dict = {

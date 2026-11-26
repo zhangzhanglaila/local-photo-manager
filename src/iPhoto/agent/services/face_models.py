@@ -61,9 +61,6 @@ MODELS: tuple[FaceModelSpec, ...] = (
 
 DEFAULT_KEY = "buffalo_l"
 
-_active_key: Optional[str] = None
-
-
 def models_root() -> Path:
     """Canonical model directory (see :mod:`model_paths`)."""
 
@@ -105,41 +102,14 @@ def is_installed(spec: FaceModelSpec) -> bool:
     )
 
 
-def active_key() -> str:
-    """Return the key currently in use (before any settings read)."""
-
-    return _active_key or DEFAULT_KEY
-
-
-def set_active_model(key: str | None) -> FaceModelSpec:
-    """Record the choice; the next scan uses it."""
-
-    global _active_key
-    spec = resolve_spec(key)
-    if not is_installed(spec):
-        # Never leave the scan pointed at a pack that is not on disk.
-        fallback = next((item for item in MODELS if is_installed(item)), None)
-        if fallback is not None:
-            spec = fallback
-    _active_key = spec.key
-    return spec
-
-
-def active_model() -> FaceModelSpec:
-    return resolve_spec(_active_key)
-
-
 __all__ = [
     "DEFAULT_KEY",
     "MODELS",
     "SETTINGS_KEY",
     "FaceModelSpec",
-    "active_key",
-    "active_model",
     "available_models",
     "is_installed",
     "model_dir",
     "models_root",
     "resolve_spec",
-    "set_active_model",
 ]

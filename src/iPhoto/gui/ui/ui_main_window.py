@@ -349,6 +349,7 @@ class Ui_MainWindow(object):
             self._main_window,
             settings=getattr(context, "settings", None),
             search_status=getattr(context, "search_index_status", None),
+            model_selection=getattr(context, "model_selection", None),
         )
         self._settings_dialog.show()
         self._settings_dialog.raise_()

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # pragma: no cover
     from ...gui.viewmodels.search_index_status import SearchIndexStatus
+    from ...agent.services.model_selection import ModelSelection
     from ...gui.services.background_tasks import BackgroundTaskRegistry
     from ...di.container import DependencyContainer
     from ...events.bus import EventBus
@@ -31,6 +32,7 @@ class RuntimeEntryContract(Protocol):
     asset_runtime: "LibraryAssetRuntime"
     search_index_status: "SearchIndexStatus"
     background_tasks: "BackgroundTaskRegistry"
+    model_selection: "ModelSelection"
     library_session: "LibrarySession | None"
     recent_albums: list[Path]
     defer_startup_tasks: bool

@@ -60,6 +60,7 @@ class LibrarySession:
     edit: EditServicePort | None = None
     locations: LocationAssetServicePort | None = None
     search_index_status: object | None = None
+    model_selection: object | None = None
     bind_asset_runtime: bool = True
     # Agent services (optional, initialized lazily)
     _search_service: object = field(default=None, repr=False)
@@ -129,6 +130,7 @@ class LibrarySession:
             return self._search_service
 
         try:
+            from ..agent.services import search_models
             from ..agent.services.search_service import SearchService
 
             # Get embedding service and repository
@@ -142,10 +144,17 @@ class LibrarySession:
             # The search will trigger model loading when needed
 
             # Create search service with CLIP
+            selection = self.model_selection
+            model = (
+                selection.spec("search")
+                if selection is not None
+                else search_models.resolve_spec(None)
+            )
             self._search_service = SearchService(
                 embedding_service=embedding_service,
                 asset_repository=self.asset_runtime.assets,
                 embedding_repository=embedding_repo,
+                model=model,
             )
 
             return self._search_service
@@ -181,7 +190,12 @@ class LibrarySession:
             from ..agent.infrastructure.clip_embedding import CLIPEmbeddingService
             from ..agent.services import search_models
 
-            spec = search_models.active_model()
+            selection = self.model_selection
+            spec = (
+                selection.spec("search")
+                if selection is not None
+                else search_models.resolve_spec(None)
+            )
             model_dir = search_models.model_dir(spec)
             logger.info("Checking search model %s at: %s", spec.key, model_dir)
 

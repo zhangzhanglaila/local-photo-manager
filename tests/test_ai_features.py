@@ -294,8 +294,8 @@ def test_the_model_dialogs_report_size_and_device(dialog):
     from iPhoto.agent.services.ai_devices import onnx_device
 
     widget, _settings = dialog
-    face_details = widget._pack_details("face", face_models.active_model())
-    ocr_details = widget._pack_details("ocr", ocr_models.active_model())
+    face_details = widget._pack_details("face", face_models.resolve_spec(None))
+    ocr_details = widget._pack_details("ocr", ocr_models.resolve_spec(None))
 
     for details in (face_details, ocr_details):
         assert "MB" in details
@@ -331,9 +331,8 @@ def test_switching_the_face_pack_goes_through_the_chooser(dialog, monkeypatch):
 
     assert seen["options"] == ["buffalo_l", "buffalo_s"]
     assert settings.values[face_models.SETTINGS_KEY] == "buffalo_s"
-    assert face_models.active_model().key == "buffalo_s"
+    assert widget._active_spec("face").key == "buffalo_s"
     assert "buffalo_s" in widget._pack_labels["face"].text()
-    face_models.set_active_model("buffalo_l")
 
 
 def test_chooser_dialog_shows_every_pack_without_inner_scrolling(qapp):
@@ -355,19 +354,18 @@ def test_chooser_dialog_shows_every_pack_without_inner_scrolling(qapp):
         dialog.close()
 
 
-def test_face_registry_falls_back_to_an_installed_pack(monkeypatch):
+def test_selection_falls_back_to_an_installed_face_pack(monkeypatch):
     """Never point the scan at a pack that is not on disk."""
 
     from iPhoto.agent.services import face_models
+    from iPhoto.agent.services.model_selection import ModelSelection
 
     monkeypatch.setattr(
         face_models, "is_installed", lambda spec: spec.key == "buffalo_s"
     )
+    selection = ModelSelection()
 
-    assert face_models.set_active_model("buffalo_l").key == "buffalo_s"
-    face_models.set_active_model("buffalo_l")  # restore for other tests
-    monkeypatch.undo()
-    face_models.set_active_model("buffalo_l")
+    assert selection.apply("face", "buffalo_l").key == "buffalo_s"
 
 
 def test_ocr_registry_discovers_packs_on_disk(tmp_path, monkeypatch):

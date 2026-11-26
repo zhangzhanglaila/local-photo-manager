@@ -21,6 +21,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..infrastructure.services.library_asset_runtime import LibraryAssetRuntime
     from ..library.runtime_controller import LibraryRuntimeController
     from ..settings.manager import SettingsManager
+    from ..agent.services.model_selection import ModelSelection
     from .ai_feature_switches import SettingsAiFeatureSwitches as AiFeatureSwitches
     from .library_session import LibrarySession
 
@@ -37,10 +38,20 @@ def _create_settings_manager() -> "SettingsManager":
 
 def _create_library_manager(
     feature_switches: "AiFeatureSwitches",
+    model_selection: "ModelSelection",
 ) -> "LibraryRuntimeController":
     from ..library.runtime_controller import LibraryRuntimeController
 
-    return LibraryRuntimeController(feature_switches=feature_switches)
+    return LibraryRuntimeController(
+        feature_switches=feature_switches,
+        model_selection=model_selection,
+    )
+
+
+def _create_model_selection() -> "ModelSelection":
+    from ..agent.services.model_selection import ModelSelection
+
+    return ModelSelection()
 
 
 def _create_facade() -> "AppFacade":
@@ -101,6 +112,7 @@ class RuntimeContext:
     background_tasks: "BackgroundTaskRegistry" = field(
         default_factory=_create_task_registry
     )
+    model_selection: "ModelSelection" = field(default_factory=_create_model_selection)
     recent_albums: list[Path] = field(default_factory=list)
     defer_startup_tasks: bool = False
     show_welcome_if_needed: bool = True  # 是否在需要时显示欢迎向导
@@ -130,14 +142,17 @@ class RuntimeContext:
             _logger.debug("AI model tree migration failed", exc_info=True)
 
         self.ai_feature_switches = SettingsAiFeatureSwitches(self.settings)
-        self.library = _create_library_manager(self.ai_feature_switches)
+        self.model_selection.load_from_settings(self.settings)
+        self.library = _create_library_manager(
+            self.ai_feature_switches, self.model_selection
+        )
         # The chosen search model decides the encoder, the index's model_name and
         # which vectors a search may compare; apply it before anything else runs.
         try:
             from ..agent.services import search_models
 
-            configured = search_models.set_active_model(
-                self.settings.get(search_models.SETTINGS_KEY, None)
+            configured = self.model_selection.apply(
+                "search", self.settings.get(search_models.SETTINGS_KEY, None)
             )
             # A failed download used to leave the setting pointing at a model
             # that is not on disk, so the UI claimed a model that could not run.
@@ -156,7 +171,7 @@ class RuntimeContext:
                         configured.key,
                         usable.key,
                     )
-                    search_models.set_active_model(usable.key)
+                    self.model_selection.apply("search", usable.key)
                     self.settings.set(search_models.SETTINGS_KEY, usable.key)
         except Exception:  # pragma: no cover - never block startup on this
             pass
@@ -252,6 +267,7 @@ class RuntimeContext:
                 parent,
                 initial_library=self.library.root(),
                 initial_workspace=get_custom_workspace_base(),
+                settings=self.settings,
             )
             if not wizard.show_and_wait():
                 _logger.info("setup wizard cancelled")
@@ -277,7 +293,7 @@ class RuntimeContext:
                 from ..agent.services import search_models
 
                 self.settings.set(search_models.SETTINGS_KEY, selected_model)
-                search_models.set_active_model(selected_model)
+                self.model_selection.apply("search", selected_model)
             self.settings.set("setup.completed", True)
 
             _logger.info(
@@ -447,6 +463,7 @@ class RuntimeContext:
             asset_runtime=self.asset_runtime,
             bind_asset_runtime=False,
             search_index_status=self.search_index_status,
+            model_selection=self.model_selection,
         )
         # ``LibraryRuntimeController.bind_library_session`` is the single binding
         # entry point and always exists. The old fallback rebound twelve services
