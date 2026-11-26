@@ -8,6 +8,8 @@ from typing import List, Optional
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
+from ....i18n import tr
+
 _LOGGER = logging.getLogger(__name__)
 
 _BATCH_SIZE = 16
@@ -148,7 +150,7 @@ class EmbeddingWorker(QRunnable):
             self.signals.progress.emit(
                 current,
                 total,
-                f"已处理 {current}/{total} 张图片...",
+                tr("status.embedding.progress", current=current, total=total),
             )
 
         self.signals.finished.emit(processed, failed)

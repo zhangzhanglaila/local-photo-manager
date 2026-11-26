@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
+from ...i18n import tr
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -150,8 +152,10 @@ class OrganizeService:
         for year_month, asset_ids in groups.items():
             if len(asset_ids) >= 5:
                 albums.append(SmartAlbum(
-                    name=f"{year_month} 的照片",
-                    description=f"{year_month} 拍摄的照片",
+                    name=tr("organize.smart_album.month_name", period=year_month),
+                    description=tr(
+                        "organize.smart_album.month_description", period=year_month
+                    ),
                     asset_ids=asset_ids,
                     album_type="time",
                 ))
@@ -170,8 +174,10 @@ class OrganizeService:
         for location, asset_ids in groups.items():
             if len(asset_ids) >= 3:
                 albums.append(SmartAlbum(
-                    name=f"{location} 的照片",
-                    description=f"在 {location} 拍摄的照片",
+                    name=tr("organize.smart_album.location_name", location=location),
+                    description=tr(
+                        "organize.smart_album.location_description", location=location
+                    ),
                     asset_ids=asset_ids,
                     album_type="location",
                 ))
@@ -207,13 +213,27 @@ class OrganizeService:
                 if dates:
                     start_date = min(dates)[:10]
                     end_date = max(dates)[:10]
-                    name = f"活动 {i+1}: {start_date}"
                     if start_date != end_date:
-                        name += f" 至 {end_date}"
+                        name = tr(
+                            "organize.smart_album.event_name_range",
+                            index=i + 1,
+                            start=start_date,
+                            end=end_date,
+                        )
+                    else:
+                        name = tr(
+                            "organize.smart_album.event_name",
+                            index=i + 1,
+                            start=start_date,
+                        )
 
                     albums.append(SmartAlbum(
                         name=name,
-                        description=f"{start_date} 至 {end_date} 的照片",
+                        description=tr(
+                            "organize.smart_album.event_description",
+                            start=start_date,
+                            end=end_date,
+                        ),
                         asset_ids=[a.get("id", "") for a in cluster],
                         album_type="event",
                     ))
