@@ -24,39 +24,40 @@ class _Settings:
         self.writes.append((key, value))
 
 
-@pytest.fixture(autouse=True)
-def _reset_provider():
-    yield
-    ai_features.set_settings_provider(None)
-
-
 def test_both_scans_default_to_on_without_settings():
-    ai_features.set_settings_provider(None)
+    from iPhoto.bootstrap.ai_feature_switches import SettingsAiFeatureSwitches
 
-    assert ai_features.face_enabled() is True
-    assert ai_features.ocr_enabled() is True
+    switches = SettingsAiFeatureSwitches(_Settings())
+
+    assert switches.face_enabled() is True
+    assert switches.ocr_enabled() is True
 
 
 def test_switches_follow_the_settings_manager():
+    from iPhoto.bootstrap.ai_feature_switches import SettingsAiFeatureSwitches
+
     settings = _Settings({ai_features.FACE_KEY: False, ai_features.OCR_KEY: True})
-    ai_features.set_settings_provider(lambda: settings)
+    switches = SettingsAiFeatureSwitches(settings)
 
-    assert ai_features.face_enabled() is False
-    assert ai_features.ocr_enabled() is True
+    assert switches.face_enabled() is False
+    assert switches.ocr_enabled() is True
 
-    ai_features.set_face_enabled(True)
+    switches.set_face_enabled(True)
     assert settings.values[ai_features.FACE_KEY] is True
 
 
-def test_a_broken_provider_does_not_break_scanning():
-    def explode():
-        raise RuntimeError("settings unavailable")
+def test_a_broken_settings_read_does_not_break_scanning():
+    from iPhoto.bootstrap.ai_feature_switches import SettingsAiFeatureSwitches
 
-    ai_features.set_settings_provider(explode)
+    class _Broken:
+        def get(self, key, default=None):
+            raise RuntimeError("settings unavailable")
+
+    switches = SettingsAiFeatureSwitches(_Broken())
 
     # Scanning must keep working rather than dying on a settings read.
-    assert ai_features.face_enabled() is True
-    assert ai_features.ocr_enabled() is True
+    assert switches.face_enabled() is True
+    assert switches.ocr_enabled() is True
 
 
 def _library_with_photos(tmp_path: Path, statuses: list[str]) -> Path:

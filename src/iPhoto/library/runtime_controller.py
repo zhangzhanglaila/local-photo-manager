@@ -81,8 +81,15 @@ class LibraryRuntimeController(
     faceScanStatusChanged = Signal(str)
     ocrScanStatusChanged = Signal(str)
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        parent: QObject | None = None,
+        *,
+        feature_switches: object | None = None,
+    ) -> None:
         super().__init__(parent)
+        #: 设置 → 智能 的人脸/OCR 开关；由 bootstrap 注入，缺省视为开启。
+        self._feature_switches = feature_switches
         self._roots: list[Path] = []
         self._albums: list[AlbumNode] = []
         self._children: Dict[Path, list[AlbumNode]] = {}

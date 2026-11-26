@@ -19,18 +19,6 @@ if TYPE_CHECKING:
 LOGGER = get_logger()
 
 
-def _face_enabled() -> bool:
-    from ..agent.services.ai_features import face_enabled
-
-    return face_enabled()
-
-
-def _ocr_enabled() -> bool:
-    from ..agent.services.ai_features import ocr_enabled
-
-    return ocr_enabled()
-
-
 class _PairingWorker(QRunnable):
     """Run live-photo pairing off the main thread after a scan completes."""
 
@@ -64,6 +52,18 @@ class _PairingWorker(QRunnable):
 
 class ScanCoordinatorMixin:
     """Mixin providing scan scheduling and progress for LibraryRuntimeController."""
+
+    def _ai_face_enabled(self) -> bool:
+        """Whether the face scan is switched on in 设置 → 智能."""
+
+        switches = getattr(self, "_feature_switches", None)
+        return True if switches is None else switches.face_enabled()
+
+    def _ai_ocr_enabled(self) -> bool:
+        """Whether the text-in-photos scan is switched on."""
+
+        switches = getattr(self, "_feature_switches", None)
+        return True if switches is None else switches.ocr_enabled()
 
     def start_session_scan(
         self,
@@ -148,7 +148,7 @@ class ScanCoordinatorMixin:
             )
 
         # The settings switch (设置 → 智能) does the same thing without an env var.
-        if not _skip_face and not _face_enabled():
+        if not _skip_face and not self._ai_face_enabled():
             _skip_face = True
             self.faceScanStatusChanged.emit("人脸识别已在设置中关闭。")
 
@@ -600,7 +600,7 @@ class ScanCoordinatorMixin:
             from ..ai.db.ocr_database import get_ocr_repository
             from ..ai.workers.ocr_worker import OCRWorker
 
-            if not _ocr_enabled():
+            if not self._ai_ocr_enabled():
                 LOGGER.debug("OCR disabled in settings, skipping OCR scan")
                 return None
             from ..agent.services import ocr_models

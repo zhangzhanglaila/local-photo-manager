@@ -12,13 +12,16 @@ from PySide6.QtCore import Qt
 from ..events.bus import EventBus
 
 if TYPE_CHECKING:  # pragma: no cover
+    from ..agent.services.search_status import SearchIndexStatus
     from ..di.container import DependencyContainer
     from ..gui.facade import AppFacade
+    from ..gui.services.background_tasks import BackgroundTaskRegistry
     from ..gui.ui.theme_manager import ThemeManager
     from ..i18n import LanguageStore
     from ..infrastructure.services.library_asset_runtime import LibraryAssetRuntime
     from ..library.runtime_controller import LibraryRuntimeController
     from ..settings.manager import SettingsManager
+    from .ai_feature_switches import SettingsAiFeatureSwitches as AiFeatureSwitches
     from .library_session import LibrarySession
 
 _logger = logging.getLogger(__name__)
@@ -32,10 +35,12 @@ def _create_settings_manager() -> "SettingsManager":
     return manager
 
 
-def _create_library_manager() -> "LibraryRuntimeController":
+def _create_library_manager(
+    feature_switches: "AiFeatureSwitches",
+) -> "LibraryRuntimeController":
     from ..library.runtime_controller import LibraryRuntimeController
 
-    return LibraryRuntimeController()
+    return LibraryRuntimeController(feature_switches=feature_switches)
 
 
 def _create_facade() -> "AppFacade":
@@ -85,7 +90,8 @@ class RuntimeContext:
     """Authoritative runtime dependency bundle for GUI startup."""
 
     settings: "SettingsManager" = field(default_factory=_create_settings_manager)
-    library: "LibraryRuntimeController" = field(default_factory=_create_library_manager)
+    library: "LibraryRuntimeController" = field(init=False)
+    ai_feature_switches: "AiFeatureSwitches" = field(init=False)
     facade: "AppFacade" = field(default_factory=_create_facade)
     event_bus: EventBus = field(default_factory=_create_event_bus)
     asset_runtime: "LibraryAssetRuntime" = field(default_factory=_create_asset_runtime)
@@ -112,15 +118,14 @@ class RuntimeContext:
     def __post_init__(self) -> None:
         self.theme = _create_theme_manager(self.settings)
         self.language = _create_language_store(self.settings)
+        from .ai_feature_switches import SettingsAiFeatureSwitches
+
+        self.ai_feature_switches = SettingsAiFeatureSwitches(self.settings)
+        self.library = _create_library_manager(self.ai_feature_switches)
         # The chosen search model decides the encoder, the index's model_name and
         # which vectors a search may compare; apply it before anything else runs.
         try:
             from ..agent.services import search_models
-
-            # Let the library scan consult the 设置 → 智能 switches (faces / OCR).
-            from ..agent.services import ai_features
-
-            ai_features.set_settings_provider(lambda: self.settings)
 
             configured = search_models.set_active_model(
                 self.settings.get(search_models.SETTINGS_KEY, None)

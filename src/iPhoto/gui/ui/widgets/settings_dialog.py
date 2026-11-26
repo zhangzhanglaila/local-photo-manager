@@ -428,7 +428,7 @@ class SettingsDialog(QDialog):
                     [
                         self._value_row(
                             tr("settings.row.face_enable"),
-                            self._ai_toggle(ai_features.FACE_KEY, ai_features.face_enabled),
+                            self._ai_toggle(ai_features.FACE_KEY, True),
                         ),
                         self._value_row(
                             tr("settings.row.face_model"),
@@ -453,7 +453,7 @@ class SettingsDialog(QDialog):
                     [
                         self._value_row(
                             tr("settings.row.ocr"),
-                            self._ai_toggle(ai_features.OCR_KEY, ai_features.ocr_enabled),
+                            self._ai_toggle(ai_features.OCR_KEY, True),
                         ),
                         self._value_row(
                             tr("settings.row.ocr_model"),
@@ -782,12 +782,14 @@ class SettingsDialog(QDialog):
         root.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(root)))
 
-    def _ai_toggle(self, key: str, getter) -> QCheckBox:
+    def _ai_toggle(self, key: str, default: bool) -> QCheckBox:
         """A checkbox bound to one of the local-AI switches."""
 
         box = QCheckBox(self)
-        checked = bool(getter()) if self._settings is None else bool(
-            self._settings.get(key, getter())
+        checked = (
+            bool(self._settings.get(key, default))
+            if self._settings is not None
+            else default
         )
         box.setChecked(checked)
         box.toggled.connect(lambda value: self._set_ai_switch(key, value))
