@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -122,6 +123,83 @@ def test_missing_ocr_database_reports_zero_of_the_library(library: Path):
     assert ai_coverage.ocr_coverage(library) == (0, 4)
 
 
+def test_ocr_repository_groups_lines_per_photo(library: Path):
+    from iPhoto.ai.db.ocr_database import OCRRepository
+    from iPhoto.ai.ocr.models import OCRRegion
+
+    repository = OCRRepository(library)
+    try:
+        repository.store_regions(
+            "a",
+            "a.jpg",
+            [
+                OCRRegion("Second", 0.9, 0, 20, 10, 5),
+                OCRRegion("First", 0.8, 0, 5, 10, 5),
+            ],
+        )
+        repository.store_regions(
+            "b",
+            "b.jpg",
+            [OCRRegion("Other", 0.7, 0, 1, 10, 5)],
+        )
+        assets = repository.list_assets_with_text()
+        assert [(item.asset_id, item.asset_rel) for item in assets] == [
+            ("a", "a.jpg"),
+            ("b", "b.jpg"),
+        ]
+        assert assets[0].text == "First\nSecond", "lines follow their vertical order"
+        assert repository.count_assets() == 2
+    finally:
+        repository.close()
+
+
+def test_ocr_results_page_lists_photos_and_their_text(qapp, tmp_path):
+    from iPhoto.ai.db.ocr_database import OCRRepository
+    from iPhoto.ai.ocr.models import OCRRegion
+    from iPhoto.gui.ui.widgets.ocr_results_page import OcrResultsPage
+
+    from PySide6.QtGui import QColor, QImage
+
+    for name in ("a.jpg", "b.jpg"):
+        image = QImage(8, 8, QImage.Format.Format_RGB32)
+        image.fill(QColor("gray"))
+        assert image.save(str(tmp_path / name))
+    repository = OCRRepository(tmp_path)
+    try:
+        repository.store_regions(
+            "a", "a.jpg", [OCRRegion("Hello", 0.9, 0, 0, 10, 5)]
+        )
+        repository.store_regions(
+            "b", "b.jpg", [OCRRegion("World", 0.8, 0, 0, 10, 5)]
+        )
+    finally:
+        repository.close()
+
+    page = OcrResultsPage(tmp_path)
+    page.reload()
+    try:
+        _wait_until(qapp, lambda: page._list.count() == 2)
+        assert [page._list.item(i).text() for i in range(page._list.count())] == [
+            "a.jpg",
+            "b.jpg",
+        ]
+        assert "Hello" in page._text.toPlainText()
+
+        page._list.setCurrentRow(1)
+        qapp.processEvents()
+        assert "World" in page._text.toPlainText()
+
+        from PySide6.QtTest import QSignalSpy
+
+        back = QSignalSpy(page.backRequested)
+        page.back_button.click()
+        assert back.count() == 1
+    finally:
+        page.shutdown()
+        page.deleteLater()
+        qapp.processEvents()
+
+
 def test_people_count_uses_the_face_index(library: Path):
     import numpy as np
 
@@ -219,6 +297,18 @@ def _labels(widget) -> list[str]:
     return [label.text() for label in widget.findChildren(QLabel)]
 
 
+def _wait_until(qapp, predicate, timeout: float = 5.0) -> None:
+    """Settings values are probed off-thread; let Qt deliver their signal."""
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if predicate():
+            return
+        time.sleep(0.02)
+    assert predicate()
+
+
 def test_smart_page_shows_face_and_text_rows(dialog):
     widget, _settings = dialog
     widget._nav.setCurrentRow(4)
@@ -259,7 +349,7 @@ def test_rebuild_actions_request_a_scan(dialog):
         assert key in settings.values, feature
 
 
-def test_state_row_reports_coverage(dialog, monkeypatch):
+def test_state_row_reports_coverage(dialog, monkeypatch, qapp):
     widget, _settings = dialog
     monkeypatch.setattr(
         ai_coverage, "face_coverage", lambda root: (12, 40), raising=True
@@ -267,11 +357,12 @@ def test_state_row_reports_coverage(dialog, monkeypatch):
     monkeypatch.setattr(ai_coverage, "people_count", lambda root: 3, raising=True)
 
     widget._refresh_ai_rows()
+    _wait_until(qapp, lambda: "12/40" in widget._ai_state_labels["face"].text())
 
     assert "12/40" in widget._ai_state_labels["face"].text()
 
 
-def test_state_row_keeps_moving_while_the_dialog_is_open(dialog, monkeypatch):
+def test_state_row_keeps_moving_while_the_dialog_is_open(dialog, monkeypatch, qapp):
     """The settings page used to read coverage once, at construction time."""
 
     widget, _settings = dialog
@@ -285,19 +376,19 @@ def test_state_row_keeps_moving_while_the_dialog_is_open(dialog, monkeypatch):
     monkeypatch.setattr(ai_coverage, "people_count", lambda root: 0, raising=True)
 
     widget._refresh_ai_rows()
-    assert "10/40" in widget._ai_state_labels["face"].text()
-    assert "5/40" in widget._ai_state_labels["ocr"].text()
+    _wait_until(qapp, lambda: "10/40" in widget._ai_state_labels["face"].text())
+    _wait_until(qapp, lambda: "5/40" in widget._ai_state_labels["ocr"].text())
 
     coverage.update(face=(25, 40), ocr=(20, 40))
     widget._refresh_ai_rows()
+    _wait_until(qapp, lambda: "25/40" in widget._ai_state_labels["face"].text())
+    _wait_until(qapp, lambda: "20/40" in widget._ai_state_labels["ocr"].text())
 
-    assert "25/40" in widget._ai_state_labels["face"].text()
-    assert "20/40" in widget._ai_state_labels["ocr"].text()
     # A visible settings window polls; otherwise the counts would freeze again.
     assert widget._ai_refresh_timer.interval() == 1000
 
 
-def test_model_rows_show_the_active_pack(dialog):
+def test_model_rows_show_the_active_pack(dialog, qapp):
     """Face and OCR present their model like 搜索模型: a value row, not a dropdown."""
 
     from PySide6.QtWidgets import QComboBox
@@ -305,6 +396,8 @@ def test_model_rows_show_the_active_pack(dialog):
     widget, _settings = dialog
     page = widget._pages[4]
 
+    _wait_until(qapp, lambda: "buffalo_l" in widget._pack_labels["face"].text())
+    _wait_until(qapp, lambda: "PP-OCRv5" in widget._pack_labels["ocr"].text())
     face_row = widget._pack_labels["face"].text()
     ocr_row = widget._pack_labels["ocr"].text()
     assert "buffalo_l" in face_row
@@ -328,6 +421,19 @@ def test_the_model_dialogs_report_size_and_device(dialog):
         assert onnx_device() in details
 
 
+def test_ocr_results_action_opens_a_page_with_a_back_button(dialog):
+    widget, _settings = dialog
+
+    widget._open_ocr_results_action().trigger()
+
+    assert widget._ocr_results_page is not None
+    assert widget._stack.currentWidget() is widget._ocr_results_page
+    assert widget._ocr_results_page.back_button.isVisibleTo(widget)
+
+    widget._close_ocr_results()
+    assert widget._stack.currentWidget() is widget._pages[4]
+
+
 def test_only_the_precision_row_is_still_a_dropdown(dialog):
     from PySide6.QtWidgets import QComboBox
 
@@ -336,7 +442,7 @@ def test_only_the_precision_row_is_still_a_dropdown(dialog):
     assert len(widget._pages[4].findChildren(QComboBox)) == 1
 
 
-def test_switching_the_face_pack_goes_through_the_chooser(dialog, monkeypatch):
+def test_switching_the_face_pack_goes_through_the_chooser(dialog, monkeypatch, qapp):
     from PySide6.QtWidgets import QDialog
 
     from iPhoto.agent.services import face_models
@@ -358,7 +464,7 @@ def test_switching_the_face_pack_goes_through_the_chooser(dialog, monkeypatch):
     assert seen["options"] == ["buffalo_l", "buffalo_s"]
     assert settings.values[face_models.SETTINGS_KEY] == "buffalo_s"
     assert widget._active_spec("face").key == "buffalo_s"
-    assert "buffalo_s" in widget._pack_labels["face"].text()
+    _wait_until(qapp, lambda: "buffalo_s" in widget._pack_labels["face"].text())
 
 
 def test_chooser_dialog_shows_every_pack_without_inner_scrolling(qapp):

@@ -8,6 +8,8 @@ standalone window. The window is rebuilt on each open, so its controls must read
 from __future__ import annotations
 
 import os
+import threading
+import time
 
 import pytest
 
@@ -26,6 +28,16 @@ def qapp() -> QApplication:
     if app is None:
         app = QApplication([])
     return app
+
+
+def _wait_until(qapp, predicate, timeout: float = 5.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if predicate():
+            return
+        time.sleep(0.02)
+    assert predicate()
 
 
 @pytest.fixture()
@@ -52,6 +64,32 @@ def test_settings_window_has_one_page_per_category(chrome) -> None:
         titles = [dialog._nav.item(row).text() for row in range(dialog._nav.count())]
         assert titles == ["通用", "浏览", "导出", "图库", "智能"]
     finally:
+        dialog.deleteLater()
+
+
+def test_settings_window_opens_without_waiting_for_slow_value_probes(
+    chrome, monkeypatch
+) -> None:
+    """Opening 设置 must not import/query on the GUI thread and freeze the app."""
+
+    from iPhoto.gui.ui.widgets import settings_dialog as module
+
+    _window, header = chrome
+    release = threading.Event()
+
+    class _SlowMeta(module._MetaProbe):
+        def run(self) -> None:  # noqa: D102 - test double
+            release.wait(2.0)
+
+    monkeypatch.setattr(module, "_MetaProbe", _SlowMeta)
+    started = time.monotonic()
+    dialog = SettingsDialog(header, None)
+    elapsed = time.monotonic() - started
+    try:
+        assert elapsed < 1.5, "model/device probing must run off the GUI thread"
+    finally:
+        release.set()
+        dialog.close()
         dialog.deleteLater()
 
 
@@ -197,7 +235,8 @@ def test_settings_rows_report_model_device_and_index_progress(chrome, qapp):
     try:
         status.set_device("cuda", "float16")
         status.set_indexing(True, 4200, 14806)
-        qapp.processEvents()
+        _wait_until(qapp, lambda: "CUDA" in dialog._model_value_label.text())
+        _wait_until(qapp, lambda: "28%" in dialog._index_state_label.text())
 
         model_text = dialog._model_value_label.text()
         # Only the device: "float16" is precision, not something to decode here.
@@ -210,7 +249,9 @@ def test_settings_rows_report_model_device_and_index_progress(chrome, qapp):
         assert "4200" in index_text and "14806" in index_text
 
         status.set_indexing(False, 14806, 14806)
-        qapp.processEvents()
+        _wait_until(
+            qapp, lambda: "14806/14806" in dialog._index_state_label.text()
+        )
         assert "14806/14806" in dialog._index_state_label.text()
     finally:
         status.set_indexing(False, 0, 0)

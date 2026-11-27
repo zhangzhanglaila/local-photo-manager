@@ -29,6 +29,16 @@ class OCRRegion:
 
 
 @dataclass(frozen=True)
+class OCRAssetText:
+    """All recognized text for one photo, for the settings browser."""
+
+    asset_id: str
+    asset_rel: str
+    text: str
+    confidence: float
+
+
+@dataclass(frozen=True)
 class OCRSearchResult:
     """Result from an OCR text search."""
 

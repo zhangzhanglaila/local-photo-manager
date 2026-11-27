@@ -9,9 +9,21 @@ navigation column on the left and one settings page on the right.
 from __future__ import annotations
 
 import re
+import sqlite3
 import time
 
-from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QCoreApplication,
+    QObject,
+    QPoint,
+    QRectF,
+    QRunnable,
+    QSize,
+    Qt,
+    QThreadPool,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QAction, QColor, QFont, QFontMetrics, QPainter, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -42,11 +54,8 @@ from ....agent.services import (
 from ....agent.services.ai_devices import onnx_device
 from ....i18n import tr
 from ..icon import load_icon
-from .search_model_dialog import (
-    SearchModelDialog,
-    current_device_label,
-    model_title,
-)
+from .search_model_dialog import SearchModelDialog, model_title
+from .spinner import Spinner
 
 _ACCELERATOR_RE = re.compile(r"\s*\(&[A-Za-z0-9]\)\s*$")
 
@@ -55,6 +64,197 @@ _SPEED_KEYS = {1: "medium", 2: "fast", 3: "fastest"}
 
 _ACCENT_LIGHT = "#7B5E3B"
 _ACCENT_DARK = "#C9A86C"
+
+
+class _AsyncValue(QWidget):
+    """A value row that spins until its background probe returns."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(7)
+
+        self.spinner = Spinner(14, self)
+        layout.addWidget(self.spinner, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.label = QLabel(tr("preview.loading"), self)
+        self.label.setObjectName("settingsPathLabel")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.label.setWordWrap(False)
+        layout.addWidget(self.label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.spinner.start()
+
+    def set_value(self, text: str) -> None:
+        self.label.setText(text)
+        self.spinner.stop()
+        self.spinner.hide()
+
+    def set_loading(self) -> None:
+        self.label.setText(tr("preview.loading"))
+        self.spinner.show()
+        self.spinner.start()
+
+    def text(self) -> str:
+        return self.label.text()
+
+
+class _ProbeHub(QObject):
+    """Long-lived signal source for settings probes.
+
+    A probe can outlive the dialog that started it (the user closes 设置 while a
+    database read is still running). Using the window as the signal source made
+    Qt raise ``Signal source has been deleted``; this hub lives for the whole
+    process and the dialog filters results by worker identity.
+    """
+
+    meta_ready = Signal(object, object)
+    meta_failed = Signal(object, str)
+    ai_ready = Signal(object, object)
+    ai_failed = Signal(object, str)
+
+
+_PROBE_HUB: _ProbeHub | None = None
+#: Keep Python wrappers alive while their C++ QRunnable is still in the pool.
+_ACTIVE_PROBES: set[QRunnable] = set()
+
+
+def _probe_hub() -> _ProbeHub:
+    """Return a hub parented to the live application.
+
+    Creating a module-level ``QObject`` before ``QApplication`` exists made Qt
+    delete it later, which surfaced as ``Signal source has been deleted`` from a
+    probe thread. The hub is therefore created on first use and parented to the
+    current application.
+    """
+
+    global _PROBE_HUB
+    if _PROBE_HUB is not None:
+        try:
+            import shiboken6
+
+            if shiboken6.isValid(_PROBE_HUB):
+                return _PROBE_HUB
+        except (ImportError, RuntimeError):  # shiboken is always present in practice
+            return _PROBE_HUB
+    app = QCoreApplication.instance()
+    _PROBE_HUB = _ProbeHub(app)
+    return _PROBE_HUB
+
+
+class _MetaProbe(QRunnable):
+    """Resolve model names, devices and the search index off the GUI thread.
+
+    ``onnxruntime``/``torch`` imports and the model-directory scans are the
+    expensive part of opening settings; doing them here keeps the page
+    interactive while the value rows show their spinner.
+    """
+
+    def __init__(self, root, keys: dict, status: dict) -> None:
+        super().__init__()
+        self.setAutoDelete(False)
+        self._root = root
+        self._keys = dict(keys)
+        self._status = dict(status)
+
+    def run(self) -> None:
+        try:
+            from ....agent.services import face_models, ocr_models, search_models
+            from ....agent.services.ai_devices import onnx_device, search_device
+            from ....agent.services.search_coverage import compute_coverage
+
+            device = onnx_device()
+            search_spec = search_models.resolve_spec(self._keys.get("search"))
+            search_device_text = self._status.get("device") or ""
+            if not search_device_text:
+                search_device_text = search_device(None)
+            coverage = None
+            if (
+                self._root is not None
+                and not self._status.get("running")
+                and not self._status.get("total")
+            ):
+                try:
+                    coverage = compute_coverage(
+                        self._root, search_spec.dir_name
+                    )
+                except (OSError, RuntimeError, sqlite3.Error, ValueError):
+                    coverage = None
+
+            packs = {}
+            for feature, registry in (("face", face_models), ("ocr", ocr_models)):
+                spec = registry.resolve_spec(self._keys.get(feature))
+                packs[feature] = {
+                    "title": spec.title,
+                    "installed": bool(registry.is_installed(spec)),
+                }
+
+            _probe_hub().meta_ready.emit(
+                self,
+                {
+                    "device": device,
+                    "search": {
+                        "title": model_title(search_spec),
+                        "installed": bool(search_models.is_installed(search_spec)),
+                        "device": str(search_device_text).upper(),
+                        "coverage": coverage,
+                    },
+                    "packs": packs,
+                    "status": dict(self._status),
+                },
+            )
+        except (
+            ImportError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            ValueError,
+        ) as exc:  # pragma: no cover - display only
+            _probe_hub().meta_failed.emit(self, str(exc))
+        finally:
+            _ACTIVE_PROBES.discard(self)
+
+
+class _AiProbe(QRunnable):
+    """Read face/OCR coverage and the people count without blocking the UI."""
+
+    def __init__(self, root, *, include_people: bool) -> None:
+        super().__init__()
+        self.setAutoDelete(False)
+        self._root = root
+        self._include_people = bool(include_people)
+
+    def run(self) -> None:
+        try:
+            if self._root is None:
+                _probe_hub().ai_ready.emit(
+                    self, {"face": (0, 0), "ocr": (0, 0), "people": None}
+                )
+                return
+            from ....agent.services.ai_coverage import (
+                face_coverage,
+                ocr_coverage,
+                people_count,
+            )
+
+            data = {
+                "face": face_coverage(self._root),
+                "ocr": ocr_coverage(self._root),
+                "people": None,
+            }
+            if self._include_people:
+                data["people"] = people_count(self._root)
+            _probe_hub().ai_ready.emit(self, data)
+        except (
+            ImportError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            ValueError,
+        ) as exc:  # pragma: no cover - display only
+            _probe_hub().ai_failed.emit(self, str(exc))
+        finally:
+            _ACTIVE_PROBES.discard(self)
 
 
 def _plain(text: str) -> str:
@@ -236,13 +436,26 @@ class SettingsDialog(QDialog):
         self._search_status = search_status
         self._model_selection = model_selection
         self._pages: list[QWidget] = []
+        self._ocr_results_page = None
+        self._meta_worker = None
+        self._ai_worker = None
+        self._meta_pending = False
+        self._ai_pending = False
+        self._meta_values: dict | None = None
+        self._ai_values: dict | None = None
+        self._closed = False
         #: Coverage is read from the AI databases, which change underneath the
         #: dialog while a face/OCR scan runs. A light poll keeps "processed /
-        #: total" moving; there is no observable signal for those counters.
+        #: total" moving; each poll runs off the GUI thread.
         self._ai_refresh_timer = QTimer(self)
         self._ai_refresh_timer.setInterval(1000)
         self._ai_refresh_timer.timeout.connect(self._refresh_ai_rows)
         self._people_cache: tuple[str, float, int] | None = None
+        self._hub = _probe_hub()
+        self._hub.meta_ready.connect(self._on_meta_ready)
+        self._hub.meta_failed.connect(self._on_meta_failed)
+        self._hub.ai_ready.connect(self._on_ai_ready)
+        self._hub.ai_failed.connect(self._on_ai_failed)
 
         self.setWindowTitle(tr("dialog.settings_title"))
         self.setObjectName("settingsDialog")
@@ -292,8 +505,18 @@ class SettingsDialog(QDialog):
 
         self._build_pages()
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        # Clicking the already-selected 智能 row while the OCR browser is open
+        # does not emit currentRowChanged; itemClicked still returns to settings.
+        self._nav.itemClicked.connect(
+            lambda item: self._stack.setCurrentIndex(self._nav.row(item))
+        )
         self._nav.setCurrentRow(0)
         self.setStyleSheet(self._stylesheet())
+        # Values are populated asynchronously: constructing this window used to
+        # import onnxruntime/torch and open three SQLite databases on the GUI
+        # thread, so simply opening 设置 froze the whole application.
+        self._schedule_meta_probe()
+        self._schedule_ai_probe()
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -481,6 +704,10 @@ class SettingsDialog(QDialog):
                             tr("settings.row.ocr_rebuild"),
                             self._ai_rebuild_action("ocr"),
                         ),
+                        self._action_row(
+                            tr("settings.row.ocr_results"),
+                            self._open_ocr_results_action(),
+                        ),
                     ],
                 ),
                 (
@@ -607,14 +834,11 @@ class SettingsDialog(QDialog):
         combo.currentIndexChanged.connect(lambda index: actions[index].trigger())
         return combo
 
-    def _index_state_value(self) -> QLabel:
+    def _index_state_value(self) -> _AsyncValue:
         """Live coverage / rebuild progress for the active model."""
 
-        label = QLabel("", self)
-        label.setObjectName("settingsPathLabel")
-        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        label = _AsyncValue(self)
         self._index_state_label = label
-        self._refresh_search_rows()
         status = self._search_status
         if status is not None:
             status.changed.connect(self._refresh_search_rows)
@@ -631,47 +855,61 @@ class SettingsDialog(QDialog):
             pass
 
     def _refresh_search_rows(self) -> None:
-        """Keep the model and index rows honest after a switch or a progress tick."""
+        """Ask the background probe to refresh model/index rows.
 
+        The status signal can fire on every indexing tick; coalescing here avoids
+        starting one thread per tick while still keeping the labels live.
+        """
+
+        self._schedule_meta_probe()
+
+    def _apply_meta_values(self, values: dict) -> None:
+        search = values.get("search") or {}
         label = getattr(self, "_model_value_label", None)
-        state_label = getattr(self, "_index_state_label", None)
-        spec = self._active_spec("search")
-        state = (
-            ""
-            if search_models.is_installed(spec)
-            else tr("search.model.not_installed_suffix")
-        )
         if label is not None:
-            label.setText(
-                f"{model_title(spec)}{state} · {current_device_label(self._search_status)}"
+            suffix = (
+                ""
+                if search.get("installed")
+                else tr("search.model.not_installed_suffix")
+            )
+            label.set_value(
+                f"{search.get('title', '')}{suffix} · {search.get('device', '')}"
             )
 
-        if state_label is None:
-            return
-        status = self._search_status
-        running = bool(status.running) if status is not None else False
-        done = status.done if status is not None else 0
-        total = status.total if status is not None else 0
-        if not running and total == 0:
-            # Nothing has indexed since startup, so ask the database directly:
-            # showing "not indexed yet" while 10k vectors exist is misleading.
-            coverage = self._compute_coverage()
-            if coverage is not None:
+        state_label = getattr(self, "_index_state_label", None)
+        if state_label is not None:
+            status = values.get("status") or {}
+            running = bool(status.get("running"))
+            done = int(status.get("done") or 0)
+            total = int(status.get("total") or 0)
+            coverage = search.get("coverage")
+            if not running and total == 0 and coverage:
                 done, total = coverage
-        if running and total:
-            percent = int(done * 100 / total)
-            state_label.setText(
-                tr(
-                    "search.model.indexing_now",
-                    percent=percent,
-                    done=done,
-                    total=total,
+            if running and total:
+                state_label.set_value(
+                    tr(
+                        "search.model.indexing_now",
+                        percent=int(done * 100 / total),
+                        done=done,
+                        total=total,
+                    )
                 )
+            elif total:
+                state_label.set_value(
+                    tr("search.model.coverage", done=done, total=total)
+                )
+            else:
+                state_label.set_value(tr("search.model.coverage_unknown"))
+
+        device = values.get("device") or ""
+        for feature, pack in (values.get("packs") or {}).items():
+            pack_label = getattr(self, "_pack_labels", {}).get(feature)
+            if pack_label is None:
+                continue
+            suffix = (
+                "" if pack.get("installed") else tr("search.model.not_installed_suffix")
             )
-        elif total:
-            state_label.setText(tr("search.model.coverage", done=done, total=total))
-        else:
-            state_label.setText(tr("search.model.coverage_unknown"))
+            pack_label.set_value(f"{pack.get('title', '')}{suffix} · {device}")
 
     def _packs_registry(self, feature: str):
         return face_models if feature == "face" else ocr_models
@@ -698,33 +936,17 @@ class SettingsDialog(QDialog):
         if selection is not None:
             selection.apply(feature, key)
 
-    def _packs_value(self, feature: str) -> QLabel:
+    def _packs_value(self, feature: str) -> _AsyncValue:
         """Show the selected pack as a value row, like 搜索模型 does."""
 
-        label = QLabel("", self)
-        label.setObjectName("settingsPathLabel")
-        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        label.setWordWrap(False)
+        label = _AsyncValue(self)
         if not hasattr(self, "_pack_labels"):
-            self._pack_labels: dict[str, QLabel] = {}
+            self._pack_labels: dict[str, _AsyncValue] = {}
         self._pack_labels[feature] = label
-        self._refresh_pack_rows()
         return label
 
     def _refresh_pack_rows(self) -> None:
-        for feature, label in getattr(self, "_pack_labels", {}).items():
-            registry = self._packs_registry(feature)
-            spec = registry.resolve_spec(
-                self._settings.get(registry.SETTINGS_KEY, None)
-                if self._settings is not None
-                else None
-            )
-            state = (
-                ""
-                if registry.is_installed(spec)
-                else tr("search.model.not_installed_suffix")
-            )
-            label.setText(f"{spec.title}{state} · {onnx_device()}")
+        self._schedule_meta_probe()
 
     def _switch_packs_action(self, feature: str) -> QAction:
         registry = self._packs_registry(feature)
@@ -831,63 +1053,162 @@ class SettingsDialog(QDialog):
         self._settings.set(key, bool(value))
         self._refresh_ai_rows()
 
-    def _ai_state_value(self, feature: str) -> QLabel:
-        label = QLabel("", self)
-        label.setObjectName("settingsPathLabel")
-        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+    def _ai_state_value(self, feature: str) -> _AsyncValue:
+        label = _AsyncValue(self)
         if not hasattr(self, "_ai_state_labels"):
-            self._ai_state_labels: dict[str, QLabel] = {}
+            self._ai_state_labels: dict[str, _AsyncValue] = {}
         self._ai_state_labels[feature] = label
-        self._refresh_ai_rows()
         return label
 
     def _refresh_ai_rows(self) -> None:
-        for feature, label in getattr(self, "_ai_state_labels", {}).items():
-            label.setText(self._ai_state_text(feature))
+        self._schedule_ai_probe()
 
-    def _ai_state_text(self, feature: str) -> str:
+    def _apply_ai_values(self, values: dict) -> None:
+        root = self._library_root()
+        people = values.get("people")
+        if people is not None and root is not None:
+            self._people_cache = (str(root), time.monotonic(), int(people))
+        for feature, label in getattr(self, "_ai_state_labels", {}).items():
+            label.set_value(self._ai_state_text(feature, values))
+
+    def _ai_state_text(self, feature: str, values: dict) -> str:
         root = self._library_root()
         if root is None:
             return tr("settings.ai_state.no_library")
-        try:
-            from ....agent.services.ai_coverage import (
-                face_coverage,
-                ocr_coverage,
-            )
+        pair = values.get(feature)
+        if not pair:
+            return tr("preview.loading")
+        done, total = pair
+        if total <= 0:
+            return tr("settings.ai_state.no_library")
+        text = tr("settings.ai_state.coverage", done=done, total=total)
+        if feature == "face":
+            people = values.get("people")
+            if people is None:
+                cache = getattr(self, "_people_cache", None)
+                people = cache[2] if cache is not None and cache[0] == str(root) else 0
+            if people:
+                text = f"{text} · {tr('settings.ai_state.people', count=people)}"
+        return text
 
-            if feature == "face":
-                done, total = face_coverage(root)
-                if total <= 0:
-                    return tr("settings.ai_state.no_library")
-                text = tr("settings.ai_state.coverage", done=done, total=total)
-                people = self._cached_people_count(root)
-                if people:
-                    text = f"{text} · {tr('settings.ai_state.people', count=people)}"
-                return text
-            done, total = ocr_coverage(root)
-            if total <= 0:
-                return tr("settings.ai_state.no_library")
-            return tr("settings.ai_state.coverage", done=done, total=total)
-        except Exception:  # pragma: no cover - display only
-            return ""
+    # ------------------------------------------------------------------
+    # Off-thread value probes
+    # ------------------------------------------------------------------
+    def _active_key(self, feature: str):
+        selection = self._model_selection
+        getter = getattr(selection, "key", None)
+        if callable(getter):
+            return getter(feature)
+        registry = (
+            search_models
+            if feature == "search"
+            else self._packs_registry(feature)
+        )
+        return (
+            self._settings.get(registry.SETTINGS_KEY, None)
+            if self._settings is not None
+            else None
+        )
 
-    def _cached_people_count(self, root) -> int:
-        """Count people at most every few seconds.
+    def _probe_keys(self) -> dict:
+        return {feature: self._active_key(feature) for feature in ("search", "face", "ocr")}
 
-        The face index is a separate database; opening it on every one-second
-        coverage tick made the scan and the dialog compete for SQLite.
-        """
+    def _status_snapshot(self) -> dict:
+        status = self._search_status
+        return {
+            "device": str(getattr(status, "device", "") or ""),
+            "running": bool(getattr(status, "running", False)),
+            "done": int(getattr(status, "done", 0) or 0),
+            "total": int(getattr(status, "total", 0) or 0),
+        }
 
-        now = time.monotonic()
-        key = str(root)
+    def _people_cache_is_fresh(self, root) -> bool:
         cache = getattr(self, "_people_cache", None)
-        if cache is not None and cache[0] == key and now - cache[1] < 5.0:
-            return cache[2]
-        from ....agent.services.ai_coverage import people_count
+        return bool(
+            cache is not None
+            and cache[0] == str(root)
+            and time.monotonic() - cache[1] < 5.0
+        )
 
-        count = people_count(root)
-        self._people_cache = (key, now, count)
-        return count
+    def _schedule_meta_probe(self) -> None:
+        if self._closed:
+            return
+        if self._meta_worker is not None:
+            self._meta_pending = True
+            return
+        worker = _MetaProbe(
+            self._library_root(),
+            self._probe_keys(),
+            self._status_snapshot(),
+        )
+        self._meta_worker = worker
+        _ACTIVE_PROBES.add(worker)
+        QThreadPool.globalInstance().start(worker)
+
+    def _schedule_ai_probe(self) -> None:
+        if self._closed:
+            return
+        if self._ai_worker is not None:
+            self._ai_pending = True
+            return
+        root = self._library_root()
+        include_people = root is not None and not self._people_cache_is_fresh(root)
+        worker = _AiProbe(root, include_people=include_people)
+        self._ai_worker = worker
+        _ACTIVE_PROBES.add(worker)
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_meta_ready(self, worker, values: dict) -> None:
+        if worker is not self._meta_worker:
+            return
+        self._meta_worker = None
+        if self._closed:
+            return
+        self._meta_values = dict(values)
+        self._apply_meta_values(self._meta_values)
+        if self._meta_pending:
+            self._meta_pending = False
+            self._schedule_meta_probe()
+
+    def _on_ai_ready(self, worker, values: dict) -> None:
+        if worker is not self._ai_worker:
+            return
+        self._ai_worker = None
+        if self._closed:
+            return
+        self._ai_values = dict(values)
+        self._apply_ai_values(self._ai_values)
+        if self._ai_pending:
+            self._ai_pending = False
+            self._schedule_ai_probe()
+
+    def _on_meta_failed(self, worker, message: str) -> None:  # noqa: ARG002
+        if worker is not self._meta_worker:
+            return
+        self._meta_worker = None
+        if self._closed:
+            return
+        for label in (
+            getattr(self, "_model_value_label", None),
+            getattr(self, "_index_state_label", None),
+            *getattr(self, "_pack_labels", {}).values(),
+        ):
+            if label is not None:
+                label.set_value("")
+        if self._meta_pending:
+            self._meta_pending = False
+
+    def _on_ai_failed(self, worker, message: str) -> None:  # noqa: ARG002
+        if worker is not self._ai_worker:
+            return
+        self._ai_worker = None
+        if self._closed:
+            return
+        self._ai_values = None
+        for label in getattr(self, "_ai_state_labels", {}).values():
+            label.set_value("")
+        if self._ai_pending:
+            self._ai_pending = False
 
     def _library_root(self):
         library = getattr(self, "_library", None)
@@ -898,6 +1219,28 @@ class SettingsDialog(QDialog):
             return getter()
         except Exception:  # pragma: no cover - defensive
             return None
+
+    def _open_ocr_results_action(self) -> QAction:
+        action = QAction(tr("settings.row.ocr_results"), self)
+        action.triggered.connect(self._show_ocr_results)
+        return action
+
+    def _show_ocr_results(self) -> None:
+        page = self._ocr_results_page
+        if page is None:
+            from .ocr_results_page import OcrResultsPage
+
+            page = OcrResultsPage(self._library_root(), self._stack)
+            page.backRequested.connect(self._close_ocr_results)
+            self._stack.addWidget(page)
+            self._ocr_results_page = page
+        self._stack.setCurrentWidget(page)
+        page.reload()
+
+    def _close_ocr_results(self) -> None:
+        if len(self._pages) > 4:
+            self._stack.setCurrentWidget(self._pages[4])
+            self._nav.setCurrentRow(4)
 
     def _ai_rebuild_action(self, feature: str) -> QAction:
         """Ask the coordinator to re-run the face or text scan."""
@@ -933,45 +1276,10 @@ class SettingsDialog(QDialog):
         action.triggered.connect(_run)
         return action
 
-    def _compute_coverage(self) -> tuple[int, int] | None:
-        """Return ``(indexed, photos)`` for the active model, if a library is open."""
-
-        library = getattr(self, "_library", None)
-        getter = getattr(library, "root", None)
-        root = None
-        if callable(getter):
-            try:
-                root = getter()
-            except Exception:  # pragma: no cover - defensive
-                root = None
-        if root is None:
-            return None
-        try:
-            from ....agent.services.search_coverage import compute_coverage
-
-            return compute_coverage(root, self._active_spec("search").dir_name)
-        except Exception:  # pragma: no cover - display only
-            return None
-
-    def _search_model_value(self) -> QLabel:
+    def _search_model_value(self) -> _AsyncValue:
         """Show the active search model plus the device that will run it."""
 
-        spec = self._active_spec("search")
-        # Keep it short: quality/language/size live in the chooser, the row only
-        # needs "which model" and "where it runs". A model that is not on disk is
-        # called out instead of pretending it is usable.
-        state = (
-            ""
-            if search_models.is_installed(spec)
-            else tr("search.model.not_installed_suffix")
-        )
-        label = QLabel(
-            f"{model_title(spec)}{state} · {current_device_label(self._search_status)}",
-            self,
-        )
-        label.setObjectName("settingsPathLabel")
-        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        label.setWordWrap(False)
+        label = _AsyncValue(self)
         self._model_value_label = label
         return label
 
@@ -1093,6 +1401,12 @@ class SettingsDialog(QDialog):
             f"  border-right: 1px solid {divider}; border-bottom-left-radius: 12px;"
             "  padding: 18px 12px; outline: 0; }"
             f"QWidget#settingsPage {{ background-color: {body_bg}; }}"
+            f"QWidget#ocrResultsPage, QWidget#ocrResultsBody {{ background-color: {body_bg}; }}"
+            f"QWidget#ocrResultsHeader {{ background-color: {body_bg};"
+            f"  border-bottom: 1px solid {divider}; }}"
+            f"QToolButton#settingsBackButton {{ border: none; border-radius: 8px;"
+            "  background: transparent; }"
+            f"QToolButton#settingsBackButton:hover {{ background-color: {hover}; }}"
             f"QLabel#settingsPageTitle {{ font-size: 20px; font-weight: 600; color: {text}; }}"
             f"QLabel#settingsRowLabel {{ font-size: 14px; color: {text}; }}"
             f"QLabel#settingsPathLabel {{ font-size: 13px; color: {muted}; }}"
@@ -1137,7 +1451,8 @@ class SettingsDialog(QDialog):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
-        # Re-read the coverage now, then keep it moving while a scan runs.
+        # Values are already probed in the background from __init__; refresh once
+        # more in case the dialog was hidden while a scan progressed.
         self._refresh_search_rows()
         self._refresh_ai_rows()
         self._ai_refresh_timer.start()
@@ -1152,6 +1467,17 @@ class SettingsDialog(QDialog):
     def hideEvent(self, event) -> None:  # noqa: N802
         self._ai_refresh_timer.stop()
         super().hideEvent(event)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._closed = True
+        self._ai_refresh_timer.stop()
+        # Connections are owned by this QObject and disappear with it. Do not
+        # disconnect manually: PySide emits a RuntimeWarning when a worker has
+        # already finished and the connection no longer exists.
+        page = getattr(self, "_ocr_results_page", None)
+        if page is not None:
+            page.shutdown()
+        super().closeEvent(event)
 
 
 __all__ = ["SettingsDialog"]

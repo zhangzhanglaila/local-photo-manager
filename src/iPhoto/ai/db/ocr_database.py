@@ -348,6 +348,72 @@ class OCRRepository:
         ).fetchone()
         return row[0]
 
+    def list_assets_with_text(self, limit: int = 500) -> list:
+        """Return up to *limit* photos with all their OCR lines.
+
+        The settings browser needs whole photos, not search hits. Grouping in
+        SQL would concatenate text without its reading order, so the selected
+        assets are fetched once and their regions are joined in Python by
+        vertical position.
+        """
+
+        from ..ocr.models import OCRAssetText
+
+        conn = self._get_conn()
+        rows = conn.execute(
+            """
+            WITH selected AS (
+                SELECT asset_id, MIN(asset_rel) AS asset_rel
+                FROM ocr_regions
+                GROUP BY asset_id
+                ORDER BY asset_rel
+                LIMIT ?
+            )
+            SELECT r.asset_id, s.asset_rel, r.text, r.confidence
+            FROM ocr_regions r
+            JOIN selected s ON s.asset_id = r.asset_id
+            ORDER BY s.asset_rel, r.box_y, r.box_x
+            """,
+            (max(1, int(limit)),),
+        ).fetchall()
+
+        grouped: list = []
+        current_id = None
+        current_rel = ""
+        texts: list[str] = []
+        confidences: list[float] = []
+        for row in rows:
+            asset_id = row["asset_id"]
+            if current_id is not None and asset_id != current_id:
+                grouped.append(
+                    OCRAssetText(
+                        asset_id=current_id,
+                        asset_rel=current_rel,
+                        text="\n".join(texts),
+                        confidence=(sum(confidences) / len(confidences))
+                        if confidences
+                        else 0.0,
+                    )
+                )
+                texts = []
+                confidences = []
+            current_id = asset_id
+            current_rel = row["asset_rel"]
+            texts.append(str(row["text"]))
+            confidences.append(float(row["confidence"]))
+        if current_id is not None:
+            grouped.append(
+                OCRAssetText(
+                    asset_id=current_id,
+                    asset_rel=current_rel,
+                    text="\n".join(texts),
+                    confidence=(sum(confidences) / len(confidences))
+                    if confidences
+                    else 0.0,
+                )
+            )
+        return grouped
+
     def count_processed(self) -> int:
         """Number of assets the text scan has attempted.
 

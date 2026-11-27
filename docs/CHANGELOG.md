@@ -46,6 +46,13 @@ into the photo folder.*
   queued rows and left both task rows stuck on "等待中".
 - Face-scan failures are logged per asset with their reason instead of a single
   "N assets could not be processed" line.
+- Opening 设置 no longer imports ONNX Runtime/torch or opens the index/OCR/people
+  databases on the GUI thread. Model, device, search-index and face/OCR coverage
+  values load in background probes and show a spinner until they arrive, so the
+  window is usable immediately even while an AI scan holds the databases.
+- 设置 → 智能 now has a **查看 OCR 结果** page: a back arrow returns to settings,
+  the left column lists recognized photos with thumbnails, and the right pane
+  shows every text line found in the selected photo.
 
 ### Correctness fixes found by the failing tests
 
