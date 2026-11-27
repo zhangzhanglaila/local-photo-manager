@@ -524,7 +524,17 @@ class MainCoordinator(QObject):
             app.quit()
 
     def _connect_signals(self) -> None:
-        """Connect application signals."""
+        """Connect application signals, grouped by the surface they belong to."""
+
+        self._connect_library_signals()
+        self._connect_gallery_signals()
+        self._connect_menu_signals()
+        self._connect_navigation_signals()
+        self._connect_status_bar_signals()
+
+    def _connect_library_signals(self) -> None:
+        """Library tree, scan pipeline and sidebar routing signals."""
+
         ui = self._window.ui
         updates = self._facade.library_updates
         self._context.library.treeUpdated.connect(self._on_library_tree_updated)
@@ -545,6 +555,11 @@ class MainCoordinator(QObject):
         # Click "All Photos" or "Location" again in sidebar to go back.
         ui.sidebar.allPhotosSelected.connect(self._handle_return_from_map)
         ui.sidebar.staticNodeSelected.connect(self._handle_sidebar_return_from_map)
+
+    def _connect_gallery_signals(self) -> None:
+        """Grid, viewer and map interactions."""
+
+        ui = self._window.ui
 
         # Grid interactions — double-click opens the detail view. A single click only
         # selects: opening on click made an accidental click eject the user into the
@@ -599,6 +614,12 @@ class MainCoordinator(QObject):
         # Map feature buttons (in map source bar, to the right of map selector)
         ui.map_view.btn_person_filter.clicked.connect(self._on_person_filter_toggled)
         ui.map_view.btn_trail_toggle.clicked.connect(self._on_trail_toggle_toggled)
+
+    def _connect_menu_signals(self) -> None:
+        """Menu actions, buttons and the AI status surfaces."""
+
+        ui = self._window.ui
+
         # Menus
         ui.open_album_action.triggered.connect(self._handle_open_album_dialog)
         ui.rescan_action.triggered.connect(self._status_bar.begin_scan)
@@ -682,6 +703,11 @@ class MainCoordinator(QObject):
         ui.sidebar.albumCheckStateChanged.connect(self._on_album_check_state_changed)
         self._restore_checked_library_paths()
 
+    def _connect_navigation_signals(self) -> None:
+        """Navigation entry points and stored preferences."""
+
+        ui = self._window.ui
+
         # Navigation
         self._navigation.bindLibraryRequested.connect(self._dialog.bind_library_dialog)
         ui.change_workspace_action.triggered.connect(self._on_change_workspace)
@@ -692,6 +718,12 @@ class MainCoordinator(QObject):
         # Preferences (Wheel, Volume) - Filmstrip handled in PlaybackCoordinator
         self._restore_preferences()
         ui.wheel_action_group.triggered.connect(self._handle_wheel_action_changed)
+
+    def _connect_status_bar_signals(self) -> None:
+        """Status bar panels, theme/language switches and search model sync."""
+
+        ui = self._window.ui
+        updates = self._facade.library_updates
 
         # Status Bar Connections (Restored)
         # Facade Signals -> Status Bar
