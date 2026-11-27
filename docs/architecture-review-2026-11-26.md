@@ -218,7 +218,7 @@ application/contracts/model_selection.py  # 读写的只有 settings 键，无�
 
 `gallery_grid_view.py`：`_scan_completed` / `_is_scanning` / `_query_loading` / `_empty_mode` 驱动 `_empty_label` / `_loading_label` / `_scanning_label`；同一段"强制隐藏所有遮罩"被复制在 830、866、978、982 四处，`_do_update_empty_state` 里还有一支死分支（830 已 return）。
 
-**重构方案**：`GalleryEmptyStateViewModel` 单一枚举 `SCANNING | LOADING | EMPTY(mode) | READY`，视图只渲染一个占位标签；删 `set_scan_started/set_scan_completed/set_empty_mode/dismiss_loading_state` 的四处入口。
+**已修（P5）**：`gui/viewmodels/gallery_empty_state.py` 的 `GalleryEmptyState`（`INITIALIZING | SCANNING | LOADING | EMPTY | READY`）单点推导，视图只保留一个 `_placeholder_label` 和一条 `_apply_empty_state()` 渲染路径；四处重复的"隐藏所有遮罩"收敛为 `_hide_placeholder()`，死分支删除。四个语义化入口（`set_scan_started`/`set_scan_completed`/`set_empty_mode`/`dismiss_loading_state`）保留为一行转调：协调器/启动流程按"意图"调用它们，删掉入口只会把状态知识推回调用方；视图内部已不再读任何布尔。
 
 ### B7. 同一件事的两套实现 / 死脚手架
 
@@ -352,7 +352,7 @@ domain/  ◀── application/ ◀── infrastructure/    （只允许这个�
 | P2 · 模型层统一 | 已完成 | 三套注册表共用 `model_paths`；`ModelSelection` 已由 bootstrap 构造并注入（`f650cd4`），注册表只剩目录职责 |
 | P3 · GUI 越层收口 | 基本完成 | GUI 内 `sqlite3.connect` 为 0；`library/runtime_controller.py` 仅剩一处 `TYPE_CHECKING` 的 `LibrarySession` 类型引用（运行期无依赖）。端口 `ScanCommands`/`AssetQueryPort` 等仍未正式化 |
 | P4 · 巨类拆分 | 进行中 | `main_coordinator` 2924 → **755** 行（搜索线程、嵌入 worker、AI 索引生命周期、位置视图/轨迹、查重/智能相册展示、窗口偏好装配、开库/工作区切换、画廊交互/前台让路、状态栏/主题/语言装配、人物集群入口、专辑/人物/移动事件、启动清理、session 访问/树重绑、信号装配已搬出：`search_coordinator.py` 499 行、`organize_coordinator.py` 104 行、`window_preferences.py` 163 行、`library_open_coordinator.py` 125 行、`gallery_interaction_coordinator.py` 167 行、`window_chrome_coordinator.py` 121 行、`people_navigation_coordinator.py` 53 行、`library_events_coordinator.py` 90 行、`startup_tasks.py` 73 行、`library_session_access.py` 76 行、`library_tree_binder.py` 114 行、`window_signal_wiring.py` 267 行、`ai_index_coordinator.py` 239 行、`location_coordinator.py` 298 行）；`gui/viewmodels/gallery_collection_store.py` 1612 → **747** 行（扫描刷新策略/路径映射拆到 `gallery_scan_refresh.py` 315 行，窗口加载/预取/节流拆到 `gallery_load_window.py` 464 行，收藏/元数据/删除/乐观移动拆到 `gallery_mutations.py` 166 行）；`people/state_repository.py` 1922 → **362** 行，拆成 state_groups/state_faces/state_profiles/state_ordering 四个 mixin；此外 `people/face_repository.py` 1398 → 208 行（face_queries/face_mutations/face_merges）、`people/pipeline.py` 954 → 710 行（insightface_compat/clustering_math）、`cache/index_store/repository.py` 1129 → 267 行（asset_writes/asset_queries/sql_helpers）；`playback_coordinator.py` 1890 → 668 行（playback_location/render/faces/info + constants）；`gui/coordinators/edit_coordinator.py` 1626 → 756 行（edit_video/edit_adjustments/edit_support）；仍有 **18** 个文件 >800 行 |
-| P5 · 文案与控制流 | 基本完成 | 文本驱动控制流清零并有守卫（`tests/architecture/test_no_text_based_control_flow.py`）；AI 索引/搜索/人脸扫描文案进 i18n（`08130d7`、`8c139eb`、`ff4a2ac`）；地图轨迹、人物视图提示也已进 i18n（`8b3be4b`、`ff4a2ac`）；空状态机尚未合为单一枚举 |
+| P5 · 文案与控制流 | 基本完成 | 文本驱动控制流清零并有守卫（`tests/architecture/test_no_text_based_control_flow.py`）；AI 索引/搜索/人脸扫描文案进 i18n（`08130d7`、`8c139eb`、`ff4a2ac`）；地图轨迹、人物视图提示也已进 i18n（`8b3be4b`、`ff4a2ac`）；空状态机已合为单一枚举：`gui/viewmodels/gallery_empty_state.py` 单点推导，`gallery_grid_view.py` 只剩一个占位标签与一条渲染路径（P5 的 B6 项） |
 
 ### 已知缺口（有测试记录，未修）
 

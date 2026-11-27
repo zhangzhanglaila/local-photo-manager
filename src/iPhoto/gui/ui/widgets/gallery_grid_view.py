@@ -27,6 +27,7 @@ from .date_pill import DatePill
 from .timeline_scrubber import TimelineScrubber
 from ....i18n import tr
 from ..models.roles import Roles
+from ...viewmodels.gallery_empty_state import GalleryEmptyState, GalleryEmptyStateViewModel
 from ....utils.logging import diag
 
 
@@ -56,7 +57,7 @@ class GalleryGridView(AssetGrid):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._selection_mode_enabled = False
-        self._empty_label = None
+        self._placeholder_label = None
         self.setSelectionMode(QListView.SelectionMode.SingleSelection)
         self.setViewMode(QListView.ViewMode.IconMode)
         # Defer initial size calculation to resizeEvent to avoid rendering the
@@ -80,40 +81,22 @@ class GalleryGridView(AssetGrid):
         vp = self.viewport()
         vp.setAutoFillBackground(True)
 
-        self._empty_label = QLabel(tr("empty.no_media"), vp)
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setWordWrap(True)
-        self._empty_label.setStyleSheet("color: #86868b; font-size: 15px;")
-        self._empty_label.hide()
+        # One placeholder label: the grid only ever shows one message at a time,
+        # and which one is decided by ``GalleryEmptyStateViewModel``.
+        self._placeholder_label = QLabel(tr("empty.no_media"), vp)
+        self._placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._placeholder_label.setWordWrap(True)
+        self._placeholder_label.setStyleSheet("color: #86868b; font-size: 15px;")
+        self._placeholder_label.hide()
 
-        self._loading_label = QLabel(tr("preview.loading"), vp)
-        self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._loading_label.setStyleSheet("color: #86868b; font-size: 15px;")
-        self._loading_label.hide()
-
-        # 扫描状态标签 - 显示扫描中状态
-        self._scanning_label = QLabel(tr("empty.scanning"), vp)
-        self._scanning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._scanning_label.setStyleSheet("color: #86868b; font-size: 15px;")
-        self._scanning_label.hide()
-
-        # Last viewport size the placeholder labels were sized to. They span the whole
-        # viewport, so re-applying their geometry on every state update repainted the
+        # Last viewport size the placeholder was sized to. It spans the whole
+        # viewport, so re-applying its geometry on every state update repainted the
         # entire grid and made timeline dragging crawl.
         self._placeholder_rect = None
 
-        # Suppress "No media found" until the first scan completes so it
-        # never flashes during startup.
-        self._scan_completed = False
-        self._is_scanning = False  # 跟踪是否正在扫描
-        # Track whether a query is actively loading so we can show the
-        # loading label instead of a blank page.
-        self._query_loading = False
-        # Context-aware empty message set by coordinator / view-model
-        self._empty_mode: str | None = None
-        # While the window-level StartupOverlay is on screen it already reports
-        # startup/scan progress, so this view must not draw a second placeholder
-        # on top of the same empty grid.
+        # Scan/query progress for the placeholder. The view never inspects the
+        # individual flags: it renders the single state the model derives.
+        self._empty = GalleryEmptyStateViewModel()
 
         # Debounce empty-state updates so rapid model changes during scanning
         # don't cause constant show/hide repaints.
@@ -252,12 +235,8 @@ class GalleryGridView(AssetGrid):
         if viewport_width <= 0:
             return
 
-        if self._empty_label is not None:
-            self._empty_label.setGeometry(self.viewport().rect())
-        if self._loading_label is not None:
-            self._loading_label.setGeometry(self.viewport().rect())
-        if self._scanning_label is not None:
-            self._scanning_label.setGeometry(self.viewport().rect())
+        if self._placeholder_label is not None:
+            self._placeholder_label.setGeometry(self.viewport().rect())
 
         self._layout_timeline_overlays()
         self._update_grid_size()
@@ -810,76 +789,59 @@ class GalleryGridView(AssetGrid):
             model.modelReset.connect(self._on_model_reset)
             model.rowsInserted.connect(self._on_rows_inserted)
             model.rowsRemoved.connect(self._update_empty_state)
-        self._query_loading = True
+        self._empty.query_started()
         self._update_empty_state()
 
     def _on_model_reset(self) -> None:
-        import logging
         model = self.model()
         rows = model.rowCount() if model is not None else 0
         diag(
-            "[DIAG] _on_model_reset: rows=%s empty_mode=%s query_loading=%s scan_completed=%s",
-            rows, self._empty_mode, self._query_loading, self._scan_completed,
+            "[DIAG] _on_model_reset: rows=%s mode=%s",
+            rows, self._empty.mode,
         )
-        self._query_loading = True
+        self._empty.query_started()
         # The year rail depends on the model's row layout, so refresh it whenever
         # the source changes.
         self._schedule_timeline_refresh()
         # ⭐ 关键修复：如果 model 已经有数据，立即清除所有 overlay 状态
         # 避免用户看到"加载中"或"无媒体"提示覆盖在照片上
-        if model is not None and model.rowCount() > 0:
-            self._loading_label.hide()
-            self._scanning_label.hide()
-            self._empty_label.hide()
-            self._query_loading = False
-            self._loading_timeout_timer.stop()
-            self._empty_state_timer.stop()
+        if rows > 0:
             # Rows exist, so a filter's empty message no longer applies; leaving it
             # set let it re-appear on the next view.
-            self._empty_mode = None
+            self._empty.rows_arrived()
+            self._hide_placeholder()
+            self._empty_state_timer.stop()
+            self._loading_timeout_timer.stop()
             return
-        # If an overlay is showing and the model now has rows, dismiss it.
-        if self._empty_mode is not None:
-            model = self.model()
-            if model is not None and model.rowCount() > 0:
-                self._empty_label.hide()
-                self._empty_mode = None
-                self._query_loading = False
-                return
-        else:
+        # If a filter context is pending, the message stays hidden until the rows
+        # arrive (or the safety timer proves the result genuinely empty).
+        if self._empty.mode is None:
             self._update_empty_state()
         # If no rows appear within 2s the query result is likely empty.
         self._loading_timeout_timer.start(2000)
 
     def _on_rows_inserted(self) -> None:
-        self._query_loading = False
+        self._empty.rows_arrived()
         self._loading_timeout_timer.stop()
-        # If a filtered mode was active and rows now exist, hide the overlay.
-        if self._empty_mode is not None:
-            self._empty_label.hide()
-            self._empty_mode = None
+        # Rows must never wait for the debounce to uncover the thumbnails.
+        self._hide_placeholder()
         self._update_empty_state()
         self._schedule_timeline_refresh()
 
     def _on_loading_timeout(self) -> None:
-        self._query_loading = False
+        self._empty.query_finished()
         # ⭐ 关键修复：如果 model 已经有数据，立即清除所有 overlay
         # 避免 2s 后用户仍然看到"加载中"或"无媒体"提示
         model = self.model()
         if model is not None and model.rowCount() > 0:
-            self._loading_label.hide()
-            self._scanning_label.hide()
-            self._empty_label.hide()
+            self._hide_placeholder()
             return
         self._do_update_empty_state()
 
     def set_scan_completed(self) -> None:
         """Mark that the first scan has finished — allows 'No media found' to show."""
-        if self._scan_completed and not self._is_scanning:
+        if not self._empty.scan_finished():
             return  # already completed
-        self._scan_completed = True
-        self._is_scanning = False  # 扫描完成
-        self._query_loading = False
         self._empty_state_timer.stop()
         self._loading_timeout_timer.stop()
         self._do_update_empty_state()
@@ -891,7 +853,7 @@ class GalleryGridView(AssetGrid):
         该相册在索引写入完成前是空的，此时必须显示"正在扫描"，而不是
         "No media found. Click Rescan"，否则用户会以为所选文件夹没有照片。
         """
-        self._is_scanning = True
+        self._empty.scan_started()
         self._empty_state_timer.stop()
         self._do_update_empty_state()
 
@@ -901,19 +863,10 @@ class GalleryGridView(AssetGrid):
         当外部逻辑（如 gallery_page.hide_loading）确认加载已完成时调用，
         清除所有可能残留的加载/扫描图层，让 grid view 立刻显示内容。
         """
-        self._is_scanning = False
-        self._query_loading = False
-        self._scan_completed = True
-        self._empty_mode = None
+        self._empty.dismiss_loading()
         self._empty_state_timer.stop()
         self._loading_timeout_timer.stop()
-        # 强制隐藏所有 overlay 标签
-        if self._loading_label is not None:
-            self._loading_label.hide()
-        if self._scanning_label is not None:
-            self._scanning_label.hide()
-        if self._empty_label is not None:
-            self._empty_label.hide()
+        self._hide_placeholder()
         # 刷新显示
         self.viewport().update()
 
@@ -921,82 +874,65 @@ class GalleryGridView(AssetGrid):
         """Debounced version — coalesces rapid model changes."""
         self._empty_state_timer.start()
 
+    def _current_empty_state(self) -> GalleryEmptyState:
+        """Derive the placeholder for the model's current row count."""
+
+        model = self.model()
+        return self._empty.state(model is not None and model.rowCount() > 0)
+
+    def _hide_placeholder(self) -> None:
+        """Hide the placeholder without changing the derived state."""
+
+        label = self._placeholder_label
+        if label is not None:
+            label.hide()
+
     def _do_update_empty_state(self) -> None:
         """Actually update the empty state."""
-        model = self.model()
-        is_empty = model is None or model.rowCount() == 0
-        if self._empty_label is None:
+        label = self._placeholder_label
+        if label is None:
             return
-        # Only when the viewport actually changed: these labels cover the whole view,
-        # so re-applying their geometry on every update forced a full repaint.
+        # Only when the viewport actually changed: the label covers the whole view,
+        # so re-applying its geometry on every update forced a full repaint.
         viewport_rect = self.viewport().rect()
         if viewport_rect != self._placeholder_rect:
             self._placeholder_rect = viewport_rect
-            self._empty_label.setGeometry(viewport_rect)
-            self._loading_label.setGeometry(viewport_rect)
-            self._scanning_label.setGeometry(viewport_rect)
+            label.setGeometry(viewport_rect)
 
-        import logging
+        state = self._current_empty_state()
         diag(
-            "[DIAG] _do_update_empty_state: is_empty=%s query_loading=%s scan_completed=%s is_scanning=%s",
-            is_empty, self._query_loading, self._scan_completed, self._is_scanning,
+            "[DIAG] _do_update_empty_state: state=%s mode=%s",
+            state.value, self._empty.mode,
         )
+        self._apply_empty_state(state)
 
-        # The window-level startup overlay owns this phase. Drawing the grid's
-        # own placeholder here produced two competing progress boxes ("正在打开
-        # 图库…" next to "准备中...").
-        # The label text follows the active filter context, but it is only
-        # painted by the branch below once nothing is loading any more.
-        self._empty_label.setText(
-            self._empty_message() if self._empty_mode is not None else tr("empty.no_media")
-        )
+    def _apply_empty_state(self, state: GalleryEmptyState) -> None:
+        """Render one derived state with a single visibility decision."""
 
-        # 优先级：正在扫描 > 正在加载查询 > 空状态
-        if is_empty and self._is_scanning:
-            # 正在扫描：展示进度提示。首次启动时这层会被启动遮罩盖住，不可见；
+        label = self._placeholder_label
+        if label is None:
+            return
+        if state is GalleryEmptyState.SCANNING:
+            # 正在扫描：首次启动时这层会被启动遮罩盖住，不可见；
             # 运行中追加根目录/相册的重扫则直接呈现给用户。
-            self._empty_label.hide()
-            self._loading_label.hide()
-            self._scanning_label.setText(tr("empty.scanning"))
-            self._scanning_label.show()
-            self._scanning_label.raise_()
-        elif is_empty and self._query_loading:
+            label.setText(tr("empty.scanning"))
+        elif state is GalleryEmptyState.LOADING:
             # 正在加载查询
-            self._empty_label.hide()
-            self._loading_label.show()
-            self._scanning_label.hide()
-        elif is_empty and not self._scan_completed:
-            # 启动扫描尚未完成：由启动遮罩负责反馈，这里保持空白，
-            # 否则会在遮罩旁边再叠一个"准备中..."。
-            self._empty_label.hide()
-            self._loading_label.hide()
-            self._scanning_label.hide()
+            label.setText(tr("preview.loading"))
+        elif state is GalleryEmptyState.EMPTY:
+            label.setText(self._empty.message())
         else:
-            # 正常状态或扫描完成
-            self._loading_label.hide()
-            self._scanning_label.hide()
-            # ⭐ 修复：is_empty=False 时也强制隐藏 _empty_label，
-            # 避免残留的"无媒体"提示覆盖在照片上
-            self._empty_label.setVisible(is_empty)
-
-        # ⭐ 关键修复：如果 model 已经有数据，确保所有图层（包括 _empty_label）
-        # 都不会显示在用户面前，覆盖照片
-        if not is_empty:
-            # 强制隐藏所有 overlay 标签
-            self._loading_label.hide()
-            self._scanning_label.hide()
-            self._empty_label.hide()
+            # READY / INITIALIZING. 启动扫描尚未完成时由启动遮罩负责反馈，
+            # 这里保持空白，否则会在遮罩旁边再叠一个"准备中..."；有数据时
+            # 则任何占位提示都不能盖住照片。
+            label.hide()
+            return
+        label.show()
 
     def retranslate(self) -> None:
         """Re-apply the placeholder texts after a language switch."""
 
-        if self._empty_mode is not None:
-            self._empty_label.setText(self._empty_message())
-        else:
-            self._empty_label.setText(tr("empty.no_media"))
-        self._loading_label.setText(tr("preview.loading"))
-        self._scanning_label.setText(tr("empty.scanning"))
-        self._update_empty_state()
+        self._apply_empty_state(self._current_empty_state())
 
     def set_empty_mode(self, mode: str | None) -> None:
         """Record the filter context for the empty-state text (videos/live/...).
@@ -1007,29 +943,13 @@ class GalleryGridView(AssetGrid):
         is genuinely empty, which is what ``_do_update_empty_state`` decides.
         """
 
-        self._empty_mode = mode
-        if mode is not None:
-            self._empty_label.setText(self._empty_message())
+        self._empty.set_mode(mode)
+        label = self._placeholder_label
+        if label is not None:
+            label.setText(self._empty.message())
             # Hide rather than show: an empty result is not known yet.
-            self._empty_label.hide()
-            self._update_empty_state()
-        else:
-            self._empty_label.hide()
-            self._empty_label.setText(tr("empty.no_media"))
-            self._update_empty_state()
-
-    def _empty_message(self) -> str:
-        """Return a context-aware empty-state message."""
-        mode = self._empty_mode
-        if mode == "favorites":
-            return tr("empty.favorites")
-        if mode == "videos":
-            return tr("empty.videos")
-        if mode == "live":
-            return tr("empty.live")
-        if mode == "no_library":
-            return tr("empty.no_library")
-        return tr("empty.no_photos")
+            label.hide()
+        self._update_empty_state()
 
     # ------------------------------------------------------------------
     # Selection mode toggling

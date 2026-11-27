@@ -61,32 +61,31 @@ def view(qapp: QApplication) -> GalleryGridView:
     widget.deleteLater()
 
 
-def _empty_visible(view: GalleryGridView) -> bool:
-    return not view._empty_label.isHidden()
+def _placeholder_visible(view: GalleryGridView) -> bool:
+    return not view._placeholder_label.isHidden()
 
 
 def test_switching_to_videos_does_not_paint_the_empty_message(view: GalleryGridView, qapp):
     view.set_empty_mode("videos")
     qapp.processEvents()
 
-    assert view._empty_label.text() == tr("empty.videos")
+    assert view._placeholder_label.text() == tr("empty.videos")
     # The query has not produced a result yet, so nothing may be painted.
-    assert _empty_visible(view) is False
+    assert _placeholder_visible(view) is False
 
 
 def test_the_message_appears_once_the_result_is_known_to_be_empty(view: GalleryGridView, qapp):
     view.set_empty_mode("live")
     qapp.processEvents()
-    assert _empty_visible(view) is False
+    assert _placeholder_visible(view) is False
 
-    # Simulate the result arriving: an empty model settles, then the loading
-    # timeout resolves to "genuinely nothing".
-    view._query_loading = False
-    view._do_update_empty_state()
+    # Simulate the result arriving: no rows appeared, so the safety timeout
+    # resolves the pending query to "genuinely nothing".
+    view._on_loading_timeout()
     qapp.processEvents()
 
-    assert _empty_visible(view) is True
-    assert view._empty_label.text() == tr("empty.live")
+    assert _placeholder_visible(view) is True
+    assert view._placeholder_label.text() == tr("empty.live")
 
 
 def test_rows_arriving_cancel_the_pending_message(view: GalleryGridView, qapp):
@@ -97,8 +96,19 @@ def test_rows_arriving_cancel_the_pending_message(view: GalleryGridView, qapp):
     model.set_rows(3)
     qapp.processEvents()
 
-    assert _empty_visible(view) is False
-    assert view._empty_mode is None
+    assert _placeholder_visible(view) is False
+    assert view._empty.mode is None
+
+
+def test_a_model_reset_with_rows_clears_every_placeholder(view: GalleryGridView, qapp):
+    view.set_empty_mode("videos")
+    qapp.processEvents()
+
+    view.model().set_rows(4)
+    qapp.processEvents()
+
+    assert _placeholder_visible(view) is False
+    assert view._empty.mode is None
 
 
 def test_clearing_the_mode_returns_to_the_generic_text(view: GalleryGridView, qapp):
@@ -107,4 +117,4 @@ def test_clearing_the_mode_returns_to_the_generic_text(view: GalleryGridView, qa
     view.set_empty_mode(None)
     qapp.processEvents()
 
-    assert view._empty_label.text() == tr("empty.no_media")
+    assert view._placeholder_label.text() == tr("empty.no_media")

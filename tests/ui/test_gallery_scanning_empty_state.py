@@ -16,6 +16,7 @@ pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 from PySide6.QtWidgets import QApplication
 
 from iPhoto.gui.ui.widgets.gallery_grid_view import GalleryGridView
+from iPhoto.i18n import tr
 
 
 @pytest.fixture(scope="module")
@@ -41,14 +42,15 @@ def view(qapp: QApplication) -> GalleryGridView:
 def test_rescan_shows_the_scanning_hint_instead_of_no_media(view: GalleryGridView, qapp: QApplication) -> None:
     view.set_scan_completed()
     qapp.processEvents()
-    assert view._empty_label.isHidden() is False
+    assert view._placeholder_label.isHidden() is False
+    assert view._placeholder_label.text() == tr("empty.no_media")
 
     # A later scan (e.g. a second library root being indexed) must not claim the
     # folder is empty while rows are still being written.
     view.set_scan_started()
     qapp.processEvents()
-    assert view._empty_label.isHidden() is True
-    assert view._scanning_label.isHidden() is False
+    assert view._placeholder_label.isHidden() is False
+    assert view._placeholder_label.text() == tr("empty.scanning")
 
 
 def test_finished_scan_returns_to_the_empty_message(view: GalleryGridView, qapp: QApplication) -> None:
@@ -59,5 +61,11 @@ def test_finished_scan_returns_to_the_empty_message(view: GalleryGridView, qapp:
     view.set_scan_completed()
     qapp.processEvents()
 
-    assert view._scanning_label.isHidden() is True
-    assert view._empty_label.isHidden() is False
+    assert view._placeholder_label.isHidden() is False
+    assert view._placeholder_label.text() == tr("empty.no_media")
+
+
+def test_the_startup_phase_stays_blank(view: GalleryGridView, qapp: QApplication) -> None:
+    # No scan has finished and nothing is loading: the window-level startup
+    # overlay reports progress, so the grid must not paint its own message.
+    assert view._placeholder_label.isHidden() is True
