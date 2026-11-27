@@ -111,3 +111,56 @@ def test_migration_never_overwrites_a_canonical_pack(trees):
     assert skipped == [legacy / "buffalo_l"]
     assert (canonical / "buffalo_l" / "keep.onnx").read_bytes() == b"new"
 
+
+def _write_pack(root: Path, name: str, payload: bytes) -> Path:
+    pack = root / name
+    pack.mkdir(parents=True, exist_ok=True)
+    (pack / "det.onnx").write_bytes(payload)
+    return pack
+
+
+def test_identical_legacy_duplicates_are_reported_then_removed(trees):
+    canonical, legacy = trees
+    _write_pack(canonical, "buffalo_l", b"same")
+    _write_pack(legacy, "buffalo_l", b"same")
+
+    removed, kept, freed = model_paths.remove_identical_legacy_duplicates()
+
+    assert removed == [(legacy / "buffalo_l", canonical / "buffalo_l")]
+    assert kept == []
+    assert freed == len(b"same")
+    assert (legacy / "buffalo_l").is_dir(), "a dry run must not delete anything"
+
+    removed, kept, freed = model_paths.remove_identical_legacy_duplicates(apply=True)
+
+    assert removed == [(legacy / "buffalo_l", canonical / "buffalo_l")]
+    assert kept == []
+    assert not (legacy / "buffalo_l").exists()
+    # The emptied legacy root is pruned as well; the canonical copy stays.
+    assert not legacy.exists()
+    assert (canonical / "buffalo_l" / "det.onnx").read_bytes() == b"same"
+
+
+def test_differing_legacy_pack_is_never_deleted(trees):
+    canonical, legacy = trees
+    _write_pack(canonical, "buffalo_l", b"newer")
+    _write_pack(legacy, "buffalo_l", b"older")
+
+    removed, kept, freed = model_paths.remove_identical_legacy_duplicates(apply=True)
+
+    assert removed == []
+    assert kept == [(legacy / "buffalo_l", canonical / "buffalo_l")]
+    assert freed == 0
+    assert (legacy / "buffalo_l" / "det.onnx").read_bytes() == b"older"
+    assert (canonical / "buffalo_l" / "det.onnx").read_bytes() == b"newer"
+
+
+def test_unmatched_legacy_pack_is_left_for_migration(trees):
+    _canonical, legacy = trees
+    _write_pack(legacy, "buffalo_s", b"only-here")
+
+    removed, kept, freed = model_paths.remove_identical_legacy_duplicates(apply=True)
+
+    assert (removed, kept, freed) == ([], [], 0)
+    assert (legacy / "buffalo_s" / "det.onnx").read_bytes() == b"only-here"
+
