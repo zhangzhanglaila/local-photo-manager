@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from iPhoto.i18n import tr
+
 pytest.importorskip(
     "PySide6", reason="PySide6 is required for People dashboard widget tests", exc_type=ImportError
 )
@@ -660,10 +662,7 @@ def test_merge_person_shows_warning_when_hidden_state_differs(
     widget._merge_person(widget._summaries[0])
 
     assert warnings == [
-        (
-            "Cannot Merge People",
-            "People in hidden and visible states cannot be merged. Please make both People cards hidden or visible first.",
-        )
+        (tr("people.cannot_merge"), tr("people.cannot_merge_hidden"))
     ]
 
 
@@ -700,9 +699,9 @@ def test_merge_person_reuses_group_people_dialog(
 
     assert len(dialog_calls) == 1
     assert [summary.person_id for summary in dialog_calls[0]["summaries"]] == ["person-b"]
-    assert dialog_calls[0]["kwargs"]["title_text"] == "Merge Person"
-    assert dialog_calls[0]["kwargs"]["prompt_text"] == "Merge into"
-    assert dialog_calls[0]["kwargs"]["confirm_text"] == "Choose"
+    assert dialog_calls[0]["kwargs"]["title_text"] == tr("people.merge_person")
+    assert dialog_calls[0]["kwargs"]["prompt_text"] == tr("people.merge_to")
+    assert dialog_calls[0]["kwargs"]["confirm_text"] == tr("people.select")
     assert dialog_calls[0]["kwargs"]["min_selection"] == 1
     assert dialog_calls[0]["kwargs"]["max_selection"] == 1
     assert confirmed == [("person-a", "person-b")]
@@ -767,9 +766,9 @@ def test_toggle_person_hidden_uses_confirmation_popup(
 
     assert confirms == [
         (
-            "Hide This Person?",
-            "Hiding Alice will remove them from the People view until you choose Show Hidden People or unhide them.",
-            "Hide Person",
+            tr("people.hide_person_title"),
+            tr("people.hide_person_body", name="Alice"),
+            tr("people.hide_person_confirm"),
         )
     ]
     assert toggles == [("person-a", True)]
@@ -818,9 +817,9 @@ def test_disband_group_uses_confirmation_popup_and_deletes(
 
     assert confirms == [
         (
-            "Disband This Group?",
-            "Disbanding Alice and Bob will remove the group but keep all of its people and photos.",
-            "Disband Group",
+            tr("people.dissolve_group_title"),
+            tr("people.dissolve_group_body", label="Alice and Bob"),
+            tr("people.dissolve_group_confirm"),
         )
     ]
     assert deletions == ["group-a"]
@@ -863,7 +862,7 @@ def test_pinned_group_disband_shows_warning_and_does_not_delete(
 
     widget._disband_group(summary)
 
-    assert warnings == ["Pinned groups can't be disbanded until they are unpinned."]
+    assert warnings == [tr("people.unpin_group_first")]
     assert deletions == []
 
 

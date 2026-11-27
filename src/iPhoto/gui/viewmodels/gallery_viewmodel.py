@@ -29,6 +29,7 @@ from .base import BaseViewModel
 from .gallery_collection_store import GalleryCollectionStore
 from .signal import ObservableProperty, Signal
 from ...utils.pathutils import paths_equal
+from ...i18n import tr
 from ...utils.logging import diag
 
 
@@ -641,8 +642,8 @@ class GalleryViewModel(BaseViewModel):
 
     def cluster_gallery_back_tooltip(self) -> str:
         if self._cluster_gallery_origin == "people":
-            return "Return to People"
-        return "Return to Map"
+            return tr("gallery.cluster.back_people")
+        return tr("gallery.cluster.back_map")
 
     def open_row(self, row: int) -> None:
         if row < 0:

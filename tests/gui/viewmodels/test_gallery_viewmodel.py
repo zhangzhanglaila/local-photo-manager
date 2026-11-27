@@ -7,6 +7,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from iPhoto.i18n import tr
+
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.cache.index_store import get_global_repository, reset_global_repository
 from iPhoto.domain.models.core import MediaType
@@ -594,12 +596,14 @@ def test_people_cluster_gallery_loads_query_and_returns_to_people(tmp_path: Path
     store.load_selection.assert_called_once_with(tmp_path, query=query)
     assert vm.static_selection.value == "People"
     assert vm.current_section.value == "people_cluster_gallery"
-    assert vm.cluster_gallery_back_tooltip() == "Return to People"
+    assert vm.cluster_gallery_back_tooltip() == tr("gallery.cluster.back_people")
     assert vm.is_in_cluster_gallery() is True
 
     vm.return_from_cluster_gallery()
 
-    assert routes == ["gallery", "people"]
+    # Switching to the gallery is the coordinator's job (`_view_router.show_gallery`),
+    # so the view model only routes the "back to people" step.
+    assert routes == ["people"]
     assert vm.current_section.value == "people_dashboard"
     assert vm.static_selection.value == "People"
     assert vm.is_in_cluster_gallery() is False
@@ -690,6 +694,9 @@ def test_people_cluster_gallery_retargets_after_snapshot_redirect(tmp_path: Path
         entity_id="person-a",
     )
     store.load_selection.reset_mock()
+    # A snapshot landing inside the grace period is ignored on purpose: a merge right
+    # after opening the gallery used to yank the view out from under the user.
+    vm._cluster_gallery_opened_at -= 5.0
     repository.merge_persons("person-a", "person-b")
 
     event = PeopleSnapshotEvent(
