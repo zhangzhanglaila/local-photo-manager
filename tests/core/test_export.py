@@ -12,6 +12,7 @@ from iPhoto.core.export import (
     render_image,
     resolve_export_path,
     _parse_hhmmss_duration,
+    _qimage_to_rgba_bytes,
     probe_duration_seconds,
 )
 
@@ -261,3 +262,22 @@ class TestProbeDurationSeconds:
 
     def test_returns_none_for_non_dict(self):
         assert probe_duration_seconds(None) is None
+
+
+def test_qimage_to_rgba_bytes_returns_tightly_packed_pixels() -> None:
+    """The video encoder streams these bytes straight into ffmpeg's stdin.
+
+    On PySide6 ``constBits()`` returns a ``memoryview``; the conversion used to
+    call ``setsize`` on it (a PyQt-only API), so every video export raised
+    AttributeError before writing a single frame.
+    """
+
+    # A grey fill keeps the assertion independent of R/B ordering.
+    image = QImage(3, 2, QImage.Format.Format_Grayscale8)
+    image.fill(0x40)
+
+    raw = _qimage_to_rgba_bytes(image)
+
+    assert len(raw) == 3 * 2 * 4
+    assert raw[:4] == bytes((0x40, 0x40, 0x40, 0xFF))
+    assert raw == raw[:4] * 6

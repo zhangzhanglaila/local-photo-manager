@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import subprocess
 from fractions import Fraction
@@ -17,7 +16,12 @@ from ..errors import ExternalToolError
 from ..io import sidecar
 from ..media_classifier import VIDEO_EXTENSIONS
 from ..utils import image_loader
-from ..utils.ffmpeg import probe_media, probe_video_rotation
+from ..utils.ffmpeg import (
+    ffmpeg_executable,
+    hidden_process_options,
+    probe_media,
+    probe_video_rotation,
+)
 from .color_resolver import compute_color_statistics
 from .filters.facade import apply_adjustments
 from .geometry import apply_geometry_and_crop
@@ -493,7 +497,7 @@ def _start_video_encoder(
     trim_out_sec: float,
 ) -> subprocess.Popen:
     command = [
-        "ffmpeg",
+        ffmpeg_executable(),
         "-hide_banner",
         "-loglevel",
         "error",
@@ -533,13 +537,7 @@ def _start_video_encoder(
         str(destination),
     ]
 
-    startupinfo = None
-    creationflags = 0
-    if os.name == "nt":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    startupinfo, creationflags = hidden_process_options()
 
     process = subprocess.Popen(
         command,
@@ -611,9 +609,16 @@ def _finalise_video_encoder(process: subprocess.Popen) -> str:
 
 def _qimage_to_rgba_bytes(image: QImage) -> bytes:
     converted = image.convertToFormat(QImage.Format.Format_RGBA8888)
-    ptr = converted.bits()
-    ptr.setsize(converted.sizeInBytes())
-    raw = bytes(ptr)
+    size = converted.sizeInBytes()
+    ptr = converted.constBits()
+    # PyQt hands back a ``voidptr`` that has to be told how long it is; PySide6
+    # hands back a ``memoryview`` that has no ``setsize``. Only the first form was
+    # handled, so every video export raised AttributeError before writing a frame.
+    if hasattr(ptr, "setsize"):
+        ptr.setsize(size)
+        raw = bytes(ptr)
+    else:
+        raw = bytes(ptr[:size])
     row_stride = converted.bytesPerLine()
     row_width = converted.width() * 4
     if row_stride == row_width:

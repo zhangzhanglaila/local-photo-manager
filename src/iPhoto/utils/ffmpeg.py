@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -19,6 +20,64 @@ _LINUX_180_HINT_CACHE: dict[str, bool] = {}
 _OPTIONAL_MODULE_UNSET = object()
 av: Any = _OPTIONAL_MODULE_UNSET
 cv2: Any = _OPTIONAL_MODULE_UNSET
+
+#: Point these at a specific build to override the search of ``PATH``.
+FFMPEG_ENV = "IPHOTO_FFMPEG"
+FFPROBE_ENV = "IPHOTO_FFPROBE"
+
+
+@lru_cache(maxsize=None)
+def _resolve_tool(name: str, env_var: str) -> str:
+    """Resolve *name* once: explicit override first, then ``PATH``.
+
+    The video export used to hardcode ``"ffmpeg"`` while the frame extractor and
+    the probe relied on ``PATH`` implicitly, so a user who pointed the app at a
+    specific build fixed only part of the app. Resolution is cached because
+    ``shutil.which`` walks the whole ``PATH`` and the probe path runs per media
+    file; :func:`reset_tool_cache` exists for tests and for callers that change
+    the environment at runtime.
+    """
+
+    override = os.environ.get(env_var, "").strip()
+    if override:
+        # Only expand ``~``: routing the override through ``Path`` rewrote
+        # separators on Windows, which made the reported path differ from the
+        # one the user configured.
+        return os.path.expanduser(override)
+    return shutil.which(name) or name
+
+
+def ffmpeg_executable() -> str:
+    """The ``ffmpeg`` binary every caller should launch."""
+
+    return _resolve_tool("ffmpeg", FFMPEG_ENV)
+
+
+def ffprobe_executable() -> str:
+    """The ``ffprobe`` binary every caller should launch."""
+
+    return _resolve_tool("ffprobe", FFPROBE_ENV)
+
+
+def reset_tool_cache() -> None:
+    """Forget resolved tool paths (after changing ``IPHOTO_FFMPEG``, in tests)."""
+
+    _resolve_tool.cache_clear()
+
+
+def hidden_process_options() -> tuple[Any, int]:
+    """``(startupinfo, creationflags)`` that keep console tools from flashing a window.
+
+    Shared by every ``subprocess`` launch of ffmpeg/ffprobe: the export path had
+    its own copy of this block, which is how the two drifted apart.
+    """
+
+    if os.name != "nt":
+        return None, 0
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    return startupinfo, getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _load_av() -> Any | None:
@@ -70,11 +129,7 @@ def _run_command(
     """
 
     # Define startupinfo to hide the window on Windows
-    startupinfo = None
-    if os.name == 'nt':
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
+    startupinfo, creationflags = hidden_process_options()
 
     try:
         process = subprocess.run(
@@ -84,7 +139,7 @@ def _run_command(
             stderr=subprocess.PIPE,
             timeout=timeout,
             startupinfo=startupinfo,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0,
+            creationflags=creationflags,
         )
     except subprocess.TimeoutExpired as exc:
         raise ExternalToolError(
@@ -229,7 +284,7 @@ def _extract_with_ffmpeg(
     codec = "png" if format == "png" else "mjpeg"
 
     command: list[str] = [
-        "ffmpeg",
+        ffmpeg_executable(),
         "-hwaccel",
         "auto",
         "-hide_banner",
@@ -620,7 +675,7 @@ def _probe_media_uncached(source: Path) -> Dict[str, Any]:
     """Run ffprobe and return raw metadata (no caching)."""
 
     command = [
-        "ffprobe",
+        ffprobe_executable(),
         "-hide_banner",
         "-loglevel",
         _FFMPEG_LOG_LEVEL,
