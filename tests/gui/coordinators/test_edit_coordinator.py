@@ -242,10 +242,10 @@ def test_queue_video_trim_thumbnails_accepts_missing_duration() -> None:
     )
     pool = Mock()
     with patch(
-        "iPhoto.gui.coordinators.edit_coordinator.VideoTrimThumbnailWorker",
+        "iPhoto.gui.coordinators.edit_video.VideoTrimThumbnailWorker",
         return_value=worker_instance,
     ) as worker_cls, patch(
-        "iPhoto.gui.coordinators.edit_coordinator.QThreadPool.globalInstance",
+        "iPhoto.gui.coordinators.edit_video.QThreadPool.globalInstance",
         return_value=pool,
     ):
         EditCoordinator._queue_video_trim_thumbnails(coordinator, None)
@@ -300,10 +300,10 @@ def test_refresh_video_sidebar_preview_uses_inline_sidebar_loader(qapp) -> None:
     pool = Mock()
 
     with patch(
-        "iPhoto.gui.coordinators.edit_coordinator.VideoSidebarPreviewWorker",
+        "iPhoto.gui.coordinators.edit_video.VideoSidebarPreviewWorker",
         return_value=worker_instance,
     ), patch(
-        "iPhoto.gui.coordinators.edit_coordinator.QThreadPool.globalInstance",
+        "iPhoto.gui.coordinators.edit_video.QThreadPool.globalInstance",
         return_value=pool,
     ):
         EditCoordinator._refresh_video_sidebar_preview(coordinator)
@@ -351,7 +351,7 @@ def test_probe_video_frame_step_ms_uses_metadata_frame_rate() -> None:
     coordinator = EditCoordinator.__new__(EditCoordinator)
 
     with patch(
-        "iPhoto.gui.coordinators.edit_coordinator.read_video_meta",
+        "iPhoto.gui.coordinators.edit_video.read_video_meta",
         return_value={"frame_rate": 59.94},
     ):
         step_ms = EditCoordinator._probe_video_frame_step_ms(
@@ -480,7 +480,7 @@ def test_video_frame_step_shortcut_pauses_and_seeks() -> None:
     coordinator._video_frame_step_ms = 17
 
     with patch(
-        "iPhoto.gui.coordinators.edit_coordinator.QApplication.focusWidget",
+        "iPhoto.gui.coordinators.edit_video.QApplication.focusWidget",
         return_value=None,
     ):
         EditCoordinator._handle_video_frame_step_shortcut(coordinator, 1)
@@ -504,7 +504,7 @@ def test_video_frame_step_shortcut_yields_to_slider_focus(qapp) -> None:
     slider = QSlider()
 
     with patch(
-        "iPhoto.gui.coordinators.edit_coordinator.QApplication.focusWidget",
+        "iPhoto.gui.coordinators.edit_video.QApplication.focusWidget",
         return_value=slider,
     ):
         EditCoordinator._handle_video_frame_step_shortcut(coordinator, 1)
