@@ -2,17 +2,54 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
 from iPhoto.people.service import PeopleService
 
 
+class _StubCoordinator(MainCoordinator):
+    """``MainCoordinator`` whose unstubbed private dependencies are auto-mocked.
+
+    ``__getattr__`` only runs when normal attribute lookup fails, so real
+    methods stay real while a private attribute the test does not care about
+    becomes a ``MagicMock`` on first access instead of raising
+    ``AttributeError``.  Before this existed, every new attribute added to
+    ``__init__`` turned half of this file red for no product reason.
+    """
+
+    _DEFAULT_FACTORIES: dict[str, object] = {
+        "_startup_loading": bool,
+        "_scroll_viewing_registered": bool,
+        "_media_failure_cleanup_paths": set,
+    }
+
+    def __getattr__(self, name: str):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        if not name.startswith("_"):
+            raise AttributeError(name)
+        stub = MagicMock(name=name)
+        object.__setattr__(self, name, stub)
+        return stub
+
+
+def _make_coordinator(**overrides: object) -> MainCoordinator:
+    """Build a coordinator without running ``__init__`` (which builds the GUI)."""
+
+    coordinator = _StubCoordinator.__new__(_StubCoordinator)
+    for name, factory in _StubCoordinator._DEFAULT_FACTORIES.items():
+        object.__setattr__(coordinator, name, factory())  # type: ignore[operator]
+    for name, value in overrides.items():
+        object.__setattr__(coordinator, name, value)
+    return coordinator
+
+
 def test_on_library_tree_updated_rebinds_asset_list_vm_and_reloads_selection() -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
     root = Path("/library")
     map_runtime = SimpleNamespace(package_root=lambda: Path("/session/maps"))
     map_interaction_service = SimpleNamespace()
+    coordinator = _make_coordinator()
 
     coordinator._context = MagicMock()
     coordinator._context.library_session = None
@@ -22,12 +59,6 @@ def test_on_library_tree_updated_rebinds_asset_list_vm_and_reloads_selection() -
     coordinator._context.library.asset_query_service = MagicMock()
     coordinator._context.library.asset_state_service = MagicMock()
     coordinator._context.asset_runtime.bind_library_root = MagicMock()
-    coordinator._asset_list_vm = MagicMock()
-    coordinator._gallery_vm = MagicMock()
-    coordinator._detail_vm = MagicMock()
-    coordinator._logger = MagicMock()
-    coordinator._map_extension_download = MagicMock()
-    coordinator._playback = MagicMock()
     coordinator._window = MagicMock(ui=MagicMock(people_page=MagicMock()))
 
     coordinator._on_library_tree_updated()
@@ -65,9 +96,9 @@ def test_on_library_tree_updated_rebinds_asset_list_vm_and_reloads_selection() -
 def test_open_album_from_path_creates_session_when_no_library_is_bound(
     tmp_path: Path,
 ) -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
     album_root = tmp_path / "Album"
     album_root.mkdir()
+    coordinator = _make_coordinator()
 
     coordinator._context = MagicMock()
     coordinator._context.library_session = None
@@ -86,10 +117,10 @@ def test_open_album_from_path_creates_session_when_no_library_is_bound(
 def test_open_album_from_path_reuses_session_for_album_inside_library(
     tmp_path: Path,
 ) -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
     library_root = tmp_path / "Library"
     album_root = library_root / "Album"
     album_root.mkdir(parents=True)
+    coordinator = _make_coordinator()
 
     coordinator._context = MagicMock()
     coordinator._context.library_session = None
@@ -105,10 +136,10 @@ def test_open_album_from_path_reuses_session_for_album_inside_library(
     coordinator._navigation.open_album.assert_called_once_with(album_root)
 
 
-def test_on_library_tree_updated_skips_selection_reload_in_location_context() -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
+def test_on_library_tree_updated_defers_gallery_reload_while_startup_loading() -> None:
     root = Path("/library")
     map_runtime = SimpleNamespace(package_root=lambda: Path("/session/maps"))
+    coordinator = _make_coordinator(_startup_loading=True)
 
     coordinator._context = MagicMock()
     coordinator._context.library_session = None
@@ -117,12 +148,6 @@ def test_on_library_tree_updated_skips_selection_reload_in_location_context() ->
     coordinator._context.library.asset_query_service = MagicMock()
     coordinator._context.library.asset_state_service = MagicMock()
     coordinator._context.asset_runtime.bind_library_root = MagicMock()
-    coordinator._asset_list_vm = MagicMock()
-    coordinator._gallery_vm = MagicMock()
-    coordinator._detail_vm = MagicMock()
-    coordinator._logger = MagicMock()
-    coordinator._map_extension_download = MagicMock()
-    coordinator._playback = MagicMock()
     coordinator._window = MagicMock(ui=MagicMock(people_page=MagicMock()))
 
     coordinator._on_library_tree_updated()
@@ -131,7 +156,7 @@ def test_on_library_tree_updated_skips_selection_reload_in_location_context() ->
         coordinator._context.library.asset_query_service,
         root,
     )
-    coordinator._gallery_vm.on_library_tree_updated.assert_called_once_with()
+    coordinator._gallery_vm.on_library_tree_updated.assert_not_called()
     coordinator._playback.set_map_runtime.assert_called_once_with(
         map_runtime
     )
@@ -141,11 +166,11 @@ def test_on_library_tree_updated_skips_selection_reload_in_location_context() ->
 
 
 def test_on_library_tree_updated_uses_bound_people_service_when_available() -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
     root = Path("/library")
     people_service = PeopleService(root)
     people_page = MagicMock()
     map_runtime = SimpleNamespace(package_root=lambda: Path("/session/maps"))
+    coordinator = _make_coordinator()
 
     coordinator._context = MagicMock()
     coordinator._context.library_session = None
@@ -155,12 +180,6 @@ def test_on_library_tree_updated_uses_bound_people_service_when_available() -> N
     coordinator._context.library.asset_query_service = MagicMock()
     coordinator._context.library.asset_state_service = MagicMock()
     coordinator._context.asset_runtime.bind_library_root = MagicMock()
-    coordinator._asset_list_vm = MagicMock()
-    coordinator._gallery_vm = MagicMock()
-    coordinator._detail_vm = MagicMock()
-    coordinator._logger = MagicMock()
-    coordinator._map_extension_download = MagicMock()
-    coordinator._playback = MagicMock()
     coordinator._window = MagicMock(ui=MagicMock(people_page=people_page))
 
     coordinator._on_library_tree_updated()
@@ -207,21 +226,11 @@ def test_on_map_asset_activated_delegates_to_navigation() -> None:
 
 
 def test_connect_signals_wires_location_scan_updates_from_library_and_service() -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
+    coordinator = _make_coordinator()
     coordinator._window = MagicMock()
     coordinator._window.ui = MagicMock()
     coordinator._context = MagicMock()
     coordinator._facade = MagicMock()
-    coordinator._gallery_store = MagicMock()
-    coordinator._gallery_vm = MagicMock()
-    coordinator._status_bar = MagicMock()
-    coordinator._asset_list_vm = MagicMock()
-    coordinator._playback = MagicMock()
-    coordinator._player_view_controller = MagicMock()
-    coordinator._detail_vm = MagicMock()
-    coordinator._navigation = MagicMock()
-    coordinator._dialog = MagicMock()
-    coordinator._edit = MagicMock()
     coordinator._restore_preferences = MagicMock()
     coordinator._on_library_tree_updated = MagicMock()
     coordinator._on_asset_clicked = MagicMock()
@@ -236,7 +245,11 @@ def test_connect_signals_wires_location_scan_updates_from_library_and_service() 
     coordinator._on_people_group_activated = MagicMock()
     coordinator._handle_wheel_action_changed = MagicMock()
 
-    coordinator._connect_signals()
+    # The stub never initialises the Qt object underneath the coordinator, so
+    # ``QTimer(self)`` cannot be constructed; the wiring under test does not
+    # depend on a real timer instance.
+    with patch("iPhoto.gui.coordinators.main_coordinator.QTimer", MagicMock()):
+        coordinator._connect_signals()
 
     coordinator._context.library.scanChunkReady.connect.assert_any_call(
         coordinator._gallery_store.handle_scan_chunk
@@ -331,19 +344,24 @@ def test_handle_move_finished_toast_skips_delete_and_restore(
 
 
 def test_handle_media_load_failed_prunes_row_and_refreshes_collection(tmp_path: Path) -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
     failed_path = tmp_path / "library" / "Album" / "motion.mov"
     failed_path.parent.mkdir(parents=True)
     updates = MagicMock()
     updates.handle_media_load_failure.return_value = failed_path.parent
+    coordinator = _make_coordinator()
 
-    coordinator._media_failure_cleanup_paths = set()
     coordinator._dialog = MagicMock()
-    coordinator._gallery_store = MagicMock()
-    coordinator._logger = MagicMock()
     coordinator._facade = MagicMock(library_updates=updates)
 
-    coordinator._handle_media_load_failed(failed_path, "decoder failed")
+    # The reload is deferred through ``QTimer.singleShot`` so it runs after the
+    # error dialog's event loop exits; run the deferred callback synchronously.
+    timer = MagicMock()
+    timer.singleShot.side_effect = lambda _delay, callback: callback()
+    with patch(
+        "iPhoto.gui.coordinators.main_coordinator.QTimer",
+        timer,
+    ):
+        coordinator._handle_media_load_failed(failed_path, "decoder failed")
 
     coordinator._dialog.show_error.assert_called_once()
     updates.handle_media_load_failure.assert_called_once_with(failed_path)
