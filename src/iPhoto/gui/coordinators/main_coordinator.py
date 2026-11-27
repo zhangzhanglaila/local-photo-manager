@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import (
     QCoreApplication,
-    QItemSelectionModel,
     QModelIndex,
     QObject,
     Qt,
@@ -24,6 +23,9 @@ from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryCont
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
 from iPhoto.gui.coordinators.ai_index_coordinator import AiIndexCoordinator
+from iPhoto.gui.coordinators.gallery_interaction_coordinator import (
+    GalleryInteractionCoordinator,
+)
 from iPhoto.gui.coordinators.location_coordinator import (
     MAP_FOCUS_MAX_RETRIES,
     MAP_FOCUS_RETRY_INTERVAL_MS,
@@ -87,7 +89,6 @@ class MainCoordinator(QObject):
         # facade reference kept for signal wiring as some systems still emit through it
         self._facade = context.facade
         self._logger = logging.getLogger(__name__)
-        self._media_failure_cleanup_paths: set[str] = set()
         self._startup_loading = True
         self._map_extension_download = MapExtensionDownloadController(
             window,
@@ -391,6 +392,18 @@ class MainCoordinator(QObject):
             parent=self,
         )
 
+        self._gallery_interactions = GalleryInteractionCoordinator(
+            window,
+            context,
+            gallery_vm=self._gallery_vm,
+            gallery_store=self._gallery_store,
+            asset_list_vm=self._asset_list_vm,
+            dialog=self._dialog,
+            facade=self._facade,
+            selection_controller=self._selection_controller,
+            parent=self,
+        )
+
         self._context_menu = ContextMenuController(
             grid_view=window.ui.grid_view,
             asset_model=self._asset_list_vm,
@@ -598,36 +611,49 @@ class MainCoordinator(QObject):
         # Grid interactions — double-click opens the detail view. A single click only
         # selects: opening on click made an accidental click eject the user into the
         # detail page.
-        ui.grid_view.itemDoubleClicked.connect(self._on_asset_clicked)
+        ui.grid_view.itemDoubleClicked.connect(
+            self._gallery_interactions.on_asset_clicked
+        )
         ui.grid_view.visibleRowsChanged.connect(self._asset_list_vm.prioritize_rows)
-        ui.grid_view.visibleRowsChanged.connect(self._on_gallery_scrolled)
+        ui.grid_view.visibleRowsChanged.connect(
+            self._gallery_interactions.on_gallery_scrolled
+        )
 
         # Background AI scans step aside while the user is actually looking at
         # something: leaving them running made viewing and scrolling sluggish,
         # because face and OCR inference read full-size images and hold CPU.
-        self._view_router.detailViewShown.connect(self._enter_foreground_viewing)
-        self._view_router.galleryViewShown.connect(self._leave_foreground_viewing)
-        self._view_router.mapViewShown.connect(self._leave_foreground_viewing)
+        self._view_router.detailViewShown.connect(
+            self._gallery_interactions.enter_foreground_viewing
+        )
+        self._view_router.galleryViewShown.connect(
+            self._gallery_interactions.leave_foreground_viewing
+        )
+        self._view_router.mapViewShown.connect(
+            self._gallery_interactions.leave_foreground_viewing
+        )
         map_view = self._view_router.map_view()
         if map_view is not None:
             signal = getattr(map_view, "userInteracting", None)
             if signal is not None:
-                signal.connect(self._touch_foreground_viewing)
-        self._view_router.peopleViewShown.connect(self._leave_foreground_viewing)
-        self._scroll_idle_timer = QTimer(self)
-        self._scroll_idle_timer.setSingleShot(True)
-        self._scroll_idle_timer.setInterval(400)
-        self._scroll_idle_timer.timeout.connect(self._on_scroll_idle)
-        self._scroll_viewing_registered = False
+                signal.connect(self._gallery_interactions.touch_foreground_viewing)
+        self._view_router.peopleViewShown.connect(
+            self._gallery_interactions.leave_foreground_viewing
+        )
 
         # Filmstrip clicks are now handled by PlaybackCoordinator
 
         # Connect favorite click from grid view
-        ui.grid_view.favoriteClicked.connect(self._on_favorite_clicked)
+        ui.grid_view.favoriteClicked.connect(
+            self._gallery_interactions.on_favorite_clicked
+        )
         # Coordinator Signals
-        self._playback.assetChanged.connect(self._sync_selection)
-        self._player_view_controller.imageLoadingFailed.connect(self._handle_media_load_failed)
-        ui.video_area.mediaLoadFailed.connect(self._handle_media_load_failed)
+        self._playback.assetChanged.connect(self._gallery_interactions.sync_selection)
+        self._player_view_controller.imageLoadingFailed.connect(
+            self._gallery_interactions.on_media_load_failed
+        )
+        ui.video_area.mediaLoadFailed.connect(
+            self._gallery_interactions.on_media_load_failed
+        )
 
         # Viewer Interactions (Wheel Navigation)
         ui.image_viewer.nextItemRequested.connect(self._playback.select_next)
@@ -636,7 +662,9 @@ class MainCoordinator(QObject):
         ui.video_area.prevItemRequested.connect(self._playback.select_previous)
 
         # ⭐ 视频播放状态跟踪：连接到runtime controller以动态调整人脸扫描频率
-        ui.video_area.playbackStateChanged.connect(self._on_video_playback_state_changed)
+        ui.video_area.playbackStateChanged.connect(
+            self._gallery_interactions.on_video_playback_state_changed
+        )
 
         # Prev / Next overlay buttons
         ui.detail_page.prev_button.clicked.connect(self._playback.select_previous)
@@ -1043,125 +1071,6 @@ class MainCoordinator(QObject):
         """Delegate to the single shared comparison."""
 
         return paths_equal(first,second)
-
-    def _handle_media_load_failed(self, path: Path, message: str) -> None:
-        path_key = str(path)
-        if path_key in self._media_failure_cleanup_paths:
-            return
-        # Broad guard: block ALL media failure handling while any dialog is open
-        # to prevent nested blocking dialogs from chained broken videos.
-        if self._media_failure_cleanup_paths:
-            return
-
-        self._media_failure_cleanup_paths.add(path_key)
-        try:
-            self._dialog.show_error(tr("msg.file_unreadable", name=path.name, message=message))
-            facade = getattr(self, "_facade", None)
-            updates = getattr(facade, "library_updates", None)
-            if updates is None:
-                return
-
-            refresh_root = updates.handle_media_load_failure(path)
-            if refresh_root is not None:
-                # Defer the reload so it runs after the dialog's event loop exits,
-                # preventing nested dialogs from chained broken video loads.
-                QTimer.singleShot(0, self._gallery_store.reload_current_selection)
-        finally:
-            self._media_failure_cleanup_paths.discard(path_key)
-
-    def _on_video_playback_state_changed(self, is_playing: bool) -> None:
-        """视频播放状态改变时，让后台扫描让路或恢复。"""
-        library_manager = getattr(self._context, "library", None)
-        if library_manager is None:
-            return
-        if is_playing:
-            library_manager.register_foreground_viewing()
-        else:
-            library_manager.unregister_foreground_viewing()
-
-    def _foreground_library(self):
-        return getattr(self._context, "library", None)
-
-    def _enter_foreground_viewing(self) -> None:
-        """用户正在看内容：暂停人脸/OCR 扫描，把 CPU 与磁盘让给界面。"""
-        library_manager = self._foreground_library()
-        if library_manager is not None:
-            library_manager.register_foreground_viewing()
-
-    def _leave_foreground_viewing(self) -> None:
-        """离开浏览状态：恢复后台扫描。"""
-        library_manager = self._foreground_library()
-        if library_manager is not None:
-            library_manager.unregister_foreground_viewing()
-
-    def _touch_foreground_viewing(self) -> None:
-        """Register brief foreground viewing: background scans yield for a moment.
-
-        Used by every surface the user actively manipulates (grid scrolling, map
-        panning/zooming): the scans resume shortly after the interaction stops, so
-        they still make progress in the background without competing with the UI.
-        """
-
-        if not self._scroll_viewing_registered:
-            self._scroll_viewing_registered = True
-            library_manager = self._foreground_library()
-            if library_manager is not None:
-                library_manager.register_foreground_viewing()
-        self._scroll_idle_timer.start()
-
-    def _on_gallery_scrolled(self, first: int, last: int) -> None:
-        """滚动期间短暂让路，滚动停下后自动恢复。
-
-        滚动本身很轻，但它会触发换窗加载；如果这时人脸/OCR 正在推理，新窗口的
-        读取就会被拖慢。登记一小段时间既能保住手感，也不会让扫描长期停摆。
-        """
-        del first, last
-        self._touch_foreground_viewing()
-
-    def _on_scroll_idle(self) -> None:
-        """滚动停止：释放滚动期间的登记。"""
-        if not self._scroll_viewing_registered:
-            return
-        self._scroll_viewing_registered = False
-        library_manager = self._foreground_library()
-        if library_manager is not None:
-            library_manager.unregister_foreground_viewing()
-
-    def _on_asset_clicked(self, index: QModelIndex):
-        if self._selection_controller and self._selection_controller.is_active():
-            return
-        if not index.isValid():
-            return
-        row = index.row()
-        if row < 0:
-            return
-        try:
-            self._gallery_vm.open_row(row)
-        except Exception:
-            logging.getLogger(__name__).exception(
-                "open_row failed for row %s", row
-            )
-
-    def _on_favorite_clicked(self, index: QModelIndex):
-        self._gallery_vm.toggle_favorite_row(index.row())
-
-    def _sync_selection(self, row: int):
-        """Syncs grid view selection when playback asset changes."""
-        try:
-            idx = self._asset_list_vm.index(row, 0)
-            if not idx.isValid():
-                return
-            selection_model = self._window.ui.grid_view.selectionModel()
-            if selection_model is None:
-                return
-            selection_model.setCurrentIndex(
-                idx, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows
-            )
-            self._window.ui.grid_view.scrollTo(idx)
-        except Exception:
-            logging.getLogger(__name__).debug(
-                "_sync_selection failed for row %s", row, exc_info=True
-            )
 
     # -- AI index -------------------------------------------------------------
     # The lifecycle itself lives in ``AiIndexCoordinator``; these wrappers keep the

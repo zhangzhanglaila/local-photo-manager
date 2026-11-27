@@ -4,6 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from iPhoto.gui.coordinators.gallery_interaction_coordinator import (
+    GalleryInteractionCoordinator,
+)
 from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
 from iPhoto.gui.coordinators.window_preferences import WindowPreferences
 from iPhoto.people.service import PeopleService
@@ -303,24 +306,26 @@ def test_handle_media_load_failed_prunes_row_and_refreshes_collection(tmp_path: 
     failed_path.parent.mkdir(parents=True)
     updates = MagicMock()
     updates.handle_media_load_failure.return_value = failed_path.parent
-    coordinator = _make_coordinator()
 
-    coordinator._dialog = MagicMock()
-    coordinator._facade = MagicMock(library_updates=updates)
+    interactions = GalleryInteractionCoordinator.__new__(GalleryInteractionCoordinator)
+    interactions._media_failure_cleanup_paths = set()
+    interactions._dialog = MagicMock()
+    interactions._facade = MagicMock(library_updates=updates)
+    interactions._gallery_store = MagicMock()
 
     # The reload is deferred through ``QTimer.singleShot`` so it runs after the
     # error dialog's event loop exits; run the deferred callback synchronously.
     timer = MagicMock()
     timer.singleShot.side_effect = lambda _delay, callback: callback()
     with patch(
-        "iPhoto.gui.coordinators.main_coordinator.QTimer",
+        "iPhoto.gui.coordinators.gallery_interaction_coordinator.QTimer",
         timer,
     ):
-        coordinator._handle_media_load_failed(failed_path, "decoder failed")
+        interactions.on_media_load_failed(failed_path, "decoder failed")
 
-    coordinator._dialog.show_error.assert_called_once()
+    interactions._dialog.show_error.assert_called_once()
     updates.handle_media_load_failure.assert_called_once_with(failed_path)
-    coordinator._gallery_store.reload_current_selection.assert_called_once_with()
+    interactions._gallery_store.reload_current_selection.assert_called_once_with()
 
 
 def test_handle_people_snapshot_sidebar_refresh_prunes_people_pins_before_refresh() -> None:
