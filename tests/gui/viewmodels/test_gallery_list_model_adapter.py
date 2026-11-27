@@ -17,9 +17,12 @@ from iPhoto.infrastructure.services.thumbnail_cache_service import ThumbnailCach
 @pytest.fixture
 def mock_store():
     store = MagicMock(spec=GalleryCollectionStore)
+    # The store's signals are instance attributes, so a class-level spec does not
+    # expose them; the adapter connects to every one of them in __init__.
     store.data_changed = MagicMock()
     store.window_changed = MagicMock()
     store.row_changed = MagicMock()
+    store.rows_loaded = MagicMock()
     store.count.return_value = 0
     return store
 
@@ -32,6 +35,17 @@ def mock_thumb_service():
 @pytest.fixture
 def adapter(mock_store, mock_thumb_service):
     return GalleryListModelAdapter(mock_store, mock_thumb_service)
+
+
+def _bind_row(mock_store, dto) -> None:
+    """Serve *dto* for every row of *mock_store*.
+
+    ``data()`` peeks (it must not hit the database on repaint) while explicit
+    lookups go through ``asset_at``; both have to answer for the model to render.
+    """
+
+    mock_store.peek_asset.return_value = dto
+    mock_store.asset_at.return_value = dto
 
 
 def _make_dto(**overrides) -> AssetDTO:
@@ -58,14 +72,17 @@ def test_adapter_init(adapter):
 
 def test_info_role_contains_required_keys(adapter, mock_store):
     mock_store.count.return_value = 1
-    mock_store.asset_at.return_value = _make_dto(
-        rel_path=Path("clip.mov"),
-        abs_path=Path("/lib/clip.mov"),
-        media_type="video",
-        width=1920,
-        height=1080,
-        duration=8.5,
-        size_bytes=1_000_000,
+    _bind_row(
+        mock_store,
+        _make_dto(
+            rel_path=Path("clip.mov"),
+            abs_path=Path("/lib/clip.mov"),
+            media_type="video",
+            width=1920,
+            height=1080,
+            duration=8.5,
+            size_bytes=1_000_000,
+        ),
     )
 
     index = adapter.index(0, 0)
@@ -77,7 +94,7 @@ def test_info_role_contains_required_keys(adapter, mock_store):
 
 def test_data_display_role(adapter, mock_store):
     mock_store.count.return_value = 1
-    mock_store.asset_at.return_value = _make_dto(rel_path=Path("photo.jpg"))
+    _bind_row(mock_store, _make_dto(rel_path=Path("photo.jpg")))
 
     index = adapter.index(0, 0)
     assert adapter.data(index, Qt.DisplayRole) == "photo.jpg"
@@ -123,10 +140,13 @@ def test_invalidate_thumbnail_clears_duration_cache_and_emits_size_role(adapter,
 
 def test_size_role_returns_trimmed_duration_for_video(adapter, mock_store):
     mock_store.count.return_value = 1
-    mock_store.asset_at.return_value = _make_dto(
-        abs_path=Path("/videos/clip.mp4"),
-        media_type="video",
-        duration=10.0,
+    _bind_row(
+        mock_store,
+        _make_dto(
+            abs_path=Path("/videos/clip.mp4"),
+            media_type="video",
+            duration=10.0,
+        ),
     )
 
     edit_service = MagicMock()
@@ -151,7 +171,7 @@ def test_invalid_index_returns_none(adapter):
 
 def test_row_changed_emits_targeted_favorite_update(adapter, mock_store):
     mock_store.count.return_value = 1
-    mock_store.asset_at.return_value = _make_dto()
+    _bind_row(mock_store, _make_dto())
 
     emitted_roles = []
     adapter.dataChanged.connect(lambda _top, _bottom, roles: emitted_roles.extend(roles))
