@@ -20,7 +20,6 @@ from PySide6.QtCore import (
 )
 
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
-from iPhoto.i18n import tr
 from iPhoto.gui.coordinators.ai_index_coordinator import AiIndexCoordinator
 from iPhoto.gui.coordinators.gallery_interaction_coordinator import (
     GalleryInteractionCoordinator,
@@ -40,6 +39,7 @@ from iPhoto.gui.coordinators.people_navigation_coordinator import (
 )
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator
+from iPhoto.gui.coordinators.startup_tasks import StartupTasks
 from iPhoto.gui.coordinators.view_router import ViewRouter
 from iPhoto.gui.coordinators.window_chrome_coordinator import WindowChromeCoordinator
 from iPhoto.gui.coordinators.window_preferences import WindowPreferences
@@ -93,6 +93,7 @@ class MainCoordinator(QObject):
         self._facade = context.facade
         self._logger = logging.getLogger(__name__)
         self._startup_loading = True
+        self._startup_tasks = StartupTasks(window, context, parent=self)
         self._map_extension_download = MapExtensionDownloadController(
             window,
             context,
@@ -479,8 +480,7 @@ class MainCoordinator(QObject):
     def start(self):
         """Start the coordinator."""
         self._logger.debug("MainCoordinator started")
-        self._wire_exiftool_missing_warning()
-        self._cleanup_null_gps_locations()
+        self._startup_tasks.run()
         self._view_router.show_gallery()
         self._map_extension_download.maybe_prompt_on_startup()
 
@@ -490,41 +490,6 @@ class MainCoordinator(QObject):
         """Re-enable full tree-update cascade after startup sequence completes."""
         self._startup_loading = False
         self._logger.debug("Startup loading complete, tree-update cascade enabled")
-
-    def _cleanup_null_gps_locations(self) -> None:
-        """One-time cleanup: clear persisted location names for (0, 0) GPS assets."""
-        try:
-            repo = getattr(self._context.asset_runtime, "repository", None)
-            if repo is None:
-                return
-            clear_fn = getattr(repo, "clear_location_for_null_gps", None)
-            if clear_fn is None:
-                return
-            count = clear_fn()
-            if count > 0:
-                self._logger.info("Cleared %d stale location entries for (0,0) GPS assets", count)
-        except Exception:
-            self._logger.debug("GPS location cleanup skipped", exc_info=True)
-
-    def _wire_exiftool_missing_warning(self) -> None:
-        """Show a one-time warning dialog if ExifTool is not found during scanning."""
-        from iPhoto.infrastructure.services import metadata_provider
-        from iPhoto.utils.exiftool import _resolve_exiftool_executable
-
-        def _show_warning(message: str) -> None:
-            from iPhoto.gui.ui.widgets import dialogs
-            warning = tr("dialog.exiftool_warning", message=message)
-            self._logger.warning("ExifTool not found, showing warning dialog")
-            dialogs.show_warning(self._window, warning, title=tr("dialog.exiftool_not_found"))
-
-        # Proactively check exiftool availability at startup
-        try:
-            _resolve_exiftool_executable()
-        except Exception as exc:
-            metadata_provider._exiftool_missing_notified = True
-            _show_warning(str(exc))
-
-        metadata_provider._on_exiftool_missing = _show_warning
 
     # ------------------------------------------------------------------
     # Window manager integration (legacy interface)
