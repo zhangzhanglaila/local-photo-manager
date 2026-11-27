@@ -44,7 +44,7 @@ def test_scan_refreshes_are_coalesced_and_consumed(tmp_path: Path, monkeypatch) 
     resetting continuously, which is what made browsing lag.
     """
 
-    import iPhoto.gui.viewmodels.gallery_collection_store as store_module
+    import iPhoto.gui.viewmodels.gallery_scan_refresh as scan_module
 
     root = tmp_path / "Library"
     root.mkdir()
@@ -67,7 +67,7 @@ def test_scan_refreshes_are_coalesced_and_consumed(tmp_path: Path, monkeypatch) 
     store._window_range = (0, 49)
 
     clock = {"now": 100.0}
-    monkeypatch.setattr(store_module, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+    monkeypatch.setattr(scan_module, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
 
     chunk = [{"rel": "asset_0.jpg", "id": "1000", "dt": datetime(2024, 1, 1, 12).isoformat()}]
 
@@ -92,7 +92,7 @@ def test_scan_chunks_do_not_reload_faster_than_the_coalescing_interval(
 ) -> None:
     """A burst of chunks may not turn into a burst of model resets."""
 
-    import iPhoto.gui.viewmodels.gallery_collection_store as store_module
+    import iPhoto.gui.viewmodels.gallery_scan_refresh as scan_module
 
     root = tmp_path / "Library"
     root.mkdir()
@@ -113,7 +113,7 @@ def test_scan_chunks_do_not_reload_faster_than_the_coalescing_interval(
     store._window_range = (0, 49)
 
     clock = {"now": 100.0}
-    monkeypatch.setattr(store_module, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+    monkeypatch.setattr(scan_module, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
 
     chunk = [{"rel": "asset_0.jpg", "id": "1000", "dt": datetime(2024, 1, 1, 12).isoformat()}]
     for _ in range(20):
