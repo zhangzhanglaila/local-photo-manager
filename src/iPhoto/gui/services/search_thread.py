@@ -11,12 +11,14 @@ argument, and the model spec it ranks with is the spec it was created with.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
 from iPhoto.application.search.embedding_cache import EmbeddingCache
 from iPhoto.config import SearchSettings
+from iPhoto.i18n import tr
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,9 +149,34 @@ def match_location_hits(
     return matches
 
 
+class SearchStage:
+    """Which phase of a search a :class:`SearchProgress` describes."""
+
+    #: The embedding model is being loaded (slow on a cold start).
+    MODEL = "model"
+    #: The stored embeddings are being read from disk.
+    INDEX = "index"
+    #: Cosine ranking is running; nothing slow is left.
+    SEARCH = "search"
+
+
+@dataclass(frozen=True)
+class SearchProgress:
+    """One progress update from :class:`SearchThread`.
+
+    The stage used to be guessed from the message prose (the panel searched it for
+    the word 模型), which broke as soon as the copy changed or was translated.
+    """
+
+    stage: str
+    message: str
+    current: int = 0
+    total: int = 0
+
+
 class SearchThread(QThread):
     finished = Signal(object, str)  # results or None, error
-    progress = Signal(str, int, int)  # message, current, total
+    progress = Signal(object)  # SearchProgress
 
     def __init__(
         self,
@@ -208,7 +235,12 @@ class SearchThread(QThread):
             )
             already_loaded = bool(probe()) if callable(probe) else False
             self.progress.emit(
-                "正在搜索..." if already_loaded else "正在加载 AI 模型...", 0, 0
+                SearchProgress(
+                    SearchStage.SEARCH if already_loaded else SearchStage.MODEL,
+                    tr("search.progress.searching")
+                    if already_loaded
+                    else tr("search.progress.model_loading"),
+                )
             )
             service = session_service
             if service is None:
@@ -226,10 +258,14 @@ class SearchThread(QThread):
                 return
 
             if not service.is_loaded():
-                self.finished.emit(None, "AI 模型加载失败")
+                self.finished.emit(None, tr("search.error.model"))
                 return
 
-            self.progress.emit("AI 模型加载完成，正在加载索引...", 1, 3)
+            self.progress.emit(
+                SearchProgress(
+                    SearchStage.INDEX, tr("search.progress.model_loaded"), 1, 3
+                )
+            )
 
             # 2. Load embeddings
             from iPhoto.agent.services import search_models as _search_models
@@ -240,10 +276,17 @@ class SearchThread(QThread):
             )
 
             if not all_embeddings:
-                self.finished.emit(None, "没有找到照片索引，请先生成索引")
+                self.finished.emit(None, tr("search.error.no_index"))
                 return
 
-            self.progress.emit(f"已加载 {len(all_embeddings)} 个索引，正在搜索...", 2, 3)
+            self.progress.emit(
+                SearchProgress(
+                    SearchStage.SEARCH,
+                    tr("search.progress.index_loaded", count=len(all_embeddings)),
+                    2,
+                    3,
+                )
+            )
 
             # Scope: "当前相册" keeps only the embeddings of the album the
             # user is looking at.
@@ -279,7 +322,7 @@ class SearchThread(QThread):
                         "Album scope filter failed", exc_info=True
                     )
                 if not all_embeddings:
-                    self.finished.emit(None, "当前相册里没有可搜索的照片")
+                    self.finished.emit(None, tr("search.error.no_photos"))
                     return
 
             # Adaptive cutoff: keep the head of *this* query's score
@@ -339,7 +382,7 @@ class SearchThread(QThread):
 
                 query_embedding = service.encode_text(translated_query)
                 if query_embedding is None:
-                    self.finished.emit(None, "搜索编码失败")
+                    self.finished.emit(None, tr("search.error.encode"))
                     return
 
                 sim_scores = matrix @ query_embedding

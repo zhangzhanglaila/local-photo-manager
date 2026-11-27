@@ -20,6 +20,8 @@ from PySide6.QtCore import QRunnable, QThreadPool, Slot
 
 from iPhoto.i18n import tr
 
+from .ai_index_status import AiIndexStatus, AiIndexStatusReport
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -112,7 +114,7 @@ class EmbeddingIndexWorker(QRunnable):
             if not pending:
                 total = embedding_repo.count()
                 self._status.set_indexing(False, len(asset_ids), len(asset_ids))
-                self._status_callback(f"AI 索引已就绪 ({total} 张照片)")
+                self._status_callback(tr("ai.index.ready", count=total))
                 return
 
             from iPhoto.gui.ui.tasks.embedding_worker import EmbeddingWorker
@@ -140,7 +142,7 @@ class EmbeddingIndexWorker(QRunnable):
             def on_finished(processed, failed):
                 tasks.finish("index", failed=bool(failed))
                 status.set_indexing(False, len(asset_ids), len(asset_ids))
-                self._status_callback(f"AI 索引生成完成 ({processed} 张照片)")
+                self._status_callback(tr("ai.index.indexed", count=processed))
 
             worker.signals.progress.connect(on_progress)
             worker.signals.finished.connect(on_finished)
@@ -159,7 +161,7 @@ class EmbeddingInitWorker(QRunnable):
         session,
         *,
         model_spec,
-        callback: Callable[[str, int, int, str], None],
+        callback: Callable[[AiIndexStatusReport], None],
     ) -> None:
         super().__init__()
         self.setAutoDelete(True)
@@ -170,18 +172,30 @@ class EmbeddingInitWorker(QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            # Step 1: Load CLIP model
-            self._callback("loading_model", 0, 0, "正在加载 AI 模型（约350MB）...")
+            # Step 1: Load the embedding model
+            self._callback(
+                AiIndexStatusReport(
+                    AiIndexStatus.LOADING_MODEL, message=tr("ai.index.loading_model")
+                )
+            )
 
             from iPhoto.agent.services import search_models
 
             model_dir = search_models.model_dir(self._model_spec)
             if not search_models.is_installed(self._model_spec):
-                self._callback("error", 0, 0, "模型文件不存在，请先下载模型")
+                self._callback(
+                    AiIndexStatusReport(
+                        AiIndexStatus.ERROR, message=tr("ai.index.model_missing")
+                    )
+                )
                 return
             _LOGGER.debug("Embedding index will load the model from %s", model_dir)
 
-            self._callback("model_loading", 0, 0, "模型文件已找到，正在加载...")
+            self._callback(
+                AiIndexStatusReport(
+                    AiIndexStatus.MODEL_LOADING, message=tr("ai.index.model_loading")
+                )
+            )
 
             # Load model with timeout tracking
             start_time = time.time()
@@ -190,36 +204,52 @@ class EmbeddingInitWorker(QRunnable):
 
             if embedding_service is None or not embedding_service.is_loaded():
                 self._callback(
-                    "error", 0, 0, f"AI 模型加载失败（耗时 {load_time} 秒）"
+                    AiIndexStatusReport(
+                        AiIndexStatus.ERROR,
+                        message=tr("ai.index.model_load_failed", seconds=load_time),
+                    )
                 )
                 return
 
             self._callback(
-                "model_loaded", 0, 0, f"AI 模型加载完成（耗时 {load_time} 秒）"
+                AiIndexStatusReport(
+                    AiIndexStatus.MODEL_LOADED,
+                    message=tr("ai.index.model_loaded", seconds=load_time),
+                )
             )
 
             # Step 2: Get embedding repository
             embedding_repo = self._session.get_embedding_repository()
             if embedding_repo is None:
-                self._callback("error", 0, 0, "数据库初始化失败")
+                self._callback(
+                    AiIndexStatusReport(
+                        AiIndexStatus.ERROR, message=tr("ai.index.db_failed")
+                    )
+                )
                 return
 
             # Step 3: Count images to process
-            self._callback("counting", 0, 0, "正在统计照片数量...")
+            self._callback(
+                AiIndexStatusReport(
+                    AiIndexStatus.COUNTING, message=tr("ai.index.counting")
+                )
+            )
             all_assets = self._session.asset_runtime.assets.read_all()
             image_assets = [asset for asset in all_assets if asset.get("media_type") == 0]
             asset_ids = [asset["id"] for asset in image_assets]
             pending_ids = embedding_repo.get_asset_ids_without_embeddings(asset_ids)
 
             if not pending_ids:
-                self._callback("done", 0, 0, "")
+                self._callback(AiIndexStatusReport(AiIndexStatus.DONE))
                 return
 
             self._callback(
-                "starting",
-                len(pending_ids),
-                len(pending_ids),
-                f"共 {len(pending_ids)} 张照片需要处理",
+                AiIndexStatusReport(
+                    AiIndexStatus.STARTING,
+                    len(pending_ids),
+                    len(pending_ids),
+                    tr("ai.index.pending", count=len(pending_ids)),
+                )
             )
 
             # Step 4: Start embedding generation
@@ -233,15 +263,23 @@ class EmbeddingInitWorker(QRunnable):
             )
 
             def on_progress(current, total, msg):
-                self._callback("progress", current, total, msg)
+                self._callback(
+                    AiIndexStatusReport(
+                        AiIndexStatus.PROGRESS, int(current), int(total), str(msg)
+                    )
+                )
 
             def on_finished(processed, failed):
-                self._callback("done", processed, failed, "")
+                self._callback(
+                    AiIndexStatusReport(AiIndexStatus.DONE, int(processed), int(failed))
+                )
 
             worker.signals.progress.connect(on_progress)
             worker.signals.finished.connect(on_finished)
             worker.signals.error.connect(
-                lambda err: self._callback("error", 0, 0, err)
+                lambda err: self._callback(
+                    AiIndexStatusReport(AiIndexStatus.ERROR, message=str(err))
+                )
             )
 
             QThreadPool.globalInstance().start(worker)
@@ -252,7 +290,9 @@ class EmbeddingInitWorker(QRunnable):
             _LOGGER.error(
                 "Embedding init failed: %s\n%s", exc, traceback.format_exc()
             )
-            self._callback("error", 0, 0, f"{str(exc)[:100]}")
+            self._callback(
+                AiIndexStatusReport(AiIndexStatus.ERROR, message=f"{str(exc)[:100]}")
+            )
 
 
 __all__ = [

@@ -87,6 +87,23 @@ class _StatusBar:
         self.messages.append(message)
 
 
+class _Presenter:
+    """Records what the coordinator would have rendered."""
+
+    def __init__(self) -> None:
+        self.reports: list = []
+        self.intro_shown = False
+
+    def show_intro(self) -> None:
+        self.intro_shown = True
+
+    def reporter(self):
+        def report(update) -> None:
+            self.reports.append(update)
+
+        return report
+
+
 class _Coordinator(MainCoordinator):
     """``MainCoordinator`` without a window, context wiring, or Qt parents."""
 
@@ -98,15 +115,15 @@ class _Coordinator(MainCoordinator):
         )
         self._status_bar = _StatusBar()
         self._logger = logging.getLogger(__name__)
-        self.statuses: list[tuple] = []
+        self.presenter = _Presenter()
         self.spec_lookups = 0
 
     def _active_search_spec(self):
         self.spec_lookups += 1
         return SimpleNamespace(dir_name="siglip2-base")
 
-    def _handle_embedding_status(self, *args) -> None:
-        self.statuses.append(args)
+    def _ai_index_presenter(self) -> _Presenter:
+        return self.presenter
 
 
 class _Signals:
@@ -194,3 +211,13 @@ def test_interactive_bootstrap_builds_a_worker_with_the_coordinator_spec(
     worker = _FakeEmbeddingWorker.instances[0]
     assert worker.kwargs.get("force_rebuild", False) is False
     assert coordinator.spec_lookups >= 1
+    assert coordinator.presenter.intro_shown
+
+    kinds = [report.kind for report in coordinator.presenter.reports]
+    assert kinds[:5] == [
+        "loading_model",
+        "model_loading",
+        "model_loaded",
+        "counting",
+        "starting",
+    ]

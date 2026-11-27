@@ -38,6 +38,8 @@ from iPhoto.gui.services.embedding_bootstrap import (
     SearchModelDownloadWorker,
 )
 from iPhoto.gui.services.search_thread import (
+    SearchProgress,
+    SearchStage,
     SearchThread,
     clear_search_embedding_cache,
 )
@@ -61,6 +63,7 @@ from iPhoto.gui.services.location_trash_navigation_service import (
     LocationTrashNavigationService,
 )
 from iPhoto.gui.services.people_service_resolver import resolve_people_service
+from iPhoto.gui.services.ai_index_status import AiIndexStatusPresenter
 from iPhoto.gui.services.pinned_items_service import PinnedItemsService
 from iPhoto.gui.ui.widgets.asset_delegate import AssetGridDelegate
 from iPhoto.gui.viewmodels.detail_viewmodel import DetailViewModel
@@ -1449,13 +1452,11 @@ class MainCoordinator(QObject):
                 0, lambda: self._finish_search(serial, results, error, query)
             )
 
-        def on_progress(message, current, total):
+        def on_progress(progress):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(
                 0,
-                lambda: self._update_search_progress(
-                    serial, message, current, total
-                ),
+                lambda: self._update_search_progress(serial, progress),
             )
 
         thread = SearchThread(
@@ -1516,7 +1517,9 @@ class MainCoordinator(QObject):
 
         # Scroll to top
         ui.grid_view.scrollToTop()
-        self._status_bar.show_message(f"找到 {total_count} 张与 '{query}' 相关的照片")
+        self._status_bar.show_message(
+            tr("search.results.found", count=total_count, query=query)
+        )
 
     def _finish_search(self, serial: int, results, error: str, query: str) -> None:
         """Complete a search and decide whether to show or announce the results."""
@@ -1560,7 +1563,9 @@ class MainCoordinator(QObject):
             if toast is not None:
                 toast.show_toast(f"搜索完成 · {len(state['results'])} 张")
         else:
-            self._status_bar.show_message(f"没有找到与 '{query}' 相关的照片", 8000)
+            self._status_bar.show_message(
+            tr("search.results.none", query=query), 8000
+        )
             if toast is not None:
                 toast.show_toast("搜索完成 · 0 张")
 
@@ -1601,8 +1606,12 @@ class MainCoordinator(QObject):
         """Show loading state in the grid view area."""
         ui = self._window.ui
         ui.gallery_page.show_search_loading(query)
-    def _update_search_progress(self, serial: int, message: str, current: int, total: int) -> None:
-        """Update search progress in the UI."""
+    def _update_search_progress(self, serial: int, progress: "SearchProgress") -> None:
+        """Update search progress in the UI.
+
+        The worker reports which stage it is in; the panel used to guess it from the
+        message text, which broke as soon as the copy was translated.
+        """
 
         state = self._search_state
         if state is None or state.get("serial") != serial:
@@ -1610,31 +1619,34 @@ class MainCoordinator(QObject):
         if not self._is_search_page_visible():
             # The user navigated away; do not pull them back into the search panel.
             return
-        ui = self._window.ui
-        page = ui.gallery_page
-        if "模型" in message:
-            page.show_model_loading()
-        elif "索引" in message:
+        page = self._window.ui.gallery_page
+        if progress.stage in (SearchStage.MODEL, SearchStage.INDEX):
             page.show_model_loading()
         else:
-            page.show_search_loading(message)
+            page.show_search_loading(progress.message)
     def _display_search_results(self, results: list, query: str = "") -> None:
         """Display search results in the grid view."""
         ui = self._window.ui
         ui.gallery_page.hide_loading()
         if not results:
-            self._status_bar.show_message(f"未找到与 '{query}' 相关的照片")
+            self._status_bar.show_message(
+                tr("search.results.none_short", query=query)
+            )
             return
 
         asset_ids = [r.asset_id for r in results]
         self._gallery_vm.show_search_results(asset_ids)
-        self._status_bar.show_message(f"找到 {len(results)} 张与 '{query}' 相关的照片")
+        self._status_bar.show_message(
+            tr("search.results.found", count=len(results), query=query)
+        )
 
     def _display_search_error(self, error: str) -> None:
         """Display search error in the grid view."""
         ui = self._window.ui
-        ui.gallery_page.show_error("搜索失败", error)
-        self._status_bar.show_message(f"搜索失败: {error}", 10000)
+        ui.gallery_page.show_error(tr("search.error.title"), error)
+        self._status_bar.show_message(
+            tr("search.error.status", message=error), 10000
+        )
 
     def _on_search_back(self) -> None:
         """Handle back button click during search."""
@@ -1817,70 +1829,28 @@ class MainCoordinator(QObject):
         if library_session is None:
             return
 
-        # Show progress in the gallery page with progress bar
-        ui = self._window.ui
-        ui.gallery_page.show_loading_message(
-            "正在初始化 AI 搜索...",
-            "首次使用需要为照片生成索引，之后搜索会很快",
-            show_progress=True,
-        )
-
-        def on_status(status_type, current, total, message):
-            from PySide6.QtCore import QTimer
-
-            QTimer.singleShot(
-                0,
-                lambda: self._handle_embedding_status(
-                    status_type, current, total, message
-                ),
-            )
+        presenter = self._ai_index_presenter()
+        presenter.show_intro()
 
         from iPhoto.gui.services import embedding_bootstrap
 
         worker = EmbeddingInitWorker(
             library_session,
             model_spec=self._active_search_spec(),
-            callback=on_status,
+            callback=presenter.reporter(),
         )
         embedding_bootstrap.QThreadPool.globalInstance().start(worker)
 
-    def _handle_embedding_status(self, status_type: str, current: int, total: int, message: str) -> None:
-        """Handle embedding generation status updates."""
-        ui = self._window.ui
-        self._logger.info(f"Embedding status: {status_type} - {message}")
+    def _ai_index_presenter(self) -> AiIndexStatusPresenter:
+        """Presenter for AI-index progress; created once, on first use."""
 
-        page = ui.gallery_page
-
-        if status_type == "loading_model":
-            page.show_model_loading()
-
-        elif status_type == "model_loading":
-            page.show_model_loading()
-
-        elif status_type == "model_loaded":
-            page.show_model_loading()
-
-        elif status_type == "counting":
-            page.show_model_loading()
-
-        elif status_type == "starting":
-            page.show_indexing_progress(0, current)
-
-        elif status_type == "progress":
-            page.show_indexing_progress(current, total)
-            progress_pct = int(current / total * 100) if total > 0 else 0
-            self._status_bar.show_message(f"AI 索引生成中: {current}/{total} ({progress_pct}%)")
-
-        elif status_type == "done":
-            page.show_done(current)
-            if current > 0:
-                self._status_bar.show_message(f"AI 索引生成完成！共处理 {current} 张照片", 5000)
-            else:
-                self._status_bar.show_message("AI 索引已是最新", 3000)
-
-        elif status_type == "error":
-            page.show_error("初始化失败", message)
-            self._status_bar.show_message(f"AI 初始化失败: {message}", 10000)
+        presenter = getattr(self, "_ai_index_status", None)
+        if presenter is None:
+            presenter = AiIndexStatusPresenter(
+                self._window.ui.gallery_page, self._status_bar
+            )
+            self._ai_index_status = presenter
+        return presenter
 
     def _handle_find_duplicates(self) -> None:
         """Handle find duplicates action."""
