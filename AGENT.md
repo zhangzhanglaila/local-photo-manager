@@ -2,16 +2,16 @@
 
 This file is the working guide for coding agents and contributors. It reflects
 the current vNext state: the production runtime has converged on
-`RuntimeContext -> LibrarySession -> application ports/services`, and legacy
-compatibility code is quarantined under `src/iPhoto/legacy/`.
+`RuntimeContext -> LibrarySession -> application ports/services`, and the
+historical `src/iPhoto/legacy/` compatibility tree has been removed.
 
 ## 1. Current Architecture Status
 
 - The vNext cleanup is complete for production source code.
 - Production runtime code must not import `iPhoto.legacy` or `iPhoto.models.*`.
-- Legacy compatibility and old domain-repository code live only in
-  `src/iPhoto/legacy/`. That subtree is temporary quarantine for historical
-  behavior tests and is planned for removal in the next major release.
+- The legacy compatibility subtree no longer exists; do not recreate
+  `src/iPhoto/legacy/`. Historical behavior belongs in tests or in the current
+  application services, not in a resurrection of the quarantine tree.
 - GUI, CLI, file watchers, Qt workers, and future automation entry points must
   enter library behavior through `RuntimeContext`, `LibrarySession`, and
   application-level surfaces.
@@ -85,9 +85,9 @@ Key runtime objects:
 - `LibraryRuntimeController`: GUI/runtime controller bound to the active
   session; it should not re-create standalone compatibility services.
 
-Compatibility code is not a production extension point. Do not add new features
-to `src/iPhoto/legacy/app.py`, `src/iPhoto/legacy/appctx.py`,
-`src/iPhoto/legacy/bootstrap/*`, or other quarantine modules.
+Compatibility code is not a production extension point. The legacy quarantine
+tree (`src/iPhoto/legacy/app.py`, `legacy/appctx.py`, `legacy/bootstrap/*`) has
+been removed; do not recreate it or add compatibility services there.
 
 ## 4. Files And State
 
@@ -204,7 +204,7 @@ Trash identity rules:
   (`ai/onnx_threads.py`: `intra_op_num_threads <= 4`, overridable via
   `IPHOTO_FACE_THREADS`). Background AI scans must never default to "one thread
   per core".
-- `legacy/`: quarantine only. No production imports and no new functionality.
+- `legacy/`: removed from the tree; do not recreate it.
 
 ## 6. Coding Rules
 

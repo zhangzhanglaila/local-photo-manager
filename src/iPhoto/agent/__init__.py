@@ -10,7 +10,6 @@ This module provides search capabilities using existing metadata:
 No large model downloads required.
 """
 
-from .services.search_service import SearchService
 from .models.search_result import SearchResult
 
-__all__ = ["SearchService", "SearchResult"]
+__all__ = ["SearchResult"]

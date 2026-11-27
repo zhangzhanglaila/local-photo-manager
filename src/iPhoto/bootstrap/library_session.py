@@ -68,7 +68,6 @@ class LibrarySession:
     contexts: LibraryContextFactory | None = None
     bind_asset_runtime: bool = True
     # Agent services (optional, initialized lazily)
-    _search_service: object = field(default=None, repr=False)
     _embedding_service: object = field(default=None, repr=False)
     _embedding_repository: object = field(default=None, repr=False)
 
@@ -130,51 +129,6 @@ class LibrarySession:
         bind_edit_service = getattr(self.asset_runtime, "bind_edit_service", None)
         if callable(bind_edit_service):
             bind_edit_service(self.edit)
-
-    def get_search_service(self):
-        """Get or initialize the search service.
-
-        Returns
-        -------
-        SearchService or None
-            The search service, or None if CLIP model is not available.
-        """
-        if self._search_service is not None:
-            return self._search_service
-
-        try:
-            from ..agent.services import search_models
-            from ..agent.services.search_service import SearchService
-
-            # Get embedding service and repository
-            embedding_service = self.get_embedding_service()
-            embedding_repo = self.get_embedding_repository()
-
-            if embedding_service is None or embedding_repo is None:
-                return None
-
-            # Note: Don't check is_loaded() here - model loads lazily on first use
-            # The search will trigger model loading when needed
-
-            # Create search service with CLIP
-            selection = self.model_selection
-            model = (
-                selection.spec("search")
-                if selection is not None
-                else search_models.resolve_spec(None)
-            )
-            self._search_service = SearchService(
-                embedding_service=embedding_service,
-                asset_repository=self.asset_runtime.assets,
-                embedding_repository=embedding_repo,
-                model=model,
-            )
-
-            return self._search_service
-
-        except Exception as e:
-            logger.warning("Failed to initialize search service: %s", e)
-            return None
 
     def reset_embedding_service(self) -> None:
         """Forget the loaded encoder so the next call loads the active model."""
