@@ -32,6 +32,7 @@ from iPhoto.gui.coordinators.location_coordinator import (
 )
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
+from iPhoto.gui.coordinators.organize_coordinator import OrganizeCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator
 from iPhoto.gui.coordinators.view_router import ViewRouter
@@ -50,7 +51,6 @@ from iPhoto.gui.ui.controllers.window_theme_controller import WindowThemeControl
 from iPhoto.gui.ui.media import MediaAdjustmentCommitter, MediaSelectionSession
 from iPhoto.gui.ui.models.roles import Roles
 from iPhoto.gui.ui.models.spacer_proxy_model import SpacerProxyModel
-from iPhoto.gui.services import organize_workers
 from iPhoto.gui.services.location_trash_navigation_service import (
     LocationTrashNavigationService,
 )
@@ -280,6 +280,13 @@ class MainCoordinator(QObject):
             view_router=self._view_router,
             status_bar=self._status_bar,
             thumbnail_service=self._thumbnail_service,
+            parent=self,
+        )
+
+        self._organize = OrganizeCoordinator(
+            context,
+            gallery_vm=self._gallery_vm,
+            status_bar=self._status_bar,
             parent=self,
         )
 
@@ -659,18 +666,20 @@ class MainCoordinator(QObject):
             self._handle_semantic_search_toggle
         )
         # Agent Organize Features
-        ui.main_header.find_duplicates_action.triggered.connect(self._handle_find_duplicates)
+        ui.main_header.find_duplicates_action.triggered.connect(
+            self._organize.find_duplicates
+        )
         ui.main_header.smart_album_event_action.triggered.connect(
-            lambda: self._handle_create_smart_album("event")
+            lambda: self._organize.create_smart_albums("event")
         )
         ui.main_header.smart_album_location_action.triggered.connect(
-            lambda: self._handle_create_smart_album("location")
+            lambda: self._organize.create_smart_albums("location")
         )
         ui.main_header.smart_album_time_action.triggered.connect(
-            lambda: self._handle_create_smart_album("time")
+            lambda: self._organize.create_smart_albums("time")
         )
         ui.main_header.smart_album_theme_action.triggered.connect(
-            lambda: self._handle_create_smart_album("theme")
+            lambda: self._organize.create_smart_albums("theme")
         )
         # Info Button
         ui.info_button.clicked.connect(self._playback.toggle_info_panel)
@@ -1157,95 +1166,6 @@ class MainCoordinator(QObject):
 
         session = self._session if self._session is not None else self._active_session()
         return getattr(session, "library_root", None)
-
-    def _handle_find_duplicates(self) -> None:
-        """Handle find duplicates action."""
-        library_session = getattr(self._context, "library_session", None)
-        if library_session is None:
-            return
-
-        # Duplicate detection and smart albums read album metadata only; they no
-        # longer need the CLIP embedding service, and gating them on it made both
-        # features unavailable (and could trigger a model-download dialog).
-        organize_workers.find_duplicates(library_session, self._display_duplicates)
-
-        self._status_bar.show_message(
-            tr("organize.searching_duplicates")
-        )
-
-    def _display_duplicates(self, duplicates: list) -> None:
-        """Display duplicate photos in the gallery."""
-        if not duplicates:
-            self._status_bar.show_message(
-                tr("organize.no_duplicates")
-            )
-            return
-
-        # Flatten all duplicate asset IDs
-        all_asset_ids = []
-        for group in duplicates:
-            all_asset_ids.extend(group.asset_ids)
-
-        # Show in gallery
-        self._gallery_vm.show_search_results(all_asset_ids)
-
-        total_groups = len(duplicates)
-        total_photos = len(all_asset_ids)
-        self._status_bar.show_message(
-            tr(
-                "organize.duplicates_found",
-                groups=total_groups,
-                photos=total_photos,
-            )
-        )
-
-    def _handle_create_smart_album(self, group_by: str) -> None:
-        """Handle create smart album action.
-
-        Parameters
-        ----------
-        group_by : str
-            How to group photos: 'event', 'location', 'time', 'theme'.
-        """
-        library_session = getattr(self._context, "library_session", None)
-        if library_session is None:
-            return
-
-        # Duplicate detection and smart albums read album metadata only; they no
-        # longer need the CLIP embedding service, and gating them on it made both
-        # features unavailable (and could trigger a model-download dialog).
-        organize_workers.create_smart_albums(
-            library_session,
-            group_by,
-            lambda albums: self._display_smart_albums(albums, group_by),
-        )
-
-        self._status_bar.show_message(
-            tr(
-                "organize.creating_albums",
-                group_by=tr(f"organize.group.{group_by}"),
-            )
-        )
-
-    def _display_smart_albums(self, albums: list, group_by: str) -> None:
-        """Display smart album suggestions."""
-        if not albums:
-            self._status_bar.show_message(
-                tr("organize.no_albums")
-            )
-            return
-
-        # For now, show the first album's photos in the gallery
-        # In a full implementation, we would create actual albums in the library
-        if albums:
-            first_album = albums[0]
-            self._gallery_vm.show_search_results(first_album.asset_ids)
-
-            total_albums = len(albums)
-            self._status_bar.show_message(
-                tr("organize.albums_created",
-                   default=f"Created {total_albums} smart albums")
-            )
 
     def _on_run_setup_wizard(self) -> None:
         """Re-open the first-run setup wizard from the settings menu."""
