@@ -239,7 +239,10 @@ class OcrResultsPage(QWidget):
         self._splitter.show()
         placeholder = load_icon("photo.on.rectangle.svg", size=(64, 64))
         for asset in assets:
-            item = QListWidgetItem(placeholder, asset.asset_rel, self._list)
+            # OCR rows may store an absolute path for an extra library root;
+            # the list only needs the photo name, with the full path in the tip.
+            name = Path(asset.asset_rel).name or asset.asset_rel
+            item = QListWidgetItem(placeholder, name, self._list)
             item.setData(Qt.ItemDataRole.UserRole, asset.text)
             item.setToolTip(asset.asset_rel)
             self._items_by_rel[asset.asset_rel] = item

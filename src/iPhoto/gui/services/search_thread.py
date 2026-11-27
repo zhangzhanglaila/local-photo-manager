@@ -465,7 +465,9 @@ class SearchThread(QThread):
                             seen_ids.add(hit.asset_id)
                     results.sort(key=lambda x: x["score"], reverse=True)
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug(
+                        "OCR text search failed", exc_info=True
+                    )
 
             # Location search: a plain text query also matches the
             # reverse-geocoded place name ("武汉", "Tokyo"), so "武汉"

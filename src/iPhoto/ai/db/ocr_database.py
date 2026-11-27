@@ -295,36 +295,89 @@ class OCRRepository:
         """
         from ..ocr.models import OCRSearchResult
 
+        text = (query or "").strip()
+        if not text:
+            return []
+        limit = max(1, int(limit))
         conn = self._get_conn()
-        try:
-            rows = conn.execute(
-                """
-                SELECT r.asset_id, r.asset_rel, r.text, r.confidence,
-                       rank,
-                       snippet(ocr_fts, 0, '<b>', '</b>', '...', 32) as snippet
-                FROM ocr_fts
-                JOIN ocr_regions r ON ocr_fts.rowid = r.rowid
-                WHERE ocr_fts MATCH ?
-                ORDER BY rank
-                LIMIT ?
-                """,
-                (query, limit),
-            ).fetchall()
+        results: list = []
+        seen: set[int] = set()
 
-            return [
+        def _append(row, *, rank: float, snippet: str) -> None:
+            rowid = int(row["rowid"])
+            if rowid in seen:
+                return
+            seen.add(rowid)
+            results.append(
                 OCRSearchResult(
                     asset_id=row["asset_id"],
                     asset_rel=row["asset_rel"],
                     text=row["text"],
-                    confidence=row["confidence"],
-                    rank=row["rank"],
-                    snippet=row["snippet"] or "",
+                    confidence=float(row["confidence"]),
+                    rank=float(rank),
+                    snippet=snippet or "",
                 )
-                for row in rows
-            ]
-        except sqlite3.OperationalError as e:
-            _LOGGER.warning("FTS search failed for '%s': %s", query, e)
-            return []
+            )
+
+        # FTS first: for space-delimited languages it gives real token matches
+        # and ranking. A malformed query (punctuation, a lone "-", ...) must not
+        # abort the search; retry it as a quoted phrase before falling back.
+        fts_sql = """
+            SELECT r.rowid, r.asset_id, r.asset_rel, r.text, r.confidence,
+                   rank,
+                   snippet(ocr_fts, 0, '<b>', '</b>', '...', 32) as snippet
+            FROM ocr_fts
+            JOIN ocr_regions r ON ocr_fts.rowid = r.rowid
+            WHERE ocr_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+        """
+        for fts_query in (text, '"' + text.replace('"', '""') + '"'):
+            try:
+                rows = conn.execute(fts_sql, (fts_query, limit)).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            if rows:
+                for row in rows:
+                    _append(
+                        row,
+                        rank=row["rank"],
+                        snippet=row["snippet"] or "",
+                    )
+                break
+
+        # FTS5's unicode61 tokenizer stores a run of Chinese characters as one
+        # token, so "牛杂" cannot find the stored "莉莉牛杂". The LIKE scan is a
+        # few milliseconds for a 25k-region index and makes CJK substrings work.
+        # For non-CJK queries only run it when token search found nothing, so a
+        # common English word does not also match every longer word containing it.
+        has_cjk = any(
+            "\u3040" <= character <= "\u30ff"
+            or "\u3400" <= character <= "\u4dbf"
+            or "\u4e00" <= character <= "\u9fff"
+            or "\uf900" <= character <= "\ufaff"
+            for character in text
+        )
+        if not has_cjk and results:
+            return results[:limit]
+
+        escaped = (
+            text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        rows = conn.execute(
+            """
+            SELECT rowid, asset_id, asset_rel, text, confidence
+            FROM ocr_regions
+            WHERE text LIKE ? ESCAPE '\\'
+            ORDER BY confidence DESC
+            LIMIT ?
+            """,
+            (f"%{escaped}%", limit),
+        ).fetchall()
+        for row in rows:
+            _append(row, rank=0.0, snippet=row["text"])
+
+        return results[:limit]
 
     def get_asset_ids_with_ocr(self) -> set[str]:
         """Get set of asset IDs that have OCR data."""

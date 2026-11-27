@@ -137,7 +137,11 @@ class _Coordinator(SearchCoordinator):
 def _install_fakes(monkeypatch) -> None:
     from iPhoto.agent.services import search_models
     from iPhoto.bootstrap import embedding_index
+    from iPhoto.gui.services import search_thread as search_thread_module
 
+    # The tests drive ``run()`` synchronously; starting the QThread as well made
+    # two workers race and occasionally aborted Qt teardown.
+    monkeypatch.setattr(search_thread_module.SearchThread, "start", lambda self: None)
     monkeypatch.setattr(search_models, "is_installed", lambda spec, **kw: True)
     monkeypatch.setattr(search_models, "model_dir", lambda spec: Path("D:/models"))
     monkeypatch.setattr(
@@ -180,3 +184,43 @@ def test_search_worker_returns_results(monkeypatch) -> None:
     assert results, "at least one match is returned"
     assert {item["asset_id"] for item in results} <= {"asset-a", "asset-b", "asset-c"}
     assert coordinator.spec_lookups >= 1
+
+
+def test_search_worker_includes_ocr_text_hits(monkeypatch) -> None:
+    """A text-only match must reach the same result list as visual matches."""
+
+    from iPhoto.ai.db import ocr_database
+    from iPhoto.ai.ocr.models import OCRSearchResult
+
+    _install_fakes(monkeypatch)
+
+    class _OcrRepo:
+        def search(self, query, limit=100):
+            assert query == "dog"
+            return [
+                OCRSearchResult(
+                    asset_id="asset-ocr",
+                    asset_rel="ocr.jpg",
+                    text="dog license",
+                    confidence=0.95,
+                    rank=0.0,
+                )
+            ]
+
+    monkeypatch.setattr(
+        ocr_database, "get_ocr_repository", lambda root: _OcrRepo()
+    )
+    coordinator = _Coordinator()
+    SearchCoordinator.handle_search_requested(coordinator, "dog")
+    thread = coordinator._search_threads[-1]
+    captured: list[tuple] = []
+    thread.finished.connect(lambda results, error: captured.append((results, error)))
+
+    thread.run()
+
+    results, error = captured[-1]
+    assert error == ""
+    assert any(
+        result["asset_id"] == "asset-ocr" and result.get("source") == "ocr"
+        for result in results
+    )

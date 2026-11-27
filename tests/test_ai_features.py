@@ -153,6 +153,44 @@ def test_ocr_repository_groups_lines_per_photo(library: Path):
         repository.close()
 
 
+def test_ocr_search_finds_cjk_substrings(library: Path):
+    """FTS5 stores a run of Chinese as one token; search must still find words."""
+
+    from iPhoto.ai.db.ocr_database import OCRRepository
+    from iPhoto.ai.ocr.models import OCRRegion
+
+    repository = OCRRepository(library)
+    try:
+        repository.store_regions(
+            "cjk",
+            "cjk.jpg",
+            [OCRRegion("莉莉牛杂", 0.9, 0, 0, 10, 5)],
+        )
+        assert [hit.asset_id for hit in repository.search("牛杂")] == ["cjk"]
+        assert [hit.asset_id for hit in repository.search("莉莉")] == ["cjk"]
+        assert [hit.asset_id for hit in repository.search("莉莉牛杂")] == ["cjk"]
+        # Punctuation must not abort the search with an FTS syntax error.
+        repository.search("莉莉-牛杂")
+    finally:
+        repository.close()
+
+
+def test_ocr_search_falls_back_for_english_substrings(library: Path):
+    from iPhoto.ai.db.ocr_database import OCRRepository
+    from iPhoto.ai.ocr.models import OCRRegion
+
+    repository = OCRRepository(library)
+    try:
+        repository.store_regions(
+            "en",
+            "en.jpg",
+            [OCRRegion("MAKE LIFE ELECTRIC", 0.9, 0, 0, 10, 5)],
+        )
+        assert [hit.asset_id for hit in repository.search("LIFE")] == ["en"]
+    finally:
+        repository.close()
+
+
 def test_ocr_results_page_lists_photos_and_their_text(qapp, tmp_path):
     from iPhoto.ai.db.ocr_database import OCRRepository
     from iPhoto.ai.ocr.models import OCRRegion

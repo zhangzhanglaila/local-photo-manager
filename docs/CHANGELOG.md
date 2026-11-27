@@ -53,6 +53,11 @@ into the photo folder.*
 - 设置 → 智能 now has a **查看 OCR 结果** page: a back arrow returns to settings,
   the left column lists recognized photos with thumbnails, and the right pane
   shows every text line found in the selected photo.
+- OCR text now participates in the normal search box for Chinese substrings.
+  FTS5's `unicode61` tokenizer stores a Chinese run as one token, so searching
+  `牛杂` could not find a photo whose OCR text was `莉莉牛杂`; the repository now
+  retries the query and falls back to a bounded `LIKE` scan, with the same
+  behavior for English substrings and punctuation-safe queries.
 
 ### Correctness fixes found by the failing tests
 
