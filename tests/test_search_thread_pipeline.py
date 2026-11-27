@@ -18,8 +18,7 @@ import pytest
 
 pytest.importorskip("PySide6.QtCore", reason="the search worker is a QThread")
 
-from iPhoto.gui.coordinators import main_coordinator as module  # noqa: E402
-from iPhoto.gui.coordinators.main_coordinator import MainCoordinator  # noqa: E402
+from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator  # noqa: E402
 
 
 class _Sidebar:
@@ -91,7 +90,7 @@ class _StatusBar:
         self.messages.append(message)
 
 
-class _Coordinator(MainCoordinator):
+class _Coordinator(SearchCoordinator):
     """MainCoordinator with the search surface stubbed out."""
 
     def __init__(self) -> None:  # noqa: D107 - deliberately skips QObject.__init__
@@ -112,7 +111,7 @@ class _Coordinator(MainCoordinator):
         self.spec_lookups = 0
 
     # Stubs for the surface the method touches.
-    def _show_search_loading(self, query, sub_message=None, show_continue=False) -> None:
+    def show_search_loading(self, query, sub_message=None, show_continue=False) -> None:
         pass
 
     def _active_search_spec(self):
@@ -122,16 +121,16 @@ class _Coordinator(MainCoordinator):
     def _active_session(self):
         return _Session()
 
-    def _search_precision(self) -> str:
+    def search_precision(self) -> str:
         return "balanced"
 
-    def _current_album_rel_path(self):
+    def current_album_rel_path(self):
         return None
 
-    def _retire_search_thread(self, thread) -> None:
+    def retire_search_thread(self, thread) -> None:
         pass
 
-    def _is_search_page_visible(self) -> bool:
+    def is_search_page_visible(self) -> bool:
         return False
 
 
@@ -166,7 +165,7 @@ def test_search_worker_returns_results(monkeypatch) -> None:
     _install_fakes(monkeypatch)
     coordinator = _Coordinator()
 
-    MainCoordinator._handle_search_requested(coordinator, "dog")
+    SearchCoordinator.handle_search_requested(coordinator, "dog")
 
     assert coordinator._search_threads, "the worker was created"
     thread = coordinator._search_threads[-1]

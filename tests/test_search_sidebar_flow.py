@@ -10,7 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
+from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator
+from iPhoto.gui.services.search_thread import SearchProgress, SearchStage
 
 
 class _Sidebar:
@@ -49,38 +50,38 @@ def _fake_coordinator(*, visible: bool, results: list | None = None):
             "error": "",
             "serial": 7,
         },
-        _is_search_page_visible=lambda: visible,
+        is_search_page_visible=lambda: visible,
         _displayed=[],
         _shown_loading=[],
         _shown_errors=[],
     )
-    coordinator._display_search_results_raw = (
+    coordinator.display_search_results_raw = (
         lambda result_list, query: coordinator._displayed.append((list(result_list), query))
     )
-    coordinator._show_search_loading = (
+    coordinator.show_search_loading = (
         lambda query: coordinator._shown_loading.append(query)
     )
-    coordinator._display_search_error = (
+    coordinator.display_search_error = (
         lambda error: coordinator._shown_errors.append(error)
     )
     return coordinator
 
 
-def test_finish_search_shows_results_when_panel_still_visible() -> None:
+def testfinish_search_shows_results_when_panel_still_visible() -> None:
     results = [{"asset_id": "a"}]
     coordinator = _fake_coordinator(visible=True, results=results)
 
-    MainCoordinator._finish_search(coordinator, 7, results, "", "cat")
+    SearchCoordinator.finish_search(coordinator, 7, results, "", "cat")
 
     assert coordinator._displayed == [(results, "cat")]
     assert coordinator._window.ui.sidebar.calls == [("cat", {"count": 1})]
 
 
-def test_finish_search_announces_results_after_navigating_away() -> None:
+def testfinish_search_announces_results_after_navigating_away() -> None:
     results = [{"asset_id": "a"}, {"asset_id": "b"}]
     coordinator = _fake_coordinator(visible=False)
 
-    MainCoordinator._finish_search(coordinator, 7, results, "", "cat")
+    SearchCoordinator.finish_search(coordinator, 7, results, "", "cat")
 
     assert coordinator._displayed == []
     assert coordinator._window.ui.sidebar.calls == [("cat", {"count": 2})]
@@ -91,10 +92,10 @@ def test_finish_search_announces_results_after_navigating_away() -> None:
     )
 
 
-def test_finish_search_ignores_superseded_search() -> None:
+def testfinish_search_ignores_superseded_search() -> None:
     coordinator = _fake_coordinator(visible=True)
 
-    MainCoordinator._finish_search(
+    SearchCoordinator.finish_search(
         coordinator, 6, [{"asset_id": "old"}], "", "cat"
     )
 
@@ -102,10 +103,10 @@ def test_finish_search_ignores_superseded_search() -> None:
     assert coordinator._window.ui.sidebar.calls == []
 
 
-def test_finish_search_reports_failure_away_from_panel() -> None:
+def testfinish_search_reports_failure_away_from_panel() -> None:
     coordinator = _fake_coordinator(visible=False)
 
-    MainCoordinator._finish_search(coordinator, 7, None, "boom", "cat")
+    SearchCoordinator.finish_search(coordinator, 7, None, "boom", "cat")
 
     assert coordinator._window.ui.sidebar.calls == [("cat", {"failed": True})]
     assert any("搜索失败" in message for message in coordinator._status_bar.messages)
@@ -114,7 +115,7 @@ def test_finish_search_reports_failure_away_from_panel() -> None:
 def test_search_entry_click_reopens_loading_panel() -> None:
     coordinator = _fake_coordinator(visible=False)
 
-    MainCoordinator._handle_search_entry_selected(coordinator)
+    SearchCoordinator.handle_search_entry_selected(coordinator)
 
     assert coordinator._shown_loading == ["cat"]
     assert coordinator._view_router.shown == 1
@@ -125,7 +126,7 @@ def test_search_entry_click_shows_finished_results() -> None:
     coordinator = _fake_coordinator(visible=False, results=results)
     coordinator._search_state["done"] = True
 
-    MainCoordinator._handle_search_entry_selected(coordinator)
+    SearchCoordinator.handle_search_entry_selected(coordinator)
 
     assert coordinator._displayed == [(results, "cat")]
 
@@ -147,8 +148,8 @@ def test_progress_does_not_reopen_panel_after_navigating_away() -> None:
     page = _Page()
     coordinator._window.ui.gallery_page = page
 
-    MainCoordinator._update_search_progress(
-        coordinator, 7, "正在加载 AI 模型...", 0, 0
+    SearchCoordinator.update_search_progress(
+        coordinator, 7, SearchProgress(SearchStage.MODEL, "正在加载 AI 模型...")
     )
 
     assert page.model_loading == 0
@@ -160,16 +161,20 @@ def test_progress_updates_panel_while_search_visible() -> None:
     page = _Page()
     coordinator._window.ui.gallery_page = page
 
-    MainCoordinator._update_search_progress(coordinator, 7, "正在加载 AI 模型...", 0, 0)
+    SearchCoordinator.update_search_progress(
+        coordinator, 7, SearchProgress(SearchStage.MODEL, "正在加载 AI 模型...")
+    )
 
     assert page.model_loading == 1
 
-    MainCoordinator._update_search_progress(coordinator, 7, "正在搜索...", 0, 0)
+    SearchCoordinator.update_search_progress(
+        coordinator, 7, SearchProgress(SearchStage.SEARCH, "正在搜索...")
+    )
 
     assert page.loading == ["正在搜索..."]
 
 
-def test_current_album_rel_path_only_returns_nested_albums() -> None:
+def testcurrent_album_rel_path_only_returns_nested_albums() -> None:
     library = Path("/library")
 
     nested = SimpleNamespace(
@@ -181,8 +186,8 @@ def test_current_album_rel_path_only_returns_nested_albums() -> None:
         _gallery_vm=SimpleNamespace(active_root=SimpleNamespace(value=library)),
     )
 
-    assert MainCoordinator._current_album_rel_path(nested) == "Trip"
-    assert MainCoordinator._current_album_rel_path(root_view) is None
+    assert SearchCoordinator.current_album_rel_path(nested) == "Trip"
+    assert SearchCoordinator.current_album_rel_path(root_view) is None
 
 
 def test_search_history_dedupes_and_keeps_ten_entries() -> None:
@@ -199,13 +204,13 @@ def test_search_history_dedupes_and_keeps_ten_entries() -> None:
     settings = _Settings()
     coordinator = SimpleNamespace(_context=SimpleNamespace(settings=settings))
 
-    MainCoordinator._record_search_history(coordinator, "a")
-    MainCoordinator._record_search_history(coordinator, "c")
+    SearchCoordinator.record_search_history(coordinator, "a")
+    SearchCoordinator.record_search_history(coordinator, "c")
 
     assert settings.values["agent.search_history"] == ["c", "a", "b"]
 
     for index in range(12):
-        MainCoordinator._record_search_history(coordinator, f"query-{index}")
+        SearchCoordinator.record_search_history(coordinator, f"query-{index}")
 
     history = settings.values["agent.search_history"]
     assert len(history) == 10
@@ -217,7 +222,9 @@ def test_stale_progress_is_ignored() -> None:
     page = _Page()
     coordinator._window.ui.gallery_page = page
 
-    MainCoordinator._update_search_progress(coordinator, 6, "正在搜索...", 0, 0)
+    SearchCoordinator.update_search_progress(
+        coordinator, 6, SearchProgress(SearchStage.SEARCH, "正在搜索...")
+    )
 
     assert page.model_loading == 0
     assert page.loading == []

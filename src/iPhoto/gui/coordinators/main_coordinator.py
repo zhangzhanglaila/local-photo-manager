@@ -15,7 +15,6 @@ from PySide6.QtCore import (
     QItemSelectionModel,
     QModelIndex,
     QObject,
-    QSize,
     Qt,
     QThreadPool,
     QTimer,
@@ -23,10 +22,8 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QAction
 
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
-from iPhoto.config import SearchSettings
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
-from iPhoto.application.dtos import ScanStatus
 from iPhoto.gui.coordinators.ai_index_coordinator import AiIndexCoordinator
 from iPhoto.gui.coordinators.location_coordinator import (
     MAP_FOCUS_MAX_RETRIES,
@@ -36,12 +33,8 @@ from iPhoto.gui.coordinators.location_coordinator import (
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
+from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator
 from iPhoto.gui.coordinators.view_router import ViewRouter
-from iPhoto.gui.services.search_thread import (
-    SearchProgress,
-    SearchStage,
-    SearchThread,
-)
 from iPhoto.gui.ui.controllers.context_menu_controller import ContextMenuController
 from iPhoto.gui.ui.controllers.dialog_controller import DialogController
 from iPhoto.gui.ui.controllers.export_controller import ExportController
@@ -76,12 +69,6 @@ from ...utils.pathutils import paths_equal
 if TYPE_CHECKING:
     from iPhoto.gui.ui.main_window import MainWindow
 
-
-
-
-#: Search workers that were still running when the app shut down. Keeping them
-#: referenced prevents a live QThread from being destroyed during teardown.
-_ORPHANED_SEARCH_THREADS: list = []
 
 class MainCoordinator(QObject):
     """High-level coordinator for the main window.
@@ -126,13 +113,6 @@ class MainCoordinator(QObject):
         self._gallery_store = self._asset_list_vm.store
         self._media_session = MediaSelectionSession()
         self._media_session.bind_collection(self._gallery_store)
-        # Active semantic search: query, results, completion state and a serial so
-        # a superseded search cannot overwrite the newer one.
-        self._search_state: dict | None = None
-        self._search_serial = 0
-        # Running search threads. The previous one must stay referenced until it
-        # finishes: replacing the only reference destroyed a live QThread.
-        self._search_threads: list = []
         self._thumbnail_service = self._context.asset_runtime.thumbnail_service
         bound_people_service = self._people_service(library_root=lib_root)
         self._playback_people_service = bound_people_service or PeopleService()
@@ -290,6 +270,17 @@ class MainCoordinator(QObject):
             window.ui.progress_bar,
             window.ui.rescan_action,
             context,
+        )
+
+        self._search = SearchCoordinator(
+            window,
+            context,
+            gallery_vm=self._gallery_vm,
+            gallery_store=self._gallery_store,
+            view_router=self._view_router,
+            status_bar=self._status_bar,
+            thumbnail_service=self._thumbnail_service,
+            parent=self,
         )
 
         self._location = LocationCoordinator(
@@ -501,13 +492,7 @@ class MainCoordinator(QObject):
         """Stop worker threads and background jobs before the app exits."""
         # 0. Search workers load the AI model; let them finish or expire before the
         #    window (and their Qt parent objects) are torn down.
-        for thread in list(getattr(self, "_search_threads", [])):
-            if thread.isRunning():
-                thread.requestInterruption()
-                thread.wait(3000)
-            if thread.isRunning():
-                _ORPHANED_SEARCH_THREADS.append(thread)
-        self._search_threads.clear()
+        self._search.shutdown()
 
         # 1. Cancel any active background scans/imports via Facade
         if self._facade:
@@ -656,20 +641,20 @@ class MainCoordinator(QObject):
 
         # Semantic Search
         ui.main_header.search_submitted_with_scope.connect(
-            self._handle_search_requested
+            self._search.handle_search_requested
         )
-        ui.main_header.search_popup_opened.connect(self._prepare_search_popup)
-        ui.main_header.similar_search_requested.connect(self._handle_similar_search)
+        ui.main_header.search_popup_opened.connect(self._search.prepare_search_popup)
+        ui.main_header.similar_search_requested.connect(self._search.handle_similar_search)
         ui.main_header.search_history_clear_requested.connect(
-            self._clear_search_history
+            self._search.clear_search_history
         )
         self._thumbnail_service.thumbnailReady.connect(
-            self._on_popup_thumbnail_ready
+            self._search.on_popup_thumbnail_ready
         )
         ui.main_header.search_precision_group.triggered.connect(
-            self._handle_search_precision_changed
+            self._search.handle_search_precision_changed
         )
-        ui.sidebar.searchEntrySelected.connect(self._handle_search_entry_selected)
+        ui.sidebar.searchEntrySelected.connect(self._search.handle_search_entry_selected)
         ui.main_header.toggle_semantic_search_action.toggled.connect(
             self._handle_semantic_search_toggle
         )
@@ -698,7 +683,7 @@ class MainCoordinator(QObject):
         # Gallery page back button for cluster gallery mode
         ui.gallery_page.backRequested.connect(self._gallery_vm.return_from_cluster_gallery)
         # Search back button
-        ui.gallery_page.searchBackRequested.connect(self._on_search_back)
+        ui.gallery_page.searchBackRequested.connect(self._search.on_search_back)
         # Dashboard Click
         ui.albums_dashboard_page.albumSelected.connect(self.open_album_from_path)
         ui.people_page.clusterActivated.connect(self._on_people_cluster_activated)
@@ -717,7 +702,7 @@ class MainCoordinator(QObject):
             lambda msg: self._status_bar.show_message(msg)
         )
         self._context.library.ocrScanStatusChanged.connect(
-            self._on_ocr_scan_status
+            self._search.on_ocr_scan_status
         )
         # Sidebar checkbox filtering
         ui.sidebar.albumCheckStateChanged.connect(self._on_album_check_state_changed)
@@ -873,11 +858,6 @@ class MainCoordinator(QObject):
 
     def _active_session(self):
         return getattr(self._context, "library_session", None)
-
-    def _active_search_spec(self):
-        """Search model currently selected, as recorded by bootstrap."""
-
-        return self._context.model_selection.spec("search")
 
     def _library_root(self) -> Path | None:
         session = self._active_session()
@@ -1137,417 +1117,6 @@ class MainCoordinator(QObject):
             logging.getLogger(__name__).debug(
                 "_sync_selection failed for row %s", row, exc_info=True
             )
-
-    def _record_search_history(self, query: str) -> None:
-        """Remember the query so the search dropdown can offer it again."""
-
-        text = (query or "").strip()
-        if not text:
-            return
-        try:
-            history = list(self._context.settings.get("agent.search_history", []) or [])
-        except Exception:
-            history = []
-        history = [text] + [item for item in history if item != text]
-        self._context.settings.set("agent.search_history", history[:10])
-
-    def _clear_search_history(self) -> None:
-        self._context.settings.set("agent.search_history", [])
-        self._window.ui.main_header.set_search_history([])
-
-    def _current_album_rel_path(self) -> str | None:
-        """Library-relative path of the album being viewed, if any."""
-
-        root = self._context.library.root()
-        active = getattr(self._gallery_vm, "active_root", None)
-        active_path = getattr(active, "value", active)
-        if root is None or active_path is None:
-            return None
-        try:
-            relative = (
-                Path(active_path).resolve().relative_to(Path(root).resolve()).as_posix()
-            )
-        except (OSError, ValueError):
-            return None
-        return None if relative in ("", ".") else relative
-
-    def _current_album_label(self) -> str | None:
-        relative = self._current_album_rel_path()
-        return Path(relative).name if relative else None
-
-    def _prepare_search_popup(self) -> None:
-        """Fill the dropdown with history, scope and visual shortcuts."""
-
-        header = self._window.ui.main_header
-        try:
-            history = list(self._context.settings.get("agent.search_history", []) or [])
-        except Exception:
-            history = []
-        header.set_search_history(history[:10])
-        header.set_album_scope(self._current_album_label())
-        self._populate_popup_similar()
-
-    def _populate_popup_similar(self) -> None:
-        """Offer a few thumbnails from the current view for "find similar"."""
-
-        header = self._window.ui.main_header
-        size = QSize(72, 72)
-        self._popup_similar_paths: dict[Path, str] = {}
-        items: list[tuple[str, object]] = []
-
-        store = self._gallery_store
-        try:
-            count = min(8, store.count())
-        except Exception:
-            count = 0
-
-        for row in range(count):
-            try:
-                asset = store.asset_at(row)
-            except Exception:
-                asset = None
-            if asset is None or asset.abs_path is None:
-                continue
-            asset_id = str(getattr(asset, "id", "") or "")
-            if not asset_id:
-                continue
-            path = Path(asset.abs_path)
-            self._popup_similar_paths[path] = asset_id
-            pixmap = self._thumbnail_service.get_thumbnail(path, size)
-            if pixmap is not None:
-                items.append((asset_id, pixmap))
-
-        header.set_similar_photos(items)
-
-    def _on_popup_thumbnail_ready(self, path: Path) -> None:
-        """Fill a suggested thumbnail as soon as the cache produces it."""
-
-        target = Path(path)
-        asset_id = getattr(self, "_popup_similar_paths", {}).get(target)
-        if not asset_id:
-            return
-        header = self._window.ui.main_header
-        popup = getattr(header, "_search_popup", None)
-        if popup is None or not popup.isVisible():
-            return
-        pixmap = self._thumbnail_service.get_thumbnail(target, QSize(72, 72))
-        if pixmap is not None:
-            header.add_similar_photo(asset_id, pixmap)
-
-    def _handle_similar_search(self, asset_id: str) -> None:
-        """Search for photos that look like *asset_id*."""
-
-        self._handle_search_requested(
-            tr("search.similar_query"), "all", similar_to=asset_id
-        )
-
-    def _on_ocr_scan_status(self, status: object) -> None:
-        """Surface the OCR backfill in the status bar.
-
-        Skipped while the user is looking at search results so the result count
-        is not replaced by background-scan chatter. The scan layer sends a
-        :class:`ScanStatus` key instead of a finished sentence, so "this is the
-        last message" comes from the payload rather than from searching the text
-        for a word like ``完成`` (which broke as soon as the UI was translated).
-        """
-
-        if not isinstance(status, ScanStatus) or not status.key:
-            return
-        visible = getattr(self, "_is_search_page_visible", None)
-        if callable(visible) and visible():
-            return
-        message = tr(status.key, **dict(status.params))
-        if status.completed:
-            self._status_bar.show_message(message, 5000)
-        else:
-            self._status_bar.show_message(message)
-
-    def _handle_search_requested(
-        self, query: str, scope: str = "all", *, similar_to: str | None = None
-    ) -> None:
-        """Handle semantic search request from the search input."""
-        self._logger.info("Search requested: %s (scope=%s)", query, scope)
-
-        state = self._search_state
-        if (
-            state is not None
-            and not state.get("done")
-            and state.get("query") == query
-            and state.get("similar_to") == similar_to
-        ):
-            # Same query is already searching (e.g. Enter pressed twice): show the
-            # panel again instead of spawning a second worker that loads the model
-            # in parallel.
-            self._view_router.show_gallery()
-            self._show_search_loading(query)
-            return
-
-        if similar_to is None:
-            self._record_search_history(query)
-
-        self._search_serial += 1
-        serial = self._search_serial
-        self._search_state = {
-            "query": query,
-            "results": [],
-            "done": False,
-            "error": "",
-            "serial": serial,
-            "scope": scope,
-            "similar_to": similar_to,
-        }
-        # A dedicated sidebar entry keeps the search reachable while it loads, so
-        # the user can browse other views instead of waiting on the loading panel.
-        self._window.ui.sidebar.set_search_state(query, loading=True)
-
-        # Switch to gallery view
-        self._view_router.show_gallery()
-
-        # Show loading
-        self._show_search_loading(query)
-
-        # Run search in background thread
-        from PySide6.QtCore import QThread, Signal
-
-        # Get paths before starting thread
-        from iPhoto.agent.services import search_models
-
-        library_root = Path(self._context.library.root())
-        model_dir = search_models.model_dir(self._active_search_spec())
-        # Reuse the session's embedding service: it is warmed before the face scan
-        # starts, so rebuilding a service here would reload the weights on every
-        # single search.
-        library_session = self._active_session()
-        # The nested worker's ``self`` is the thread, so the coordinator is captured
-        # once here: ``self._active_search_spec()`` inside ``run`` raised
-        # AttributeError, which made every search with a bound session fail.
-        coordinator = self
-
-        def on_finished(results, error):
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(
-                0, lambda: self._finish_search(serial, results, error, query)
-            )
-
-        def on_progress(progress):
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(
-                0,
-                lambda: self._update_search_progress(serial, progress),
-            )
-
-        thread = SearchThread(
-            query,
-            model_dir,
-            library_root,
-            self._active_search_spec(),
-            library_session=library_session,
-            precision=self._search_precision(),
-            scope_album_path=(
-                self._current_album_rel_path() if scope == "album" else None
-            ),
-            similar_to=similar_to,
-        )
-        thread.finished.connect(on_finished)
-        thread.progress.connect(on_progress)
-        thread.finished.connect(lambda *_: self._retire_search_thread(thread))
-        self._search_thread = thread
-        self._search_threads.append(thread)
-        thread.start()
-
-    def _retire_search_thread(self, thread) -> None:
-        """Release a finished search worker without destroying a running one."""
-
-        thread.wait(1000)
-        try:
-            self._search_threads.remove(thread)
-        except ValueError:
-            pass
-        if getattr(self, "_search_thread", None) is thread:
-            self._search_thread = None
-        thread.deleteLater()
-
-    def _display_search_results_raw(self, results: list, query: str) -> None:
-        """Display search results."""
-        ui = self._window.ui
-        # Search results live in the grid; make sure it is the view the page
-        # returns to, even when the search was started from the Home view.
-        ui.gallery_page.show_grid()
-        ui.gallery_page.hide_loading()
-        if not results:
-            # Order matters: paint the "no matches" state first so a failure in
-            # the model update cannot leave the previous search's photos visible.
-            ui.gallery_page.show_search_results_header(query, 0)
-            ui.gallery_page.show_search_empty(query)
-            try:
-                self._gallery_vm.show_search_results([])
-            except Exception:
-                self._logger.debug("could not clear search results", exc_info=True)
-            self._status_bar.show_message(tr("search.empty.title", query=query))
-            return
-
-        # Show search results header with back button
-        total_count = len(results)
-        ui.gallery_page.show_search_results_header(query, total_count)
-        asset_ids = [r["asset_id"] for r in results]
-        self._gallery_vm.show_search_results(asset_ids)
-
-        # Scroll to top
-        ui.grid_view.scrollToTop()
-        self._status_bar.show_message(
-            tr("search.results.found", count=total_count, query=query)
-        )
-
-    def _finish_search(self, serial: int, results, error: str, query: str) -> None:
-        """Complete a search and decide whether to show or announce the results."""
-
-        state = self._search_state
-        if (
-            state is None
-            or state.get("serial") != serial
-            or state.get("query") != query
-        ):
-            return  # superseded by a newer search
-
-        state["done"] = True
-        state["error"] = error or ""
-        state["results"] = list(results or [])
-
-        sidebar = self._window.ui.sidebar
-        if error:
-            sidebar.set_search_state(query, failed=True)
-        else:
-            sidebar.set_search_state(query, count=len(state["results"]))
-
-        if self._is_search_page_visible():
-            if error:
-                self._display_search_error(error)
-            else:
-                self._display_search_results_raw(state["results"], query)
-            return
-
-        # The user navigated away while the search was running: keep the result
-        # available in the sidebar and announce it instead of switching views.
-        toast = getattr(self._window.ui, "notification_toast", None)
-        if error:
-            self._status_bar.show_message(f"搜索失败：{error}", 8000)
-        elif state["results"]:
-            self._status_bar.show_message(
-                f"搜索完成：找到 {len(state['results'])} 张，"
-                f"点击左侧「搜索：{query}」查看",
-                10000,
-            )
-            if toast is not None:
-                toast.show_toast(f"搜索完成 · {len(state['results'])} 张")
-        else:
-            self._status_bar.show_message(
-            tr("search.results.none", query=query), 8000
-        )
-            if toast is not None:
-                toast.show_toast("搜索完成 · 0 张")
-
-    def _handle_search_entry_selected(self) -> None:
-        """Open the active search (loading panel or its results) from the sidebar."""
-
-        state = self._search_state
-        if state is None:
-            return
-        # The search panel and its results belong to the grid view; leaving Home
-        # as the page's base view would hide them once loading finishes.
-        page = getattr(self._window.ui, "gallery_page", None)
-        if page is not None and hasattr(page, "show_grid"):
-            page.show_grid()
-        self._view_router.show_gallery()
-        if not state.get("done"):
-            self._show_search_loading(state["query"])
-            return
-        error = state.get("error") or ""
-        if error:
-            self._display_search_error(error)
-            return
-        self._display_search_results_raw(state.get("results") or [], state["query"])
-
-    def _is_search_page_visible(self) -> bool:
-        """Return whether the gallery is currently showing the search panel."""
-
-        page = getattr(self._window.ui, "gallery_page", None)
-        stack = getattr(page, "_stack", None)
-        loading = getattr(page, "_loading_widget", None)
-        return (
-            stack is not None
-            and loading is not None
-            and stack.currentWidget() is loading
-        )
-
-    def _show_search_loading(self, query: str, sub_message: str = None, show_continue: bool = False) -> None:
-        """Show loading state in the grid view area."""
-        ui = self._window.ui
-        ui.gallery_page.show_search_loading(query)
-    def _update_search_progress(self, serial: int, progress: "SearchProgress") -> None:
-        """Update search progress in the UI.
-
-        The worker reports which stage it is in; the panel used to guess it from the
-        message text, which broke as soon as the copy was translated.
-        """
-
-        state = self._search_state
-        if state is None or state.get("serial") != serial:
-            return
-        if not self._is_search_page_visible():
-            # The user navigated away; do not pull them back into the search panel.
-            return
-        page = self._window.ui.gallery_page
-        if progress.stage in (SearchStage.MODEL, SearchStage.INDEX):
-            page.show_model_loading()
-        else:
-            page.show_search_loading(progress.message)
-    def _display_search_results(self, results: list, query: str = "") -> None:
-        """Display search results in the grid view."""
-        ui = self._window.ui
-        ui.gallery_page.hide_loading()
-        if not results:
-            self._status_bar.show_message(
-                tr("search.results.none_short", query=query)
-            )
-            return
-
-        asset_ids = [r.asset_id for r in results]
-        self._gallery_vm.show_search_results(asset_ids)
-        self._status_bar.show_message(
-            tr("search.results.found", count=len(results), query=query)
-        )
-
-    def _display_search_error(self, error: str) -> None:
-        """Display search error in the grid view."""
-        ui = self._window.ui
-        ui.gallery_page.show_error(tr("search.error.title"), error)
-        self._status_bar.show_message(
-            tr("search.error.status", message=error), 10000
-        )
-
-    def _on_search_back(self) -> None:
-        """Handle back button click during search."""
-        # Hide search results header
-        ui = self._window.ui
-        self._search_state = None
-        ui.sidebar.clear_search()
-        ui.gallery_page.hide_search_results_header()
-        # Return to normal gallery view
-        self._gallery_vm.open_all_photos()
-        self._status_bar.show_message("")
-
-    def _search_precision(self) -> str:
-        """Return the configured search precision tier."""
-
-        value = self._context.settings.get("agent.search_precision", "balanced")
-        return value if value in {"strict", "balanced", "loose"} else "balanced"
-
-    def _handle_search_precision_changed(self, action) -> None:
-        """Persist the precision tier picked from the settings menu."""
-
-        tier = action.data()
-        if tier in {"strict", "balanced", "loose"}:
-            self._context.settings.set("agent.search_precision", tier)
 
     # -- AI index -------------------------------------------------------------
     # The lifecycle itself lives in ``AiIndexCoordinator``; these wrappers keep the
@@ -1833,7 +1402,7 @@ class MainCoordinator(QObject):
         else:
             semantic_search_enabled = bool(stored_semantic_search)
         ui.main_header.toggle_semantic_search_action.setChecked(semantic_search_enabled)
-        precision = self._search_precision()
+        precision = self._search.search_precision()
         precision_action = getattr(ui.main_header, "search_precision_actions", {}).get(
             precision
         )

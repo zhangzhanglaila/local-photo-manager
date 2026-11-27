@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from iPhoto.agent.services import place_aliases
-from iPhoto.gui.coordinators import main_coordinator
+from iPhoto.gui.services import search_thread
 
 
 def test_chinese_place_names_become_pinyin_needles():
@@ -37,23 +37,23 @@ def test_location_match_uses_aliases(monkeypatch):
         ("a3", "tokyo"),
     ]
     monkeypatch.setattr(
-        main_coordinator, "_build_location_index", lambda root, rows=None: index
+        search_thread, "build_location_index", lambda root, rows=None: index
     )
 
-    hits = main_coordinator._match_location_hits(Path("."), "武汉", None)
+    hits = search_thread.match_location_hits(Path("."), "武汉", None)
     assert [asset_id for asset_id, _label in hits] == ["a1"]
 
-    hits = main_coordinator._match_location_hits(Path("."), "东京", None)
+    hits = search_thread.match_location_hits(Path("."), "东京", None)
     assert [asset_id for asset_id, _label in hits] == ["a3"]
 
-    assert main_coordinator._match_location_hits(Path("."), "不存在的城市", None) == []
+    assert search_thread.match_location_hits(Path("."), "不存在的城市", None) == []
 
 
 def test_short_queries_are_ignored(monkeypatch):
     monkeypatch.setattr(
-        main_coordinator,
-        "_build_location_index",
+        search_thread,
+        "build_location_index",
         lambda root, rows=None: [("a1", "wuhan — hubei")],
     )
 
-    assert main_coordinator._match_location_hits(Path("."), "武", None) == []
+    assert search_thread.match_location_hits(Path("."), "武", None) == []

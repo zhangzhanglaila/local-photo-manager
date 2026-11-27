@@ -16,7 +16,7 @@ import pytest
 pytest.importorskip("PySide6.QtWidgets", reason="the coordinator is a Qt object")
 
 from iPhoto.application.dtos import ScanStatus  # noqa: E402
-from iPhoto.gui.coordinators.main_coordinator import MainCoordinator  # noqa: E402
+from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator  # noqa: E402
 from iPhoto.i18n import set_language, tr  # noqa: E402
 
 
@@ -33,12 +33,12 @@ class _Host:
         self._status_bar = _StatusBar()
         self._search_visible = search_visible
 
-    def _is_search_page_visible(self) -> bool:
+    def is_search_page_visible(self) -> bool:
         return self._search_visible
 
 
 def _handle(host: _Host, status: object) -> None:
-    MainCoordinator._on_ocr_scan_status(host, status)
+    SearchCoordinator.on_ocr_scan_status(host, status)
 
 
 def test_completed_status_auto_expires() -> None:
@@ -85,7 +85,7 @@ def test_status_renders_in_the_active_language() -> None:
 
 
 def test_no_control_flow_on_rendered_text_remains() -> None:
-    module = Path(MainCoordinator.__module__.replace(".", "/") + ".py")
+    module = Path(SearchCoordinator.__module__.replace(".", "/") + ".py")
     source = (Path(__file__).resolve().parents[1] / "src" / module).read_text(
         encoding="utf-8"
     )
