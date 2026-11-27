@@ -305,7 +305,12 @@ domain/  ◀── application/ ◀── infrastructure/    （只允许这个�
 
 顺序建议（每步独立 PR）：`gallery_collection_store` → `main_coordinator` 的搜索/查重/地图三块 → `state_repository` → `runtime_controller` 组合化 → `playback/edit` 的服务包与描述符表。
 
-**验收**：无文件 >800 行；`main_coordinator` <500 行且只做组装；`test_playback_coordinator` 不再需要 `__new__`。
+**2026-11-27 状态**：上述指定块已全部完成（见 §8 进度表）。剩余 GUI 控件不再列入本路线，按 §8「P4 存量例外」的棘轮规则跟踪。
+
+**验收（2026-11-27 起改为棘轮）**：
+- 指定目标全部完成：`gallery_collection_store`、`main_coordinator` 的搜索/查重/地图三块、`state_repository`、`runtime_controller`、`playback/edit` 服务包与描述符表。
+- 新增或改动的文件不得超过 800 行；存量超线文件只减不增，且必须登记在 §8「P4 存量例外」，不再为凑行数强拆。
+- 未达成的原始指标登记为缺口：`main_coordinator` 仍有 755 行（原定 <500）、`test_playback_coordinator` 仍用 `__new__`。
 
 ### P5 · 文案与控制流清理（与 P4 并行，2–3 天）
 
@@ -351,11 +356,34 @@ domain/  ◀── application/ ◀── infrastructure/    （只允许这个�
 | P1 · 单例收口 | 已完成 | `search_status()` / `background_tasks()` / `set_settings_provider` 在 `src/` 中已无引用 |
 | P2 · 模型层统一 | 已完成 | 三套注册表共用 `model_paths`；`ModelSelection` 已由 bootstrap 构造并注入（`f650cd4`），注册表只剩目录职责 |
 | P3 · GUI 越层收口 | 基本完成 | GUI 内 `sqlite3.connect` 为 0；`library/runtime_controller.py` 仅剩一处 `TYPE_CHECKING` 的 `LibrarySession` 类型引用（运行期无依赖）。端口 `ScanCommands`/`AssetQueryPort` 等仍未正式化 |
-| P4 · 巨类拆分 | 进行中 | `main_coordinator` 2924 → **755** 行（搜索线程、嵌入 worker、AI 索引生命周期、位置视图/轨迹、查重/智能相册展示、窗口偏好装配、开库/工作区切换、画廊交互/前台让路、状态栏/主题/语言装配、人物集群入口、专辑/人物/移动事件、启动清理、session 访问/树重绑、信号装配已搬出：`search_coordinator.py` 499 行、`organize_coordinator.py` 104 行、`window_preferences.py` 163 行、`library_open_coordinator.py` 125 行、`gallery_interaction_coordinator.py` 167 行、`window_chrome_coordinator.py` 121 行、`people_navigation_coordinator.py` 53 行、`library_events_coordinator.py` 90 行、`startup_tasks.py` 73 行、`library_session_access.py` 76 行、`library_tree_binder.py` 114 行、`window_signal_wiring.py` 267 行、`ai_index_coordinator.py` 239 行、`location_coordinator.py` 298 行）；`library/runtime_controller.py` 760 → **532** 行（26 个 session 服务绑定/读取逐字搬入 `service_bindings.py` 259 行）；`gui/ui/widgets/info_panel.py` 1690 → **760** 行（格式化方法拆到 `info_panel_formatters.py` 355 行；位置编辑拆到 `info_panel_location.py` 365 行；内容填充拆到 `info_panel_content.py` 164 行；窗框/拖拽拆到 `info_panel_chrome.py` 195 行）；`gui/ui/widgets/album_sidebar.py` 1062 → **771** 行（`_DropAwareTree`/`_SidebarHairline`/`_SidebarFooterRow` 逐字搬入 `sidebar_parts.py` 275 行，header ＋ 提示搬入 `sidebar_action_hint.py` 58 行）；`gui/ui/widgets/photo_map_view.py` 1348 → **780** 行（标记图层拆到 `photo_map_markers.py` 233 行；轨迹、时间轴/人物筛选、地图源选择器拆到 `photo_map_trail.py` 194 行、`photo_map_filters.py` 123 行、`photo_map_sources.py` 131 行）；`gui/ui/widgets/gallery_grid_view.py` 1030 → **607** 行（时间轴滑轨/拖动预览/日期胶囊的 21 个方法逐字搬入 `gallery_timeline.py` 447 行）；`gui/ui/widgets/albums_dashboard.py` 821 → **552** 行（`RoundedImageView`/`AlbumCard` 拆到 `albums_dashboard_widgets.py` 294 行）；`gui/viewmodels/gallery_collection_store.py` 1612 → **747** 行（扫描刷新策略/路径映射拆到 `gallery_scan_refresh.py` 315 行，窗口加载/预取/节流拆到 `gallery_load_window.py` 464 行，收藏/元数据/删除/乐观移动拆到 `gallery_mutations.py` 166 行）；`people/state_repository.py` 1922 → **362** 行，拆成 state_groups/state_faces/state_profiles/state_ordering 四个 mixin；此外 `people/face_repository.py` 1398 → 208 行（face_queries/face_mutations/face_merges）、`people/pipeline.py` 954 → 710 行（insightface_compat/clustering_math）、`cache/index_store/repository.py` 1129 → 267 行（asset_writes/asset_queries/sql_helpers）；`playback_coordinator.py` 1890 → 668 行（playback_location/render/faces/info + constants）；`gui/coordinators/edit_coordinator.py` 1626 → 756 行（edit_video/edit_adjustments/edit_support）；src/iPhoto 内仍有 **13** 个文件 >800 行（口径：`src/iPhoto` 内、不含 `src/maps` 子项目；i18n 文案表计入） |
+| P4 · 巨类拆分 | 已完成（指定目标） | `main_coordinator` 2924 → **755** 行（搜索线程、嵌入 worker、AI 索引生命周期、位置视图/轨迹、查重/智能相册展示、窗口偏好装配、开库/工作区切换、画廊交互/前台让路、状态栏/主题/语言装配、人物集群入口、专辑/人物/移动事件、启动清理、session 访问/树重绑、信号装配已搬出：`search_coordinator.py` 499 行、`organize_coordinator.py` 104 行、`window_preferences.py` 163 行、`library_open_coordinator.py` 125 行、`gallery_interaction_coordinator.py` 167 行、`window_chrome_coordinator.py` 121 行、`people_navigation_coordinator.py` 53 行、`library_events_coordinator.py` 90 行、`startup_tasks.py` 73 行、`library_session_access.py` 76 行、`library_tree_binder.py` 114 行、`window_signal_wiring.py` 267 行、`ai_index_coordinator.py` 239 行、`location_coordinator.py` 298 行）；`library/runtime_controller.py` 760 → **532** 行（26 个 session 服务绑定/读取逐字搬入 `service_bindings.py` 259 行）；`gui/ui/widgets/info_panel.py` 1690 → **760** 行（格式化方法拆到 `info_panel_formatters.py` 355 行；位置编辑拆到 `info_panel_location.py` 365 行；内容填充拆到 `info_panel_content.py` 164 行；窗框/拖拽拆到 `info_panel_chrome.py` 195 行）；`gui/ui/widgets/album_sidebar.py` 1062 → **771** 行（`_DropAwareTree`/`_SidebarHairline`/`_SidebarFooterRow` 逐字搬入 `sidebar_parts.py` 275 行，header ＋ 提示搬入 `sidebar_action_hint.py` 58 行）；`gui/ui/widgets/photo_map_view.py` 1348 → **780** 行（标记图层拆到 `photo_map_markers.py` 233 行；轨迹、时间轴/人物筛选、地图源选择器拆到 `photo_map_trail.py` 194 行、`photo_map_filters.py` 123 行、`photo_map_sources.py` 131 行）；`gui/ui/widgets/gallery_grid_view.py` 1030 → **607** 行（时间轴滑轨/拖动预览/日期胶囊的 21 个方法逐字搬入 `gallery_timeline.py` 447 行）；`gui/ui/widgets/albums_dashboard.py` 821 → **552** 行（`RoundedImageView`/`AlbumCard` 拆到 `albums_dashboard_widgets.py` 294 行）；`gui/viewmodels/gallery_collection_store.py` 1612 → **747** 行（扫描刷新策略/路径映射拆到 `gallery_scan_refresh.py` 315 行，窗口加载/预取/节流拆到 `gallery_load_window.py` 464 行，收藏/元数据/删除/乐观移动拆到 `gallery_mutations.py` 166 行）；`people/state_repository.py` 1922 → **362** 行，拆成 state_groups/state_faces/state_profiles/state_ordering 四个 mixin；此外 `people/face_repository.py` 1398 → 208 行（face_queries/face_mutations/face_merges）、`people/pipeline.py` 954 → 710 行（insightface_compat/clustering_math）、`cache/index_store/repository.py` 1129 → 267 行（asset_writes/asset_queries/sql_helpers）；`playback_coordinator.py` 1890 → 668 行（playback_location/render/faces/info + constants）；`gui/coordinators/edit_coordinator.py` 1626 → 756 行（edit_video/edit_adjustments/edit_support）；行数门槛自 2026-11-27 起改为棘轮，13 个存量超线文件见下「P4 存量例外」 |
 | P5 · 文案与控制流 | 基本完成 | 文本驱动控制流清零并有守卫（`tests/architecture/test_no_text_based_control_flow.py`）；AI 索引/搜索/人脸扫描文案进 i18n（`08130d7`、`8c139eb`、`ff4a2ac`）；地图轨迹、人物视图提示也已进 i18n（`8b3be4b`、`ff4a2ac`）；空状态机已合为单一枚举：`gui/viewmodels/gallery_empty_state.py` 单点推导，`gallery_grid_view.py` 只剩一个占位标签与一条渲染路径（P5 的 B6 项） |
+
+### P4 存量例外（棘轮，不再按行数强拆）
+
+判定标准：文件超 800 行本身不再构成拆分理由；只有出现「一次改动要跨多个不相关概念」「公共 API 过宽」「同一逻辑两套实现」时才拆。新增/改动文件不得超 800 行，存量只减不增。
+
+| 文件 | 行数 | 处理建议 |
+|---|---|---|
+| `gui/ui/widgets/gl_image_viewer/widget.py` | 1565 | 待补离屏渲染冒烟测试后再拆渲染/视频帧/变换；Qt 虚函数 mixin 化风险最高 |
+| `gui/ui/widgets/video_area.py` | 1417 | 值得拆：播放内核 vs 编辑预览覆盖层（有 video 测试兜底） |
+| `i18n/__init__.py` | 1276 | 不拆：中英文词表是数据，拆开只会破坏对齐与查找 |
+| `gui/ui/widgets/video_renderer_widget.py` | 1144 | 暂不拆：单类 + 平台后端胶水，等 `video_area` 拆完再评估 |
+| `gui/ui/widgets/settings_dialog.py` | 1124 | 值得拆：按设置分区拆 widget（可写测试） |
+| `gui/ui/widgets/rhi_image_renderer.py` | 1078 | 不拆：单类渲染器，边界已由 `render_backend` 抽象承担 |
+| `gui/ui/widgets/preview_window.py` | 982 | 不拆：按 B7 应把两套 preview 窗口收敛为一套，收敛后行数自然下降 |
+| `gui/ui/widgets/info_location_map.py` | 921 | 暂不拆：地图/WebEngine 胶水，先抽端口再谈拆分 |
+| `gui/ui/window_manager.py` | 914 | 可拆：窗口生命周期 / 几何持久化 / 全屏切换，优先级低 |
+| `gui/viewmodels/gallery_viewmodel.py` | 902 | 可拆：查询/选择/异步加载按用例拆，viewmodel 易测 |
+| `gui/ui/widgets/people_dashboard_widget.py` | 887 | 不拆：三个 widget 已分包，剩余是内聚视图代码 |
+| `gui/main.py` | 849 | 不拆：问题在启动流程重复 + `hasattr` 探测（P3），应删/并而非拆 |
+| `gui/ui/widgets/marker_controller.py` | 814 | 不拆：刚过线 14 行，无语义边界 |
+
+补充说明：2026-11-27 的补充拆分里，`albums_dashboard`（821 → 552）、`photo_map_sources.py`、`sidebar_action_hint.py` 属于**为过线而拆**，不是架构边界。代码行为未变、测试全绿，保留不回滚，但不要据此推断模块职责；后续如遇改动摩擦，优先把它们合并回去，而不是继续细分。
+
 
 ### 已知缺口（有测试记录，未修）
 
 - 扫描结果落在可视窗口之外时，画廊总数不刷新（`tests/gui/viewmodels/test_gallery_collection_store.py` 两条 `xfail(strict=True)`）。窗口不重载是刻意设计，缺的是「只刷计数」的路径。
 - `tests/gui/coordinators/test_playback_coordinator.py` 仍有 15 条用例用 `__new__` 手工桩属性，跟当前装配对不上；路线图里「不再需要 `__new__`」那一项还没做。
-- `playback_coordinator.py`（668 行）、`info_panel.py`（760 行）、`edit_coordinator.py`（756 行）、`gallery_collection_store.py`（747 行）等 13 个文件仍在 800 行以上（同口径）；`state_repository.py` 已拆完，不再是其中之一。
+- 13 个 >800 行文件见「P4 存量例外」；`main_coordinator`（755 行）仍高于原定 <500、`test_playback_coordinator` 仍用 `__new__`，均按缺口/例外跟踪。
