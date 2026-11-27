@@ -56,6 +56,7 @@ from iPhoto.gui.ui.controllers.window_theme_controller import WindowThemeControl
 from iPhoto.gui.ui.media import MediaAdjustmentCommitter, MediaSelectionSession
 from iPhoto.gui.ui.models.roles import Roles
 from iPhoto.gui.ui.models.spacer_proxy_model import SpacerProxyModel
+from iPhoto.gui.services import organize_workers
 from iPhoto.gui.services.location_trash_navigation_service import (
     LocationTrashNavigationService,
 )
@@ -1890,37 +1891,11 @@ class MainCoordinator(QObject):
         # Duplicate detection and smart albums read album metadata only; they no
         # longer need the CLIP embedding service, and gating them on it made both
         # features unavailable (and could trigger a model-download dialog).
-        # Run duplicate detection in background
-        from iPhoto.agent.services.organize_service import OrganizeService
-        from PySide6.QtCore import QRunnable, Slot
-
-        class DuplicateWorker(QRunnable):
-            def __init__(self, service, callback):
-                super().__init__()
-                self.setAutoDelete(True)
-                self._service = service
-                self._callback = callback
-
-            @Slot()
-            def run(self):
-                try:
-                    duplicates = self._service.find_duplicates(threshold=0.95)
-                    self._callback(duplicates)
-                except Exception as e:
-                    logging.getLogger(__name__).error("Duplicate detection failed: %s", e)
-                    self._callback([])
-
-        organize_service = OrganizeService(
-            asset_repository=library_session.asset_runtime.assets,
-            library_root=library_session.library_root,
-        )
-
         def on_complete(duplicates):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda: self._display_duplicates(duplicates))
 
-        worker = DuplicateWorker(organize_service, on_complete)
-        QThreadPool.globalInstance().start(worker)
+        organize_workers.find_duplicates(library_session, on_complete)
 
         self._status_bar.show_message(
             tr("organize.searching_duplicates")
@@ -1967,38 +1942,11 @@ class MainCoordinator(QObject):
         # Duplicate detection and smart albums read album metadata only; they no
         # longer need the CLIP embedding service, and gating them on it made both
         # features unavailable (and could trigger a model-download dialog).
-        # Run smart album creation in background
-        from iPhoto.agent.services.organize_service import OrganizeService
-        from PySide6.QtCore import QRunnable, Slot
-
-        class SmartAlbumWorker(QRunnable):
-            def __init__(self, service, group_by_type, callback):
-                super().__init__()
-                self.setAutoDelete(True)
-                self._service = service
-                self._group_by = group_by_type
-                self._callback = callback
-
-            @Slot()
-            def run(self):
-                try:
-                    albums = self._service.create_smart_albums(group_by=self._group_by)
-                    self._callback(albums)
-                except Exception as e:
-                    logging.getLogger(__name__).error("Smart album creation failed: %s", e)
-                    self._callback([])
-
-        organize_service = OrganizeService(
-            asset_repository=library_session.asset_runtime.assets,
-            library_root=library_session.library_root,
-        )
-
         def on_complete(albums):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda: self._display_smart_albums(albums, group_by))
 
-        worker = SmartAlbumWorker(organize_service, group_by, on_complete)
-        QThreadPool.globalInstance().start(worker)
+        organize_workers.create_smart_albums(library_session, group_by, on_complete)
 
         self._status_bar.show_message(
             tr(
