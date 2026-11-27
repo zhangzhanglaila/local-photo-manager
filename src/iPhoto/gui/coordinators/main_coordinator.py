@@ -20,7 +20,6 @@ from PySide6.QtCore import (
 )
 
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
-from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
 from iPhoto.gui.coordinators.ai_index_coordinator import AiIndexCoordinator
 from iPhoto.gui.coordinators.gallery_interaction_coordinator import (
@@ -31,6 +30,7 @@ from iPhoto.gui.coordinators.location_coordinator import (
     MAP_FOCUS_RETRY_INTERVAL_MS,
     LocationCoordinator,
 )
+from iPhoto.gui.coordinators.library_events_coordinator import LibraryEventsCoordinator
 from iPhoto.gui.coordinators.library_open_coordinator import LibraryOpenCoordinator
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
@@ -70,7 +70,6 @@ from iPhoto.gui.viewmodels.gallery_list_model_adapter import GalleryListModelAda
 from iPhoto.gui.viewmodels.gallery_viewmodel import GalleryViewModel
 from iPhoto.people.service import PeopleService
 from maps.map_sources import supports_map_extension_download
-from ...utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
     from iPhoto.gui.ui.main_window import MainWindow
@@ -169,6 +168,15 @@ class MainCoordinator(QObject):
             parent=self,
         )
 
+        self._library_events = LibraryEventsCoordinator(
+            window,
+            context,
+            pinned_items_service=self._pinned_items_service,
+            thumbnail_service=self._thumbnail_service,
+            gallery_vm=self._gallery_vm,
+            parent=self,
+        )
+
         # 2. Navigation Coordinator
         self._navigation = NavigationCoordinator(
             window.ui.sidebar,
@@ -243,7 +251,7 @@ class MainCoordinator(QObject):
         self._playback.set_navigation_coordinator(self._navigation)
         self._navigation.set_playback_coordinator(self._playback)
         context.library.peopleSnapshotCommitted.connect(
-            self._handle_people_snapshot_sidebar_refresh
+            self._library_events.on_people_snapshot
         )
         # Manually attach info panel if available
         window.ui.info_panel.set_map_runtime(self._map_runtime())
@@ -330,7 +338,7 @@ class MainCoordinator(QObject):
             facade=self._facade,
             status_bar=self._status_bar,
             dialog=self._dialog,
-            on_move_finished=self._handle_move_finished_toast,
+            on_move_finished=self._library_events.on_move_finished,
             parent=self,
         )
 
@@ -606,7 +614,9 @@ class MainCoordinator(QObject):
         ui = self._window.ui
         updates = self._facade.library_updates
         self._context.library.treeUpdated.connect(self._on_library_tree_updated)
-        self._context.library.albumRenamed.connect(self._on_album_renamed)
+        self._context.library.albumRenamed.connect(
+            self._library_events.on_album_renamed
+        )
         # Library watcher rescans still emit through the bound LibraryRuntimeController,
         # while facade-initiated rescans emit through LibraryUpdateService.
         self._context.library.scanChunkReady.connect(self._gallery_store.handle_scan_chunk)
@@ -970,65 +980,6 @@ class MainCoordinator(QObject):
             return Path(package_root).resolve()
         return Path(__file__).resolve().parents[3] / "maps"
 
-    def _on_album_renamed(self, old_path: Path, new_path: Path) -> None:
-        self._pinned_items_service.remap_album_path(
-            old_path,
-            new_path,
-            library_root=self._context.library.root(),
-            fallback_label=new_path.name,
-        )
-        self._thumbnail_service.remap_album_paths(old_path, new_path)
-        self._gallery_vm.handle_album_renamed(old_path, new_path)
-
-    def _handle_people_snapshot_sidebar_refresh(self, event: object) -> None:
-        library_root = self._context.library.root()
-        if (
-            library_root is not None
-            and getattr(event, "library_root", None) == library_root
-        ):
-            self._pinned_items_service.prune_missing_people_entities(
-                library_root,
-                person_ids=tuple(getattr(event, "changed_person_ids", ()) or ()),
-                group_ids=tuple(getattr(event, "changed_group_ids", ()) or ()),
-                person_redirects=dict(getattr(event, "person_redirects", {}) or {}),
-                group_redirects=dict(getattr(event, "group_redirects", {}) or {}),
-            )
-        self._window.ui.sidebar.refresh_tree_model()
-
-    def _handle_move_finished_toast(
-        self,
-        source: Path,
-        destination: Path,
-        success: bool,
-        message: str,
-    ) -> None:
-        """Show the lightweight completion toast for successful ordinary moves."""
-
-        del message
-        if not success or self._is_recently_deleted_move(source, destination):
-            return
-
-        self._window.ui.notification_toast.show_toast("Moved")
-
-    def _is_recently_deleted_move(self, source: Path, destination: Path) -> bool:
-        """Return whether a move completion belongs to delete or restore flows."""
-
-        trash_root = self._context.library.deleted_directory()
-        if trash_root is not None:
-            return self._paths_equal(source, trash_root) or self._paths_equal(
-                destination,
-                trash_root,
-            )
-        return (
-            source.name == RECENTLY_DELETED_DIR_NAME
-            or destination.name == RECENTLY_DELETED_DIR_NAME
-        )
-
-    def _paths_equal(self,first,second) -> bool:
-        """Delegate to the single shared comparison."""
-
-        return paths_equal(first,second)
-
     # -- AI index -------------------------------------------------------------
     # The lifecycle itself lives in ``AiIndexCoordinator``; these wrappers keep the
     # call sites (menu actions, settings changes, search flow) unchanged.
@@ -1133,4 +1084,3 @@ class MainCoordinator(QObject):
 
 #: Cache of ``[(asset_id, lowercase place name)]`` per library root; built once
 #: because reverse geocoding every geotagged asset on each keystroke is wasteful.
-

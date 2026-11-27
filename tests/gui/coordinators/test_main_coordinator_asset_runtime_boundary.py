@@ -251,66 +251,6 @@ def test_connect_signals_wires_location_scan_updates_from_library_and_service() 
     )
 
 
-def _make_move_toast_coordinator(tmp_path: Path) -> tuple[MainCoordinator, Path, MagicMock]:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
-    toast = MagicMock()
-    coordinator._window = MagicMock(ui=MagicMock(notification_toast=toast))
-    coordinator._context = MagicMock()
-    trash_root = tmp_path / "Recently Deleted"
-    coordinator._context.library.deleted_directory.return_value = trash_root
-    return coordinator, trash_root, toast
-
-
-def test_handle_move_finished_toast_shows_for_successful_plain_move(
-    tmp_path: Path,
-) -> None:
-    coordinator, _trash_root, toast = _make_move_toast_coordinator(tmp_path)
-
-    coordinator._handle_move_finished_toast(
-        tmp_path / "Album A",
-        tmp_path / "Album B",
-        True,
-        "Moved 1 item.",
-    )
-
-    toast.show_toast.assert_called_once_with("Moved")
-
-
-def test_handle_move_finished_toast_skips_failed_move(tmp_path: Path) -> None:
-    coordinator, _trash_root, toast = _make_move_toast_coordinator(tmp_path)
-
-    coordinator._handle_move_finished_toast(
-        tmp_path / "Album A",
-        tmp_path / "Album B",
-        False,
-        "No files were moved.",
-    )
-
-    toast.show_toast.assert_not_called()
-
-
-def test_handle_move_finished_toast_skips_delete_and_restore(
-    tmp_path: Path,
-) -> None:
-    coordinator, trash_root, toast = _make_move_toast_coordinator(tmp_path)
-    album_root = tmp_path / "Album A"
-
-    coordinator._handle_move_finished_toast(
-        album_root,
-        trash_root,
-        True,
-        "Deleted 1 item.",
-    )
-    coordinator._handle_move_finished_toast(
-        trash_root,
-        album_root,
-        True,
-        "Restored 1 item.",
-    )
-
-    toast.show_toast.assert_not_called()
-
-
 def test_handle_media_load_failed_prunes_row_and_refreshes_collection(tmp_path: Path) -> None:
     failed_path = tmp_path / "library" / "Album" / "motion.mov"
     failed_path.parent.mkdir(parents=True)
@@ -336,31 +276,3 @@ def test_handle_media_load_failed_prunes_row_and_refreshes_collection(tmp_path: 
     interactions._dialog.show_error.assert_called_once()
     updates.handle_media_load_failure.assert_called_once_with(failed_path)
     interactions._gallery_store.reload_current_selection.assert_called_once_with()
-
-
-def test_handle_people_snapshot_sidebar_refresh_prunes_people_pins_before_refresh() -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
-    root = Path("/library")
-    coordinator._context = MagicMock()
-    coordinator._context.library.root.return_value = root
-    coordinator._pinned_items_service = MagicMock()
-    coordinator._window = MagicMock(ui=MagicMock(sidebar=MagicMock()))
-
-    event = SimpleNamespace(
-        library_root=root,
-        changed_person_ids=("person-a",),
-        changed_group_ids=("group-a",),
-        person_redirects={"person-a": "person-b"},
-        group_redirects={"group-a": "group-b"},
-    )
-
-    coordinator._handle_people_snapshot_sidebar_refresh(event)
-
-    coordinator._pinned_items_service.prune_missing_people_entities.assert_called_once_with(
-        root,
-        person_ids=("person-a",),
-        group_ids=("group-a",),
-        person_redirects={"person-a": "person-b"},
-        group_redirects={"group-a": "group-b"},
-    )
-    coordinator._window.ui.sidebar.refresh_tree_model.assert_called_once_with()
