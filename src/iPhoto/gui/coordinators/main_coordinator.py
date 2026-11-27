@@ -31,6 +31,8 @@ from iPhoto.gui.coordinators.location_coordinator import (
 )
 from iPhoto.gui.coordinators.library_events_coordinator import LibraryEventsCoordinator
 from iPhoto.gui.coordinators.library_open_coordinator import LibraryOpenCoordinator
+from iPhoto.gui.coordinators.library_session_access import LibrarySessionAccess
+from iPhoto.gui.coordinators.library_tree_binder import LibraryTreeBinder
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.organize_coordinator import OrganizeCoordinator
@@ -97,18 +99,18 @@ class MainCoordinator(QObject):
         self._map_extension_download = MapExtensionDownloadController(
             window,
             context,
-            package_root=self._resolve_map_package_root(self._map_runtime()),
+            package_root=self._resolve_map_package_root(self._session_access.map_runtime()),
         )
         window.ui.download_map_extension_action.setEnabled(supports_map_extension_download())
         self._event_bus = context.event_bus
-        edit_service_getter = self._edit_service
-        asset_state_service = self._asset_state_service()
+        edit_service_getter = self._session_access.edit_service
+        asset_state_service = self._session_access.asset_state_service()
 
         # --- ViewModels Setup ---
-        lib_root = self._library_root()
+        lib_root = self._session_access.library_root()
         self._context.asset_runtime.bind_library_root(lib_root)
         self._asset_list_vm = GalleryListModelAdapter.create(
-            asset_query_service=self._asset_query_service(),
+            asset_query_service=self._session_access.asset_query_service(),
             thumbnail_service=self._context.asset_runtime.thumbnail_service,
             edit_service_getter=edit_service_getter,
             on_model_populated=window.ui.grid_view.dismiss_loading_state,
@@ -119,7 +121,7 @@ class MainCoordinator(QObject):
         self._media_session = MediaSelectionSession()
         self._media_session.bind_collection(self._gallery_store)
         self._thumbnail_service = self._context.asset_runtime.thumbnail_service
-        bound_people_service = self._people_service(library_root=lib_root)
+        bound_people_service = self._session_access.people_service(library_root=lib_root)
         self._playback_people_service = bound_people_service or PeopleService()
         if bound_people_service is not None:
             window.ui.people_page.set_people_service(self._playback_people_service)
@@ -128,7 +130,7 @@ class MainCoordinator(QObject):
         window.ui.people_page.set_status_message(context.library.face_scan_status_message())
         self._pinned_items_service = PinnedItemsService(
             context.settings,
-            people_service_getter=self._people_service,
+            people_service_getter=self._session_access.people_service,
             parent=self,
         )
         window.ui.sidebar.set_pinned_service(self._pinned_items_service)
@@ -245,7 +247,7 @@ class MainCoordinator(QObject):
             library_manager=context.library,
             location_session_invalidator=self._gallery_vm.invalidate_location_session,
             library_session_getter=lambda: self._session,
-            map_runtime=self._map_runtime(),
+            map_runtime=self._session_access.map_runtime(),
         )
 
         # Inject optional dependencies into Playback
@@ -255,14 +257,14 @@ class MainCoordinator(QObject):
             self._library_events.on_people_snapshot
         )
         # Manually attach info panel if available
-        window.ui.info_panel.set_map_runtime(self._map_runtime())
+        window.ui.info_panel.set_map_runtime(self._session_access.map_runtime())
         self._playback.set_info_panel(window.ui.info_panel)
         window.ui.info_panel.downloadMapExtensionRequested.connect(
             lambda: self._map_extension_download.start_download(source="info_panel")
         )
-        window.ui.map_view.set_map_runtime(self._map_runtime())
+        window.ui.map_view.set_map_runtime(self._session_access.map_runtime())
         window.ui.map_view.set_map_interaction_service(
-            self._map_interaction_service()
+            self._session_access.map_interaction_service()
         )
         # Detail map panel (kept for GPS coordinates display only).
         self._playback.set_detail_map_panel(window.ui.map_panel)
@@ -328,7 +330,7 @@ class MainCoordinator(QObject):
             navigation=self._navigation,
             status_bar=self._status_bar,
             facade=self._facade,
-            library_root_getter=self._library_root,
+            library_root_getter=self._session_access.library_root,
             on_library_changed=self._on_library_tree_updated,
             parent=self,
         )
@@ -471,7 +473,7 @@ class MainCoordinator(QObject):
             window=self._window,
             gallery_vm=self._gallery_vm,
             status_bar=self._status_bar,
-            session_getter=self._active_session,
+            session_getter=self._session_access.active_session,
             library_root_getter=self._ai_index_library_root,
         )
 
@@ -818,97 +820,47 @@ class MainCoordinator(QObject):
             "search", self._context.settings.get(_search_models.SETTINGS_KEY, None)
         )
 
+    @property
+    def _library_binding(self) -> LibraryTreeBinder:
+        binder = self.__dict__.get("_library_binding_obj")
+        if binder is None:
+            binder = LibraryTreeBinder(
+                self._window,
+                self._context,
+                asset_list_vm=self._asset_list_vm,
+                gallery_vm=self._gallery_vm,
+                detail_vm=self._detail_vm,
+                playback=self._playback,
+                map_extension_download=self._map_extension_download,
+                library_root_getter=self._session_access.library_root,
+                asset_query_getter=self._session_access.asset_query_service,
+                asset_state_getter=self._session_access.asset_state_service,
+                people_service_getter=self._session_access.people_service,
+                map_runtime_getter=self._session_access.map_runtime,
+                map_interaction_getter=self._session_access.map_interaction_service,
+                is_startup_loading=lambda: self._startup_loading,
+                set_playback_people_service=self._set_playback_people_service,
+            )
+            object.__setattr__(self, "_library_binding_obj", binder)
+        return binder
+
+    @property
+    def _session_access(self) -> LibrarySessionAccess:
+        access = self.__dict__.get("_session_access_obj")
+        if access is None:
+            access = LibrarySessionAccess(self._context)
+            object.__setattr__(self, "_session_access_obj", access)
+        return access
+
+    def _set_playback_people_service(self, service) -> None:
+        self._playback_people_service = service
+
     def _on_library_tree_updated(self) -> None:
-        root = self._library_root()
-        self._logger.debug("_on_library_tree_updated: root=%s", root)
-        self._context.asset_runtime.bind_library_root(root)
-        self._asset_list_vm.rebind_asset_query_service(
-            self._asset_query_service(),
-            root,
+        self._logger.debug(
+            "_on_library_tree_updated: root=%s",
+            self._session_access.library_root(),
         )
-        asset_state_service = self._asset_state_service()
-        self._gallery_vm.bind_asset_state_service(asset_state_service)
-        self._detail_vm.bind_asset_state_service(asset_state_service)
-        if not self._startup_loading:
-            self._gallery_vm.on_library_tree_updated()
-        window = getattr(self, "_window", None)
-        ui = getattr(window, "ui", None)
-        people_page = getattr(ui, "people_page", None)
-        bound_people_service = self._people_service(library_root=root)
-        if bound_people_service is not None:
-            self._playback_people_service = bound_people_service
-        if people_page is not None:
-            if bound_people_service is not None:
-                people_page.set_people_service(bound_people_service)
-            else:
-                people_page.set_library_root(root)
-            people_page.set_status_message(self._context.library.face_scan_status_message())
-        map_runtime = self._map_runtime()
-        map_interaction_service = self._map_interaction_service()
-        self._map_extension_download.set_package_root(
-            self._resolve_map_package_root(map_runtime)
-        )
-        if ui is not None:
-            ui.map_view.set_map_runtime(map_runtime)
-            ui.map_view.set_map_interaction_service(map_interaction_service)
-        if ui is not None:
-            ui.info_panel.set_map_runtime(map_runtime)
-        playback = getattr(self, "_playback", None)
-        if playback is not None:
-            playback.set_map_runtime(map_runtime)
-            if bound_people_service is not None:
-                playback.set_people_service(bound_people_service)
-            else:
-                playback.set_people_library_root(root)
-
-    def _active_session(self):
-        return getattr(self._context, "library_session", None)
-
-    def _library_root(self) -> Path | None:
-        session = self._active_session()
-        if session is not None:
-            return getattr(session, "library_root", None)
-        return self._context.library.root()
-
-    def _asset_query_service(self):
-        session = self._active_session()
-        if session is not None:
-            return getattr(session, "asset_queries", None)
-        return getattr(self._context.library, "asset_query_service", None)
-
-    def _asset_state_service(self):
-        session = self._active_session()
-        if session is not None:
-            return getattr(session, "asset_state", None)
-        return getattr(self._context.library, "asset_state_service", None)
-
-    def _edit_service(self):
-        session = self._active_session()
-        if session is not None:
-            return getattr(session, "edit", None)
-        return getattr(self._context.library, "edit_service", None)
-
-    def _people_service(self, library_root: Path | None = None):
-        session = self._active_session()
-        session_root = getattr(session, "library_root", None) if session is not None else None
-        if session is not None and (library_root is None or session_root == library_root):
-            return getattr(session, "people", None)
-        return resolve_people_service(
-            self._context.library,
-            library_root=library_root,
-        )
-
-    def _map_runtime(self):
-        session = self._active_session()
-        if session is not None:
-            return getattr(session, "maps", None)
-        return getattr(self._context.library, "map_runtime", None)
-
-    def _map_interaction_service(self):
-        session = self._active_session()
-        if session is not None:
-            return getattr(session, "map_interactions", None)
-        return getattr(self._context.library, "map_interaction_service", None)
+        self._library_binding.bind()
 
     # -- Location view --------------------------------------------------------
     # Focusing a photo on the map and getting back to it lives in
@@ -982,7 +934,7 @@ class MainCoordinator(QObject):
     def _ai_index_library_root(self):
         """Library root the AI rebuild commands operate on."""
 
-        session = self._session if self._session is not None else self._active_session()
+        session = self._session if self._session is not None else self._session_access.active_session()
         return getattr(session, "library_root", None)
 
     def _on_cluster_activated(self, assets: list):
