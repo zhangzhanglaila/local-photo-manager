@@ -1,3 +1,5 @@
-from .manifest_service import ManifestService
+"""Domain services for album manifests.
 
-__all__ = ["ManifestService"]
+The manifest helpers live in :mod:`.album_manifest`; this package intentionally
+re-exports nothing so callers import the concrete module.
+"""

@@ -7,7 +7,6 @@ from .edit_sidebar_preview_worker import EditSidebarPreviewWorker
 from .image_load_worker import ImageLoadWorker
 from .info_panel_metadata_worker import InfoPanelMetadataWorker
 from .import_worker import ImportSignals, ImportWorker
-from .incremental_refresh_worker import IncrementalRefreshSignals, IncrementalRefreshWorker
 from .move_worker import MoveSignals, MoveWorker
 from .preview_render_worker import PreviewRenderSignals, PreviewRenderWorker
 from .thumbnail_generator_worker import ThumbnailGeneratorWorker
@@ -20,8 +19,6 @@ __all__ = [
     "InfoPanelMetadataWorker",
     "ImportSignals",
     "ImportWorker",
-    "IncrementalRefreshSignals",
-    "IncrementalRefreshWorker",
     "MoveSignals",
     "MoveWorker",
     "PreviewRenderSignals",
