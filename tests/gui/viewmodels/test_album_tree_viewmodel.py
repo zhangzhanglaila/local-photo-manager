@@ -24,7 +24,7 @@ class TestAlbumTreeViewModel:
         vm.open_album(Path("/photos/album1"))
 
         assert vm.current_album_id.value == "album-1"
-        assert vm.current_album_path.value == "/photos/album1"
+        assert vm.current_album_path.value == str(Path("/photos/album1"))
         assert vm.loading.value is False
 
     def test_open_album_emits_signal(self):

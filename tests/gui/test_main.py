@@ -266,6 +266,30 @@ def test_main_applies_pending_map_extension_before_qt_setup(monkeypatch) -> None
     monkeypatch.setattr("iPhoto.gui.main.QColor", _FakeColor)
     monkeypatch.setattr("iPhoto.gui.main.Qt", type("FakeQt", (), {"GlobalColor": type("GlobalColor", (), {"black": 0})(), "ApplicationAttribute": type("ApplicationAttribute", (), {})()}))
     monkeypatch.setattr("iPhoto.gui.main.QTimer.singleShot", lambda _delay, _callback: None)
+    # ``main()`` ends with ``os._exit(app.exec())`` so lingering worker threads
+    # cannot keep the process alive. In-process that would kill pytest itself
+    # (exit code 0, no summary, the rest of the suite silently never runs).
+    monkeypatch.setattr("iPhoto.gui.main.os._exit", lambda _code=0: None)
+
+    class _FakeOverlay:
+        """StartupOverlay needs a live QApplication; this test fakes one."""
+
+        def __init__(self, _parent=None) -> None:
+            return None
+
+        def show_overlay(self) -> None:
+            return None
+
+        def show_scan_progress(self, *_args) -> None:
+            return None
+
+        def set_message(self, *_args, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "iPhoto.gui.ui.widgets.startup_overlay.StartupOverlay",
+        _FakeOverlay,
+    )
 
     class _FakeRuntimeContext:
         @staticmethod
@@ -275,13 +299,30 @@ def test_main_applies_pending_map_extension_before_qt_setup(monkeypatch) -> None
 
     class _FakeWindow:
         def __init__(self, _context):
-            self.ui = type("FakeUi", (), {"sidebar": type("FakeSidebar", (), {"select_all_photos": lambda *a, **k: None})()})()
+            self.ui = type(
+                "FakeUi",
+                (),
+                {
+                    "sidebar": type(
+                        "FakeSidebar",
+                        (),
+                        {"select_all_photos": lambda *a, **k: None},
+                    )(),
+                    "window_shell": object(),
+                },
+            )()
 
         def show(self) -> None:
             call_order.append(("show", None))
 
         def set_coordinator(self, _coordinator) -> None:
             return None
+
+        def __getattr__(self, _name: str):
+            # The startup path keeps reaching for more window plumbing (raise_,
+            # activateWindow, restore_from_tray...). This test asserts the order
+            # of the startup steps, not the window internals.
+            return lambda *_args, **_kwargs: None
 
     class _FakeCoordinator:
         def __init__(self, _window, _context):

@@ -65,11 +65,14 @@ def test_view_router_show_people_switches_to_people_page(qtbot):
     detail_page = object()
 
     stack = FakeStack([gallery_page, people_page, detail_page])
+    # The router resolves every page index in __init__, including the dashboard
+    # which this test never shows.
     ui = SimpleNamespace(
         view_stack=stack,
         gallery_page=gallery_page,
         people_page=people_page,
         detail_page=detail_page,
+        albums_dashboard_page=object(),
     )
 
     router = ViewRouter(ui)
@@ -91,6 +94,8 @@ def test_view_router_no_emit_when_view_unchanged(qtbot):
         view_stack=stack,
         gallery_page=gallery_page,
         detail_page=detail_page,
+        people_page=object(),
+        albums_dashboard_page=object(),
     )
 
     router = ViewRouter(ui)
