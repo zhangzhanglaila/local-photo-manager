@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
+from iPhoto.gui.coordinators.window_preferences import WindowPreferences
 from iPhoto.people.service import PeopleService
 
 
@@ -203,17 +204,19 @@ def test_resolve_map_package_root_prefers_bound_runtime_root() -> None:
     assert package_root == Path("/bound/maps").resolve()
 
 
-def test_handle_face_name_toggle_changed_persists_setting_and_updates_playback() -> None:
-    coordinator = MainCoordinator.__new__(MainCoordinator)
-    coordinator._context = MagicMock()
-    coordinator._context.settings.get.return_value = False
-    coordinator._context.settings.set = MagicMock()
-    coordinator._playback = MagicMock()
+def test_window_preferences_face_toggle_persists_setting_and_updates_playback() -> None:
+    preferences = WindowPreferences.__new__(WindowPreferences)
+    preferences._context = MagicMock()
+    preferences._context.settings.get.return_value = False
+    preferences._context.settings.set = MagicMock()
+    preferences._playback = MagicMock()
 
-    coordinator._handle_face_name_toggle_changed(True)
+    preferences.on_face_name_toggle_changed(True)
 
-    coordinator._context.settings.set.assert_called_once_with("ui.show_face_names_in_detail", True)
-    coordinator._playback.set_face_name_display_enabled.assert_called_once_with(True)
+    preferences._context.settings.set.assert_called_once_with(
+        "ui.show_face_names_in_detail", True
+    )
+    preferences._playback.set_face_name_display_enabled.assert_called_once_with(True)
 
 
 def test_on_map_asset_activated_delegates_to_navigation() -> None:

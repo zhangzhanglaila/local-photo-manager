@@ -19,7 +19,6 @@ from PySide6.QtCore import (
     QThreadPool,
     QTimer,
 )
-from PySide6.QtGui import QAction
 
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
@@ -36,6 +35,7 @@ from iPhoto.gui.coordinators.organize_coordinator import OrganizeCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator
 from iPhoto.gui.coordinators.view_router import ViewRouter
+from iPhoto.gui.coordinators.window_preferences import WindowPreferences
 from iPhoto.gui.ui.controllers.context_menu_controller import ContextMenuController
 from iPhoto.gui.ui.controllers.dialog_controller import DialogController
 from iPhoto.gui.ui.controllers.export_controller import ExportController
@@ -63,7 +63,6 @@ from iPhoto.gui.viewmodels.gallery_list_model_adapter import GalleryListModelAda
 from iPhoto.gui.viewmodels.gallery_viewmodel import GalleryViewModel
 from iPhoto.people.service import PeopleService
 from maps.map_sources import supports_map_extension_download
-from ...utils.env import is_truthy
 from ...utils.pathutils import paths_equal
 
 if TYPE_CHECKING:
@@ -287,6 +286,16 @@ class MainCoordinator(QObject):
             context,
             gallery_vm=self._gallery_vm,
             status_bar=self._status_bar,
+            parent=self,
+        )
+
+        self._window_preferences = WindowPreferences(
+            window,
+            context,
+            playback=self._playback,
+            search=self._search,
+            gallery_vm=self._gallery_vm,
+            start_embedding_generation=self._start_embedding_generation,
             parent=self,
         )
 
@@ -643,8 +652,12 @@ class MainCoordinator(QObject):
         # ui.edit_rotate_left_button is handled by EditCoordinator in Edit Mode
         ui.rotate_left_button.clicked.connect(self._playback.rotate_current_asset)
         ui.favorite_button.clicked.connect(self._detail_vm.toggle_favorite)
-        ui.toggle_face_names_action.toggled.connect(self._handle_face_name_toggle_changed)
-        ui.toggle_hidden_people_action.toggled.connect(self._handle_hidden_people_toggle_changed)
+        ui.toggle_face_names_action.toggled.connect(
+            self._window_preferences.on_face_name_toggle_changed
+        )
+        ui.toggle_hidden_people_action.toggled.connect(
+            self._window_preferences.on_hidden_people_toggle_changed
+        )
 
         # Semantic Search
         ui.main_header.search_submitted_with_scope.connect(
@@ -714,8 +727,10 @@ class MainCoordinator(QObject):
             self._search.on_ocr_scan_status
         )
         # Sidebar checkbox filtering
-        ui.sidebar.albumCheckStateChanged.connect(self._on_album_check_state_changed)
-        self._restore_checked_library_paths()
+        ui.sidebar.albumCheckStateChanged.connect(
+            self._window_preferences.on_album_check_state_changed
+        )
+        self._window_preferences.restore_checked_library_paths()
 
     def _connect_navigation_signals(self) -> None:
         """Navigation entry points and stored preferences."""
@@ -730,8 +745,10 @@ class MainCoordinator(QObject):
         self._detail_vm.edit_requested.connect(self._edit.enter_edit_mode)
 
         # Preferences (Wheel, Volume) - Filmstrip handled in PlaybackCoordinator
-        self._restore_preferences()
-        ui.wheel_action_group.triggered.connect(self._handle_wheel_action_changed)
+        self._window_preferences.restore()
+        ui.wheel_action_group.triggered.connect(
+            self._window_preferences.on_wheel_action_changed
+        )
 
     def _connect_status_bar_signals(self) -> None:
         """Status bar panels, theme/language switches and search model sync."""
@@ -1286,88 +1303,6 @@ class MainCoordinator(QObject):
             return False
         return True
 
-    def _restore_preferences(self) -> None:
-        """Restore UI preferences for wheel action and volume."""
-        ui = self._window.ui
-        settings = self._context.settings
-
-        # 1. Wheel Action
-        wheel_action = settings.get("ui.wheel_action", "navigate")
-        if wheel_action == "zoom":
-            ui.wheel_action_zoom.setChecked(True)
-        else:
-            wheel_action = "navigate"
-            ui.wheel_action_navigate.setChecked(True)
-        ui.image_viewer.set_wheel_action(wheel_action)
-
-        stored_face_names = settings.get("ui.show_face_names_in_detail", False)
-        if isinstance(stored_face_names, str):
-            show_face_names = is_truthy(stored_face_names)
-        else:
-            show_face_names = bool(stored_face_names)
-        ui.toggle_face_names_action.setChecked(show_face_names)
-        self._playback.set_face_name_display_enabled(show_face_names)
-
-        stored_hidden_people = settings.get("ui.show_hidden_people", False)
-        if isinstance(stored_hidden_people, str):
-            show_hidden_people = is_truthy(stored_hidden_people)
-        else:
-            show_hidden_people = bool(stored_hidden_people)
-        ui.toggle_hidden_people_action.setChecked(show_hidden_people)
-        ui.people_page.set_show_hidden_people(show_hidden_people)
-        # 3. Semantic Search
-        stored_semantic_search = settings.get("agent.semantic_search_enabled", False)
-        if isinstance(stored_semantic_search, str):
-            semantic_search_enabled = is_truthy(stored_semantic_search)
-        else:
-            semantic_search_enabled = bool(stored_semantic_search)
-        ui.main_header.toggle_semantic_search_action.setChecked(semantic_search_enabled)
-        precision = self._search.search_precision()
-        precision_action = getattr(ui.main_header, "search_precision_actions", {}).get(
-            precision
-        )
-        if precision_action is not None:
-            precision_action.setChecked(True)
-        if semantic_search_enabled:
-            self._start_embedding_generation()
-        # 2. Volume / Mute
-        stored_volume = settings.get("ui.volume", 75)
-        try:
-            initial_volume = round(float(stored_volume))
-        except (TypeError, ValueError):
-            initial_volume = 75
-        initial_volume = max(0, min(100, initial_volume))
-
-        stored_muted = settings.get("ui.is_muted", False)
-        if isinstance(stored_muted, str):
-            initial_muted = is_truthy(stored_muted)
-        else:
-            initial_muted = bool(stored_muted)
-
-        ui.video_area.set_volume(initial_volume)
-        ui.video_area.set_muted(initial_muted)
-
-    def _handle_wheel_action_changed(self, action: QAction) -> None:
-        ui = self._window.ui
-        if action is ui.wheel_action_zoom:
-            selected = "zoom"
-        else:
-            selected = "navigate"
-
-        if self._context.settings.get("ui.wheel_action") != selected:
-            self._context.settings.set("ui.wheel_action", selected)
-
-        ui.image_viewer.set_wheel_action(selected)
-
-    def _handle_face_name_toggle_changed(self, checked: bool) -> None:
-        if self._context.settings.get("ui.show_face_names_in_detail") != checked:
-            self._context.settings.set("ui.show_face_names_in_detail", checked)
-        self._playback.set_face_name_display_enabled(checked)
-
-    def _handle_hidden_people_toggle_changed(self, checked: bool) -> None:
-        if self._context.settings.get("ui.show_hidden_people") != checked:
-            self._context.settings.set("ui.show_hidden_people", checked)
-        self._window.ui.people_page.set_show_hidden_people(checked)
     def _prepare_paths_for_mutation(self, paths: list[Path]) -> None:
         """Release preview/player handles before mutating files on disk."""
 
@@ -1389,43 +1324,6 @@ class MainCoordinator(QObject):
             return str(path.resolve())
         except OSError:
             return str(path)
-
-    def _on_album_check_state_changed(self, checked_paths: list[Path]) -> None:
-        """Persist checkbox state and refresh the current view."""
-        path_strings = [str(p) for p in checked_paths]
-        self._context.settings.set("ui.checked_library_paths", path_strings)
-        self._gallery_vm.on_album_check_state_changed(checked_paths)
-
-    def _restore_checked_library_paths(self) -> None:
-        """Restore sidebar checkbox state from settings on startup."""
-        stored = self._context.settings.get("ui.checked_library_paths", []) or []
-        if not stored:
-            return
-        # ⭐ 关键修复：验证存储的路径是否仍然对应当前 library roots
-        # 如果存储的路径已被移除或 library 已重新绑定到不同的 root，
-        # 这些路径会导致 SQL album_paths 过滤掉所有照片
-        from pathlib import Path as PathType
-        resolved = [PathType(p) for p in stored]
-        library_roots = self._context.library.roots()
-        root_set = {str(p.resolve()).lower().replace("\\", "/") for p in library_roots}
-        valid_resolved = []
-        for p in resolved:
-            p_lower = str(p.resolve()).lower().replace("\\", "/") if p.exists() else str(p).lower().replace("\\", "/")
-            if p_lower in root_set:
-                valid_resolved.append(p)
-                continue
-            # 兼容父子关系
-            for r in root_set:
-                if p_lower.startswith(r + "/") or r.startswith(p_lower + "/"):
-                    valid_resolved.append(p)
-                    break
-        if not valid_resolved:
-            # ⭐ 所有存储的路径都已失效，清除 settings 避免下次再出问题
-            self._context.settings.set("ui.checked_library_paths", [])
-            return
-        paths = set(str(p) for p in valid_resolved)
-        self._window.ui.sidebar.set_checked_root_paths(paths)
-        self._gallery_vm.set_checked_album_paths(valid_resolved)
 
     # --- Public Accessors for Window ---
     def toggle_playback(self):
