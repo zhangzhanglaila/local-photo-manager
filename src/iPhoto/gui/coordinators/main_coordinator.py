@@ -1891,11 +1891,7 @@ class MainCoordinator(QObject):
         # Duplicate detection and smart albums read album metadata only; they no
         # longer need the CLIP embedding service, and gating them on it made both
         # features unavailable (and could trigger a model-download dialog).
-        def on_complete(duplicates):
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._display_duplicates(duplicates))
-
-        organize_workers.find_duplicates(library_session, on_complete)
+        organize_workers.find_duplicates(library_session, self._display_duplicates)
 
         self._status_bar.show_message(
             tr("organize.searching_duplicates")
@@ -1942,11 +1938,11 @@ class MainCoordinator(QObject):
         # Duplicate detection and smart albums read album metadata only; they no
         # longer need the CLIP embedding service, and gating them on it made both
         # features unavailable (and could trigger a model-download dialog).
-        def on_complete(albums):
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._display_smart_albums(albums, group_by))
-
-        organize_workers.create_smart_albums(library_session, group_by, on_complete)
+        organize_workers.create_smart_albums(
+            library_session,
+            group_by,
+            lambda albums: self._display_smart_albums(albums, group_by),
+        )
 
         self._status_bar.show_message(
             tr(

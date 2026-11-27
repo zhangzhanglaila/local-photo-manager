@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -92,3 +94,31 @@ def test_failing_job_reports_no_results(monkeypatch, action: str) -> None:
     pool.run_all()
 
     assert results == [[]]
+
+
+def test_result_reaches_the_thread_that_started_the_job(qapp, monkeypatch) -> None:
+    """The GUI thread must receive the result, not the pool thread that ran it.
+
+    A pool thread has no event loop, so ``QTimer.singleShot`` there would drop
+    the result silently; the callback has to arrive through a queued signal.
+    """
+
+    service = MagicMock()
+    service.find_duplicates.return_value = ["group-a"]
+    monkeypatch.setattr(organize_workers, "build_organize_service", lambda _s: service)
+    caller_thread = threading.current_thread()
+    delivered: list[tuple[list, bool]] = []
+
+    organize_workers.find_duplicates(
+        _session(),
+        lambda result: delivered.append(
+            (result, threading.current_thread() is caller_thread)
+        ),
+    )
+    deadline = time.monotonic() + 10
+    while not delivered and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.01)
+
+    assert delivered == [(["group-a"], True)]
+    assert organize_workers._PENDING == set()

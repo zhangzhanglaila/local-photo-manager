@@ -13,7 +13,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from PySide6.QtCore import QRunnable, QThreadPool, Slot
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
 
 from iPhoto.agent.services.organize_service import OrganizeService
 
@@ -31,6 +31,32 @@ class OrganizeSession(Protocol):
 
     @property
     def asset_runtime(self) -> Any: ...
+
+
+#: Bridges waiting for a queued delivery.  A ``QObject`` must outlive its own
+#: queued signal, so the module keeps them alive until the result arrives.
+_PENDING: set["_ResultBridge"] = set()
+
+
+class _ResultBridge(QObject):
+    """Hand a job result back on the thread that created the bridge.
+
+    Emitting from the pool thread with a receiver living in the GUI thread makes
+    Qt queue the call, which is the only safe way to touch widgets from a
+    worker.  ``QTimer.singleShot`` cannot be used for this: a pool thread has no
+    event loop, so a timer created there never fires and the result is dropped.
+    """
+
+    ready = Signal(object)
+
+    def __init__(self, callback: Callable[[list], None]) -> None:
+        super().__init__()
+        self._callback = callback
+        self.ready.connect(self._deliver)
+
+    def _deliver(self, result: list) -> None:
+        _PENDING.discard(self)
+        self._callback(result)
 
 
 def build_organize_service(session: OrganizeSession) -> OrganizeService:
@@ -55,14 +81,14 @@ class _OrganizeJob(QRunnable):
         label: str,
         task: Callable[[OrganizeService], list],
         service: OrganizeService,
-        callback: Callable[[list], None],
+        bridge: _ResultBridge,
     ) -> None:
         super().__init__()
         self.setAutoDelete(True)
         self._label = label
         self._task = task
         self._service = service
-        self._callback = callback
+        self._bridge = bridge
 
     @Slot()
     def run(self) -> None:
@@ -71,7 +97,26 @@ class _OrganizeJob(QRunnable):
         except Exception:
             _LOGGER.exception("%s failed", self._label)
             result = []
-        self._callback(result)
+        self._bridge.ready.emit(result)
+
+
+def _dispatch(
+    *,
+    label: str,
+    task: Callable[[OrganizeService], list],
+    session: OrganizeSession,
+    callback: Callable[[list], None],
+    pool: QThreadPool | None,
+) -> None:
+    bridge = _ResultBridge(callback)
+    _PENDING.add(bridge)
+    job = _OrganizeJob(
+        label=label,
+        task=task,
+        service=build_organize_service(session),
+        bridge=bridge,
+    )
+    (pool or QThreadPool.globalInstance()).start(job)
 
 
 def find_duplicates(
@@ -82,15 +127,15 @@ def find_duplicates(
 ) -> None:
     """Detect near-duplicate photos in *session* and pass the groups to *callback*."""
 
-    job = _OrganizeJob(
+    _dispatch(
         label="Duplicate detection",
         task=lambda service: service.find_duplicates(
             threshold=DUPLICATE_SIMILARITY_THRESHOLD
         ),
-        service=build_organize_service(session),
+        session=session,
         callback=callback,
+        pool=pool,
     )
-    (pool or QThreadPool.globalInstance()).start(job)
 
 
 def create_smart_albums(
@@ -102,13 +147,13 @@ def create_smart_albums(
 ) -> None:
     """Group *session*'s photos into smart albums and pass them to *callback*."""
 
-    job = _OrganizeJob(
+    _dispatch(
         label="Smart album creation",
         task=lambda service: service.create_smart_albums(group_by=group_by),
-        service=build_organize_service(session),
+        session=session,
         callback=callback,
+        pool=pool,
     )
-    (pool or QThreadPool.globalInstance()).start(job)
 
 
 __all__ = [
