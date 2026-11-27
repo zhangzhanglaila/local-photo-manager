@@ -9,7 +9,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from ...gui.viewmodels.search_index_status import SearchIndexStatus
     from ...agent.services.model_selection import ModelSelection
     from ...gui.services.background_tasks import BackgroundTaskRegistry
-    from ...di.container import DependencyContainer
     from ...events.bus import EventBus
     from ...gui.facade import AppFacade
     from ...gui.ui.theme_manager import ThemeManager
@@ -28,7 +27,6 @@ class RuntimeEntryContract(Protocol):
     facade: "AppFacade"
     theme: "ThemeManager"
     event_bus: "EventBus"
-    container: "DependencyContainer"
     asset_runtime: "LibraryAssetRuntime"
     search_index_status: "SearchIndexStatus"
     background_tasks: "BackgroundTaskRegistry"

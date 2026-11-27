@@ -5,46 +5,9 @@ import time
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
-from iPhoto.di.container import DependencyContainer
 from iPhoto.events.bus import EventBus, Event
 from iPhoto.infrastructure.db.pool import ConnectionPool
 from iPhoto.errors.handler import ErrorHandler, ErrorSeverity, ErrorOccurredEvent
-
-# --- DependencyContainer Tests ---
-
-class IService:
-    pass
-
-class ServiceImpl(IService):
-    def __init__(self, value=None):
-        self.value = value
-
-def test_container_register_resolve_singleton():
-    container = DependencyContainer()
-    container.register_singleton(IService, ServiceImpl)
-
-    instance1 = container.resolve(IService)
-    instance2 = container.resolve(IService)
-
-    assert isinstance(instance1, ServiceImpl)
-    assert instance1 is instance2
-
-def test_container_register_resolve_transient():
-    container = DependencyContainer()
-    container.register_transient(IService, ServiceImpl)
-
-    instance1 = container.resolve(IService)
-    instance2 = container.resolve(IService)
-
-    assert isinstance(instance1, ServiceImpl)
-    assert instance1 is not instance2
-
-def test_container_factory():
-    container = DependencyContainer()
-    container.register_factory(IService, lambda: ServiceImpl(value="test"))
-
-    instance = container.resolve(IService)
-    assert instance.value == "test"
 
 # --- EventBus Tests ---
 

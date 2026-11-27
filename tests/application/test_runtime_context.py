@@ -181,7 +181,6 @@ def _runtime_context(root: Path) -> tuple[RuntimeContext, _FakeLibrary, _FakeAss
     context.asset_runtime = asset_runtime
     context.search_index_status = SearchIndexStatus()
     context.model_selection = ModelSelection()
-    context._container = None
     context._pending_basic_library_path = root
     # ``__new__`` bypasses the dataclass initialiser, so every field declared
     # with ``field(init=False, default_factory=...)`` has to be set here too.

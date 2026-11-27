@@ -228,7 +228,7 @@ application/contracts/model_selection.py  # 读写的只有 settings 键，无�
 | 两套搜索 | `agent/services/search_service.py` 实现了另一套阈值与 OCR 合并，**唯一构造点 `LibrarySession.get_search_service()` 没有调用者**；真实搜索在 `main_coordinator.py:1565-1670`。**2026-11-27 已删除**：`search_service.py`、`get_search_service()` 与 `agent` 再导出 |
 | 两个编码器 | `CLIPFastEmbeddingService`（ONNX，自己的线程预算）只被一个脚本注释提到。**2026-11-27 已删除** `clip_embedding_fast.py` |
 | 两个 preview 窗口类 | `preview_window.py` 内按平台/资产嗅探二选一 |
-| 两个组合根 | `iPhoto/di/bootstrap.py:13` 无调用者；`runtime_context.py:270` 返回"空 DI 容器"以安抚旧调用方。**2026-11-27 已删除** `di/bootstrap.py`；`di/container.py` 仍只被契约字段与测试引用 |
+| 两个组合根 | `iPhoto/di/bootstrap.py:13` 无调用者；`runtime_context.py:270` 返回"空 DI 容器"以安抚旧调用方。**2026-11-27 已整体删除**：`iPhoto/di/`（container/lifetime/bootstrap）、`RuntimeEntryContract.container` 字段、`RuntimeContext.container()` 与 DI 测试；生产从未构造容器 |
 | 两处 badge 几何 | `badge_renderer.py:146` 绘制、`gallery_grid_view.py:1076` 注释里抄一遍做命中测试 → 改样式就会点不中 |
 
 **重构方案**：把 `search_service` 提升为唯一用例并让 GUI 调它（顺带删掉 coordinator 内联的排名逻辑）；`CLIPFastEmbeddingService` 若日后要 ONNX 后端，做成 `EmbeddingEncoder` 协议的第二个实现；preview 收敛为"一个窗口 + 两种 renderer"；`iPhoto/di` 要么删、要么成为唯一组合根；badge 矩形抽成 `BadgeRenderer.favorite_badge_rect(rect)` 供绘制与命中测试共用。

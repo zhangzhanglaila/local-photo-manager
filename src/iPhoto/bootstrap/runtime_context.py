@@ -13,7 +13,6 @@ from ..events.bus import EventBus
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..gui.viewmodels.search_index_status import SearchIndexStatus
-    from ..di.container import DependencyContainer
     from ..gui.facade import AppFacade
     from ..gui.services.background_tasks import BackgroundTaskRegistry
     from ..gui.ui.theme_manager import ThemeManager
@@ -124,11 +123,6 @@ class RuntimeContext:
     theme: "ThemeManager" = field(init=False)
     language: "LanguageStore" = field(init=False)
     library_session: "LibrarySession | None" = field(init=False, default=None)
-    _container: "DependencyContainer | None" = field(
-        init=False,
-        default=None,
-        repr=False,
-    )
     _pending_basic_library_path: Path | None = field(init=False, default=None, repr=False)
     _pending_extra_roots: list[Path] = field(init=False, default_factory=list, repr=False)
 
@@ -318,16 +312,6 @@ class RuntimeContext:
         """Create a runtime context for desktop startup."""
 
         return cls(defer_startup_tasks=defer_startup)
-
-    @property
-    def container(self) -> "DependencyContainer":
-        """Return an empty DI container for callers that still inspect it."""
-
-        if self._container is None:
-            from ..di.container import DependencyContainer
-
-            self._container = DependencyContainer()
-        return self._container
 
     def resume_startup_tasks(self) -> None:
         """Run deferred startup work such as binding the default library path."""
