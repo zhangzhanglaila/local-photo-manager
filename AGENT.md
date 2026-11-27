@@ -1,4 +1,4 @@
-# AGENT.md - iPhotron Development Principles
+# AGENT.md - iPhoto Development Principles
 
 This file is the working guide for coding agents and contributors. It reflects
 the current vNext state: the production runtime has converged on
@@ -21,13 +21,14 @@ historical `src/iPhoto/legacy/` compatibility tree has been removed.
 - Both architecture violations that used to be outstanding are fixed, and
   `tools/check_architecture.py` exits 0. Treat a new violation as a bug in the
   change that introduced it, not as an accepted baseline.
-- The test suite is green (`1473 passed, 34 skipped, 0 failed`); see §9 for how
-  to run it and for the rules that keep it that way.
+- The test suite is green in normal local runs; see §9 for how to run it and for
+  the rules that keep it that way.
 
-The authoritative refactor status is tracked in:
+Current documentation lives in:
 
-- `docs/refactor/04-implementation-checklist.md`
-- `docs/refactor/05-current-progress.md`
+- `README.md` — product-facing overview and setup.
+- `docs/architecture.md` — current architecture entry point.
+- `docs/development.md` — development, build and test workflow.
 
 ## 2. Product Invariants
 
@@ -290,10 +291,13 @@ Run the whole suite before claiming a change is done:
 ```
 
 Current baseline (keep it green; do not "fix" a red suite by weakening
-assertions):
+assertions). The exact count changes as tests are added; use the latest run as
+the reference rather than treating this as a fixed number. On this Windows
+machine, exclude `tests/test_photo_map_view.py` when the native OsmAnd probe
+aborts the Qt process at teardown.
 
 ```text
-1473 passed, 34 skipped, 0 failed   (~73 s, three consecutive identical runs)
+.venv\Scripts\python.exe -m pytest tests -q --ignore=tests/test_photo_map_view.py
 ```
 
 Use targeted regression tests for changed behavior:
@@ -342,10 +346,10 @@ silently takes precedence over `pyproject.toml` and drops `testpaths`, the
 
 - Keep `README.md` product-facing and concise.
 - Keep `docs/architecture.md` as the current architecture entry point.
-- Keep `docs/refactor/*` as the detailed vNext migration record and verification
-  log.
-- Do not treat archived refactor documents under `docs/finished/` as current
-  implementation instructions.
+- Keep `docs/development.md`, `docs/security.md`, and
+  `docs/custom_workspace.md` as current reference docs.
+- Do not recreate historical refactor/requirements trees under `docs/`; the
+  completed migration records have been removed.
 - Release validation may include manual Qt GUI smoke testing and opening an
   existing library, but these are product acceptance checks rather than
   architecture guardrail replacements.
@@ -375,7 +379,7 @@ uncommitted at the end of a turn.
 
 ```text
 .github/          CI, issue templates
-docs/             architecture.md is the entry point; refactor/ is the vNext log
+docs/             current architecture, development, security and packaging docs
 src/iPhoto/       production package (application, domain, infrastructure, gui)
 src/maps/         optional OsmAnd offline map runtime
 tests/            pytest suite; this is the only directory pytest collects
@@ -397,7 +401,7 @@ packaging, and a tidy-up that moves them silently breaks a feature:
 | `src/extension/models/` | default `IPHOTO_FACE_MODEL_DIR` |
 | `extension/models/clip-vit-base-patch32/` | `main_coordinator` and `scripts/download_clip_model.py` |
 | `demo/video/` | `tests/test_video_demo_thumbnails.py` puts it on `sys.path` |
-| `src/iPhoto/` package tree | architecture guardrails and 1467 tests index modules by path |
+| `src/iPhoto/` package tree | architecture guardrails and tests index modules by path |
 
 Everything else is free to reorganize, provided references in code, tests and
 docs are updated in the same commit.

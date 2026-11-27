@@ -1,12 +1,12 @@
 # 🔒 Security
 
-> Permissions, encryption, data storage locations, and threat model for **iPhotron**.
+> Permissions, encryption, data storage locations, and threat model for **iPhoto**.
 
 ---
 
 ## Overview
 
-iPhotron is a **local-first photo manager**. It does not upload data to any cloud service, does not require an internet connection for core functionality, and does not collect user telemetry. All library data remains on the user's local filesystem. The only network-facing flow is an optional user-triggered maps-extension download on platforms where a published extension archive exists.
+iPhoto is a **local-first photo manager**. It does not upload data to any cloud service, does not require an internet connection for core functionality, and does not collect user telemetry. All library data remains on the user's local filesystem. The only network-facing flow is an optional user-triggered maps-extension download on platforms where a published extension archive exists.
 
 ---
 
@@ -31,7 +31,7 @@ iPhotron is a **local-first photo manager**. It does not upload data to any clou
 
 ### Network Access
 
-iPhotron requires **no network access for normal library operation**. Map rendering,
+iPhoto requires **no network access for normal library operation**. Map rendering,
 reverse geocoding, and Assign Location search work offline when the maps
 extension is installed.
 
@@ -51,7 +51,7 @@ extension is installed.
 
 ### At Rest
 
-iPhotron does **not** encrypt data at rest. The following files are stored in plaintext:
+iPhoto does **not** encrypt data at rest. The following files are stored in plaintext:
 
 | File | Format | Contents |
 |------|--------|----------|
@@ -62,7 +62,7 @@ iPhotron does **not** encrypt data at rest. The following files are stored in pl
 | `.iPhoto/faces/face_state.db` | SQLite | Stable People decisions: names, covers, hidden flags, groups, ordering |
 | Thumbnail cache | Image files | Downscaled preview images |
 
-**Rationale:** The data managed by iPhotron (album organization, edit parameters, file metadata) is non-sensitive in most contexts. Users who require encryption should use full-disk encryption (e.g., BitLocker, FileVault, LUKS).
+**Rationale:** The data managed by iPhoto (album organization, edit parameters, file metadata) is non-sensitive in most contexts. Users who require encryption should use full-disk encryption (e.g., BitLocker, FileVault, LUKS).
 
 ### In Transit
 
@@ -123,7 +123,7 @@ User settings (theme preference, export destination) are stored via Qt's `QSetti
 | **Threat** | An attacker gains read access to the library folder |
 | **Impact** | Access to original photos, GPS metadata, album organization |
 | **Mitigation** | OS-level file permissions; full-disk encryption recommended for sensitive libraries |
-| **iPhotron's role** | iPhotron does not add or remove filesystem protections |
+| **iPhoto's role** | iPhoto does not add or remove filesystem protections |
 
 #### T2: SQLite Database Tampering
 
@@ -131,7 +131,7 @@ User settings (theme preference, export destination) are stored via Qt's `QSetti
 |---|---|
 | **Threat** | An attacker modifies `global_index.db` |
 | **Impact** | Corrupted index leading to incorrect display; no data loss (rescannable) |
-| **Mitigation** | OS-level file permissions; iPhotron's automatic recovery (REINDEX → Salvage → Reset) |
+| **Mitigation** | OS-level file permissions; iPhoto's automatic recovery (REINDEX → Salvage → Reset) |
 | **Recovery** | Re-scan the library to rebuild the database from filesystem |
 
 #### T3: Malicious Media Files
@@ -167,10 +167,10 @@ User settings (theme preference, export destination) are stored via Qt's `QSetti
 3. **Install ExifTool only from a trusted source** if you plan to use GPS write-back through Assign Location.
 4. **Run `pip install --upgrade`** periodically to update Python dependencies.
 5. **Use OS-level file permissions** to restrict access to your library folder.
-6. **Back up your library** regularly — iPhotron's `.iPhoto/` directory and `.ipo` files should be included in backups.
+6. **Back up your library** regularly — iPhoto's `.iPhoto/` directory and `.ipo` files should be included in backups.
 
 ---
 
 ## Reporting Security Issues
 
-If you discover a security vulnerability, please report it via [GitHub Security Advisories](https://github.com/OliverZhaohaibin/iPhotron-LocalPhotoAlbumManager/security/advisories) or email the maintainers directly. Do not open a public issue for security vulnerabilities.
+If you discover a security vulnerability, please report it via [GitHub Security Advisories](https://github.com/OliverZhaohaibin/iPhoto-LocalPhotoAlbumManager/security/advisories) or email the maintainers directly. Do not open a public issue for security vulnerabilities.

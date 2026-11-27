@@ -1,20 +1,18 @@
-# Architecture vNext
+# Architecture
 
-This document describes the current production architecture of iPhotron after
-the vNext cleanup. The codebase is a library-scoped modular desktop monolith:
-one process-level `RuntimeContext` owns one active `LibrarySession`, and GUI,
-CLI, watchers, and workers enter behavior through application surfaces rather
-than legacy facades.
-
-For detailed migration records and verification history, see `docs/refactor/`.
+This document describes the current production architecture of iPhoto. The
+codebase is a library-scoped modular desktop monolith: one process-level
+`RuntimeContext` owns one active `LibrarySession`, and GUI, CLI, watchers, and
+workers enter behavior through application surfaces.
 
 ## Status
 
 The vNext architecture cleanup is complete for production source code.
 
 - Production runtime code no longer imports `iPhoto.legacy` or `iPhoto.models.*`.
-- Compatibility and old domain-repository code is quarantined under
-  `src/iPhoto/legacy/` for explicit historical behavior tests only.
+- The legacy compatibility subtree has been removed. Do not recreate
+  `src/iPhoto/legacy/`; historical behavior belongs in tests or current
+  application services.
 - `RuntimeContext -> LibrarySession` is the active library entry path.
 - Application ports and services define the boundary used by GUI, CLI, workers,
   People, Maps, Edit, thumbnails, and lifecycle operations.
@@ -29,8 +27,9 @@ architecture convergence status.
 
 - **Folder-native library.** The filesystem remains the user's album structure.
   A folder is an album, and browsing must not require import.
-- **Local-first runtime.** Library state lives under `<LibraryRoot>/.iPhoto/`.
-  Core workflows do not depend on cloud services.
+- **Local-first runtime.** Library state lives under `<LibraryRoot>/.iPhoto/`,
+  or under `<WorkspaceBase>/<LibraryName>/.iPhoto/` when a custom workspace is
+  configured. Core workflows do not depend on cloud services.
 - **Non-destructive editing.** Visual edits are persisted as `.ipo` sidecars.
   Original media is preserved.
 - **Explicit metadata write-back.** Assign Location persists local state first,
@@ -246,7 +245,8 @@ It is not a legacy manager facade.
 
 ## Persistence Model
 
-Each library root owns a `.iPhoto/` workspace.
+Each library owns a `.iPhoto/` workspace: `<LibraryRoot>/.iPhoto/` by default,
+or `<WorkspaceBase>/<LibraryName>/.iPhoto/` when `workspace_base` is configured.
 
 | Path | Ownership |
 | --- | --- |
@@ -416,22 +416,17 @@ scans run in the background.
   sqlite3.connect(...)` commits but never closes, which leaks handles and, on
   Windows, prevents the corrupted-database recovery path from replacing the file.
 
-## Legacy Quarantine And Removal Policy
+## Legacy Removal Policy
 
-`src/iPhoto/legacy/` contains quarantined compatibility modules, including old
-root compatibility paths such as `legacy/app.py` and `legacy/appctx.py`, old
-bootstrap factory shims, old domain-repository use cases, old repository
-adapters, and old model shims.
+The legacy compatibility subtree (`src/iPhoto/legacy/`) has been removed.
 
 Rules:
 
 - Production runtime must not import `iPhoto.legacy`.
 - Production runtime must not import `iPhoto.models.*`.
-- No new functionality goes into quarantine modules.
-- Tests that cover historical behavior must import quarantine modules
-  explicitly.
-- The whole quarantine subtree is planned for deletion in the next major
-  release.
+- Do not recreate `src/iPhoto/legacy/` or add compatibility services there.
+- Historical behavior belongs in tests or in the current application
+  services/adapters.
 
 ## Architecture Guardrails
 
@@ -451,8 +446,7 @@ The guardrails enforce:
   `iPhoto.infrastructure`);
 - `infrastructure/` does not import GUI;
 - `gui/` does not import the concrete index store (`iPhoto.cache.index_store`);
-- production runtime does not import quarantined legacy paths or old model
-  shims.
+- production runtime does not import `iPhoto.legacy` or `iPhoto.models.*`.
 
 All of the above currently pass (`tools/check_architecture.py` exits 0 and
 `tests/architecture` is green). Two violations used to be listed in this
@@ -519,7 +513,7 @@ The current production source satisfies the vNext architecture criteria when:
 - `application/` has no direct concrete persistence or GUI imports.
 - `infrastructure/` has no GUI imports.
 - production runtime has no `iPhoto.legacy` or `iPhoto.models.*` imports.
-- architecture checks are in CI.
+- architecture checks run locally; CI is not configured yet.
 - key product behavior remains covered: folder browsing, global indexing, Live
   Photos, People, Maps fallback, editing, location assignment, trash,
   import/move/delete/restore, and export.

@@ -2,7 +2,7 @@
 
 ## 功能说明
 
-此功能允许用户将 iPhotron 的所有工作文件（索引、缓存、人脸数据等）存储在自定义位置，而不是照片文件夹内的 `.iPhoto` 目录。
+此功能允许用户将 iPhoto 的所有工作文件（索引、缓存、人脸数据等）存储在自定义位置，而不是照片文件夹内的 `.iPhoto` 目录。
 
 ### 目录结构
 
@@ -77,7 +77,7 @@
 
 ```json
 {
-  "workspace_base": "C:/iPhotronWorkspace"
+  "workspace_base": "C:/iPhotoWorkspace"
 }
 ```
 
@@ -88,10 +88,10 @@
 python -m iPhoto.tools.migrate_workspace
 
 # 执行迁移（示例）
-python -m iPhoto.tools.migrate_workspace "D:/Photos" "C:/iPhotronWorkspace"
+python -m iPhoto.tools.migrate_workspace "D:/Photos" "C:/iPhotoWorkspace"
 
 # 预览模式（不实际执行）
-python -m iPhoto.tools.migrate_workspace "D:/Photos" "C:/iPhotronWorkspace" --dry-run
+python -m iPhoto.tools.migrate_workspace "D:/Photos" "C:/iPhotoWorkspace" --dry-run
 ```
 
 ## 功能特性
@@ -128,7 +128,7 @@ Get-ChildItem "D:\APPLE" -Force -Directory | Where-Object { $_.Name -like '.*' }
 
 如需回退到传统模式（照片文件夹内的 `.iPhoto`）：
 
-1. 关闭 iPhotron
+1. 关闭 iPhoto
 2. 将自定义工作目录中的 `.iPhoto` 文件夹移回照片文件夹
 3. 从设置文件中删除 `"workspace_base"` 配置
-4. 重启 iPhotron
+4. 重启 iPhoto

@@ -1,198 +1,136 @@
 # iPhoto 本地照片管理器
 
-一个类似 macOS 照片应用的**文件夹原生**照片管理工具，支持 Windows、macOS 和 Linux。无需上传云端，直接管理本地照片和视频。
+一个类似 macOS 照片应用的**文件夹原生**照片管理工具，支持 Windows、macOS 和 Linux。照片和视频留在本地，不需要导入，也不上传云端。
 
-> 基于 [iPhotron](https://github.com/OliverZhaohaibin/iPhotron-LocalPhotoAlbumManager) 项目开发，感谢原作者 Haibin Zhao。
+> 基于 [iPhotron](https://github.com/OliverZhaohaibin/iPhotron-LocalPhotoAlbumManager) 开发，感谢原作者 Haibin Zhao。
 
----
+![主界面](docs/picture/mainview.png)
+
+![照片地图](docs/picture/map1.png)
+
+![编辑视图](docs/picture/editview.png)
+
+## 当前状态
+
+- 当前版本：**6.1.0**（见 `pyproject.toml`）。
+- 生产代码已完成 vNext 架构收敛：`RuntimeContext -> LibrarySession -> application ports/services`。
+- 全量测试（排除原生地图探测用例）保持全绿；精确数量以本地最新一次运行为准。
+- GUI 使用 PySide6/Qt 6；图库索引使用 SQLite（WAL）；AI 使用 ONNX Runtime。
 
 ## 核心功能
 
 | 功能 | 说明 |
 |------|------|
-| 照片浏览 | 网格视图、详情视图、幻灯片播放，支持缩放/平移 |
-| 实况照片 | 自动配对 HEIC/MOV，支持播放 Live Photo 视频 |
-| 照片地图 | 基于 GPS 数据在地图上标记照片位置，支持聚合和缩放 |
+| 文件夹原生图库 | 一个文件夹就是一个相册，无需导入 |
+| 多图库 | 同时管理多个图库根目录，侧边栏切换 |
+| 照片浏览 | 网格、详情、胶片条、幻灯片、缩放/平移 |
+| 实况照片 | 自动配对 HEIC/MOV，支持播放与导出 |
+| 照片地图 | GPS 标记、聚合、缩放、离线 OsmAnd 扩展 |
 | 照片编辑 | 亮度/对比度/饱和度/曲线/裁剪/旋转/透视校正等 |
-| 视频播放 | 内置视频播放器，支持旋转/裁剪/导出 |
-| 人物识别 | 基于 InsightFace 的人脸检测和分组（需安装额外依赖） |
-| 多图库管理 | 支持同时管理多个文件夹根目录 |
-| 相册与子相册 | 库内可创建相册与一级子相册，支持重命名、置顶到侧栏 |
-| 侧边栏过滤 | 按文件夹/相册勾选筛选显示的照片 |
-| 元数据读取 | 支持 EXIF/GPS/拍摄日期等，基于 ExifTool |
-| 跨平台 | Windows / macOS / Linux |
-| 自定义工作目录 | 支持将工作文件存放在指定位置，保持照片文件夹干净 |
+| 视频 | 内置播放器，支持旋转、裁剪、导出 |
+| 人脸识别 | InsightFace + ONNX Runtime，人物聚类与分组 |
+| OCR 文字搜索 | RapidOCR 识别图中文字，并加入搜索 |
+| 语义搜索 | CLIP / SigLIP2 向量索引，支持中文关键词 |
+| 相册管理 | 相册/子相册、重命名、置顶、封面、排序 |
+| 侧边栏过滤 | 按文件夹/相册勾选筛选照片 |
+| 元数据 | ExifTool 读取 EXIF/GPS/拍摄时间 |
+| 自定义工作区 | 索引、缩略图、人脸数据放到独立目录，保持照片文件夹干净 |
 
 ## 技术栈
 
 - **语言：** Python 3.12+
 - **GUI：** PySide6 (Qt 6)
-- **数据库：** SQLite (WAL 模式)
-- **图像处理：** Pillow, OpenCV, NumPy, rawpy
+- **数据库：** SQLite（WAL 模式，FTS5）
+- **图像处理：** Pillow、OpenCV、NumPy、rawpy
 - **视频处理：** PyAV (FFmpeg)
-- **地图渲染：** OsmAnd 矢量地图 + OpenGL
-- **人脸检测：** InsightFace + ONNX Runtime
+- **地图：** OsmAnd 矢量地图 / OpenGL / QRhi 渲染适配
+- **AI：** ONNX Runtime、InsightFace、RapidOCR、CLIP/SigLIP2
 - **元数据：** ExifTool
+
+## 环境要求
+
+- Python **3.12+**
+- **ExifTool**：读取照片 EXIF/GPS
+  - Windows：`choco install exiftool` 或 https://exiftool.org
+  - macOS：`brew install exiftool`
+  - Linux：`sudo apt install libimage-exiftool-perl`
+- **FFmpeg**：视频封面、视频导出
+  - Windows：`choco install ffmpeg` 或 https://ffmpeg.org
+  - macOS：`brew install ffmpeg`
+  - Linux：`sudo apt install ffmpeg`
+
+Linux 使用 RAW 解码时还需要 `libraw`：
+
+```bash
+sudo apt install libraw-dev       # Debian/Ubuntu
+sudo dnf install LibRaw-devel     # Fedora
+```
 
 ## 安装
 
-### 前置条件（三种方式都需要）
-
-- **Python 3.12+**
-- **ExifTool** — 读取照片 EXIF/GPS 元数据
-  - Windows: `choco install exiftool` 或 https://exiftool.org
-  - macOS: `brew install exiftool`
-  - Linux: `sudo apt install libimage-exiftool-perl`
-- **FFmpeg** — 视频封面提取、视频导出
-  - Windows: `choco install ffmpeg` 或 https://ffmpeg.org
-  - macOS: `brew install ffmpeg`
-  - Linux: `sudo apt install ffmpeg`
-
-> **Linux 用户注意：** `rawpy` 依赖 `libraw`：
-> ```bash
-> sudo apt install libraw-dev    # Debian/Ubuntu
-> sudo dnf install LibRaw-devel  # Fedora
-> ```
-
----
-
-### 方式一：完整包（推荐 ⭐）
-
-从 [v6.1.0 Release](https://github.com/zhangzhanglaila/LocalPhotoManager/releases/tag/v6.1.0) 下载 **`iPhotron-v6.1.0-complete.zip`**（~1.4GB）。
-
-源码 + CLIP 模型 + 人脸模型 + 地图扩展全部打包好，一次下载，解压即用：
+### 从源码安装（推荐）
 
 ```bash
-# 1. 解压
-unzip iPhotron-v6.1.0-complete.zip
-cd iPhotron-v6.1.0
+git clone https://github.com/zhangzhanglaila/local-photo-manager.git
+cd local-photo-manager
 
-# 2. 安装
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 # source .venv/bin/activate   # macOS/Linux
-pip install -e .
 
-# 3. （可选）如需人物识别
+pip install -e .
+```
+
+可选 AI 依赖：
+
+```bash
+# OCR + ONNX Runtime
+pip install -e ".[ai]"
+
+# 语义搜索（CLIP / SigLIP2）
+pip install -e ".[agent]"
+
+# 人脸识别
 pip install insightface onnxruntime
 ```
 
----
+### 从 Release 安装
 
-### 方式二：源码 + 自动下载模型
-
-Clone 源码，模型在首次使用时自动从网络下载：
+从 [Releases](https://github.com/zhangzhanglaila/local-photo-manager/releases) 下载完整包，解压后执行：
 
 ```bash
-# 1. 克隆
-git clone https://github.com/zhangzhanglaila/LocalPhotoManager.git
-cd LocalPhotoManager
-
-# 2. 安装
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-pip install -e .
-
-# 3. （可选）如需人物识别
-pip install insightface onnxruntime
-```
-
-> 首次启动时：
-> - 地图扩展会弹窗提示下载（~975MB，从 GitHub Release）
-> - 首次使用语义搜索时弹窗提示下载 CLIP 模型（~580MB，从 HuggingFace 镜像）
-> - 人脸模型在首次使用人物识别时自动下载（~300MB，从 InsightFace CDN）
-
----
-
-### 方式三：源码 + 手动下载模型
-
-Clone 源码，从 [v6.1.0 Release](https://github.com/zhangzhanglaila/LocalPhotoManager/releases/tag/v6.1.0) 逐个下载模型到指定位置：
-
-```bash
-# 1. 克隆
-git clone https://github.com/zhangzhanglaila/LocalPhotoManager.git
-cd LocalPhotoManager
-
-# 2. 安装
 python -m venv .venv
 .venv\Scripts\activate
 pip install -e .
-pip install insightface onnxruntime
-
-# 3. 下载模型并解压到对应目录
-# CLIP 模型（语义搜索）
-curl -L -o clip-vit-base-patch32.zip https://github.com/zhangzhanglaila/LocalPhotoManager/releases/download/v6.1.0/clip-vit-base-patch32.zip
-unzip clip-vit-base-patch32.zip -d extension/models/
-
-# 地图扩展（离线地图）
-curl -L -o extension.zip https://github.com/zhangzhanglaila/LocalPhotoManager/releases/download/v6.1.0/extension.zip
-unzip extension.zip -d src/maps/tiles/
-
-# 人脸模型
-curl -L -o buffalo_l.zip https://github.com/zhangzhanglaila/LocalPhotoManager/releases/download/v6.1.0/buffalo_l.zip
-unzip buffalo_l.zip -d src/extension/models/
 ```
 
-最终目录结构：
+完整包通常已包含 CLIP、人脸模型和地图扩展；如果缺少，首次使用时会提示下载。
 
-```
-extension/models/clip-vit-base-patch32/   ← CLIP 模型
-src/extension/models/buffalo_l/           ← 人脸模型
-src/maps/tiles/extension/                 ← 地图扩展
-```
+## AI 模型
 
-**使用方式：**
-- 启动应用后，在搜索框输入关键词（支持中文）
-- 首次搜索需要加载模型（约 10 秒）
-- 之后搜索瞬间出结果
+| 用途 | 默认位置 | 覆盖变量 |
+|------|----------|----------|
+| 语义搜索 CLIP/SigLIP2 | `extension/models/` | `IPHOTO_CLIP_MODEL_DIR` |
+| 人脸识别 | `src/extension/models/` | `IPHOTO_FACE_MODEL_DIR` |
+| OCR（RapidOCR） | `extension/models/rapidocr/` | 首次使用自动下载 |
+| 地图扩展 | `src/maps/tiles/extension/` | `IPHOTO_OSMAND_EXTENSION_ROOT` |
 
-**支持的搜索示例：**
-| 中文 | 英文 |
-|------|------|
-| 树、花、山 | tree, flower, mountain |
-| 海边、日落 | beach, sunset |
-| 狗、猫 | dog, cat |
-| 美食、蛋糕 | food, cake |
+首次使用 AI 功能时的下载量约为：
 
----
+- CLIP/SigLIP2 搜索模型：约 350–580 MB
+- 人脸模型：约 300 MB
+- OCR 模型：约 21 MB
+- 地图扩展：约 975 MB（可选）
 
-### 国内用户特别说明
-
-**人脸模型**下载较慢时，可手动下载（任选其一）：
-
-- **本项目镜像（推荐）：** 从 [v6.1.0 Release](https://github.com/zhangzhanglaila/LocalPhotoManager/releases/tag/v6.1.0) 下载 `buffalo_l.zip`
-- **官方源：** 访问 https://github.com/deepinsight/insightface/releases/tag/v0.7 下载 `buffalo_l.zip`
-
-下载后解压，把 `buffalo_l` 文件夹放到 `src/extension/models/` 下：
-
-```
-src/extension/models/buffalo_l/
-├── 1k3d68.onnx
-├── 2d106det.onnx
-├── det_10g.onnx
-├── genderage.onnx
-└── w600k_r50.onnx
-```
-
-**地图扩展**下载较慢时，可手动下载：
-
-1. 访问 https://github.com/zhangzhanglaila/LocalPhotoManager/releases/tag/v6.1.0
-2. Windows 下载 `extension.zip`，Linux 下载 `extension.tar.xz`
-3. 解压后把 `extension` 文件夹放到 `src/maps/tiles/` 下
-4. 最终目录结构：`src/maps/tiles/extension/World_basemap_2.obf` 等文件
-
-也可跳过地图扩展，自动降级为基础地图。
+也可以直接从 Release 手动下载模型并解压到对应目录。
 
 ## 启动
 
-在项目根目录执行启动命令。
-
 ```bash
-# Windows 推荐方式：不需要先激活虚拟环境
+# Windows 推荐方式
 .venv\Scripts\python.exe -m iPhoto.gui.main
 
-# Windows：如果已经激活虚拟环境
-.venv\Scripts\activate        # Windows
+# 已激活虚拟环境
 iphoto-gui
 
 # macOS / Linux
@@ -200,176 +138,99 @@ source .venv/bin/activate
 iphoto-gui
 ```
 
-或直接打开指定相册：
+打开指定相册：
 
 ```bash
-.venv\Scripts\python.exe -m iPhoto.gui.main D:\APPLE\202406_a   # Windows
-# iphoto-gui /path/to/photos                                     # macOS/Linux
+.venv\Scripts\python.exe -m iPhoto.gui.main D:\APPLE\202406_a
+# iphoto-gui /path/to/photos
 ```
 
-如果 `iphoto-gui` 命令不可用，先确认已经执行过安装：
+Windows 无控制台启动使用 `run_iphoto.pyw`；排障时使用 `python -m iPhoto.gui.main` 查看控制台日志。
+
+## 项目结构
+
+```text
+src/iPhoto/        生产代码（application/domain/infrastructure/gui/bootstrap/...）
+src/maps/          可选 OsmAnd 离线地图运行时
+tests/             pytest 测试
+tools/             架构检查与手工脚本
+scripts/           打包、模型下载、发布辅助脚本
+packaging/         安装包与图标资源
+docs/              当前架构、开发、安全、构建文档
+extension/         下载的 CLIP 模型缓存（gitignore）
+downloads/         下载的发布包缓存（gitignore）
+run_iphoto.pyw     Windows GUI 入口
+pyproject.toml     依赖、打包与 pytest 配置
+```
+
+更详细的依赖方向、`RuntimeContext`/`LibrarySession` 边界和存储模型见 [docs/architecture.md](docs/architecture.md)。
+
+## 数据位置
+
+默认情况下，图库工作文件位于：
+
+```text
+<LibraryRoot>/.iPhoto/
+  global_index.db     # 图库索引
+  ocr_index.db        # OCR 索引
+  manifest.json       # 相册清单
+  thumbs/             # 缩略图缓存
+  faces/              # 人脸数据
+```
+
+配置自定义工作区后改为：
+
+```text
+<WorkspaceBase>/<LibraryName>/.iPhoto/
+```
+
+照片原文件不会被普通浏览、扫描或编辑覆盖；编辑结果保存在 `.ipo` sidecar 中。
+
+## 开发与测试
 
 ```bash
-pip install -e .
+# 架构边界检查
+.venv\Scripts\python.exe tools\check_architecture.py
+
+# 架构测试
+.venv\Scripts\python.exe -m pytest tests/architecture -q
+
+# 全量测试
+.venv\Scripts\python.exe -m pytest tests -q
 ```
+
+`tests/gui` 与 `tests/ui` 默认不在全量测试范围内；GUI 用例需要显式运行。测试细节和提交约定见 [docs/development.md](docs/development.md) 与 [AGENT.md](AGENT.md)。
 
 ## 环境变量
 
-| 变量名 | 说明 |
-|--------|------|
-| `IPHOTO_EXIFTOOL_PATH` | 指定 ExifTool 可执行文件路径 |
-| `IPHOTO_FACE_MODEL_DIR` | 指定人脸模型目录（默认 `src/extension/models/`） |
-| `IPHOTO_FACE_THREADS` | 限制人脸/OCR 推理线程数（默认 `min(4, CPU 核数 ÷ 2)`）。调大可加快扫描，但会挤占界面响应 |
-| `IPHOTO_SKIP_FACE_SCAN` | 设为 `1` 可关闭启动后的自动人脸扫描 |
-| `IPHOTO_PREFER_OSMAND_NATIVE_WIDGET` | 设为 `0` 可禁用 OsmAnd 原生地图组件 |
-| `IPHOTO_OSMAND_EXTENSION_ROOT` | 指定 OsmAnd 地图扩展目录 |
-
----
-
-## 本版本修复与改进
-
-### 一、性能优化
-
-| 问题 | 修复前 | 修复后 | 修复方式 |
-|------|--------|--------|----------|
-| 实况照片配对卡死 | O(n²)，13068×3544 ≈ 4600 万次迭代，应用无响应 | O(n)，1.7 秒完成 | 预构建 `videos_by_stem` / `videos_by_folder` 字典索引，候选查找从 O(n) 降至 O(1) |
-| 扫描期间点击任何按钮 | 主线程阻塞，弹出"Python 未响应" | 全部异步化，UI 始终流畅 | 路径验证移至 `GalleryLoadWorker` 后台线程；新增 `PathExistsCache` LRU 缓存（20,000 条） |
-| 缩略图磁盘加载 | 同步 `QPixmap(disk_file)` 阻塞主线程 | `QRunnable` 后台加载，主线程只做 `QPixmap.fromImage()` | 新增 `ThumbnailDiskLoadTask(QRunnable)`，`QImage` 在后台线程创建 |
-| 地图聚类 | 主线程遍历 16000 项 | >1000 项自动切换后台 `_ClusterWorker` 线程 | `_rebuild_photo_clusters()` 按数据量自动选择主线程/后台线程 |
-| 地图渲染闪烁 | 每个缩略图到达就重绘一次，`clear_pixmaps()` 清空后逐个闪烁 | 双缓冲，一次性 blit 到屏幕 | `_MarkerLayer` 新增 `_back_buffer` + `_buffer_dirty` 标志 |
-| 启动时界面卡死 | 地图 OpenGL 初始化 + 哈希遍历全部行 + 图库树级联加载阻塞主线程 | 懒加载 + O(1) 代次计数器 + 启动遮罩进度条 | 地图组件延迟初始化；`_snapshot_hash()` 改为代次计数器；拆分多步加载 |
-| 同一图库 rescan 地图闪烁 | rescan 时清空所有缩略图再重新加载 | 保留已有缩略图，只更新变化部分 | 同一图库 rescan 时不发射 `thumbnailsInvalidated` 信号 |
-
-### 二、Bug 修复
-
-| 问题 | 修复前 | 修复后 |
-|------|--------|--------|
-| 已删除文件仍显示在 All Photos | 本地文件已删除，缩略图仍可见，点击放大提示文件不存在 | All Photos 视图也验证路径存在性，后台线程过滤不存在的文件 |
-| 单击照片无法打开详情页 | 单击无反应，必须双击才能放大查看 | 连接 `itemClicked` 信号到 `_on_asset_clicked`，单击/双击均可打开 |
-| Escape 键直接关闭应用 | 按 Escape 无条件调用 `self.close()` 关闭整个窗口 | 移除无条件关闭，Escape 由 `AppShortcutManager` 管理，仅退出全屏 |
-| 右键移除文件夹无响应 | 点击"移除"后无反应 | 连接 `excludeAlbumRequested` 信号 |
-| 实况照片播放画面倒置 | Windows 上 180° 旋转被重复应用 | 修复旋转检测逻辑，Qt6 FFmpeg 后端自动处理旋转 |
-| 实况照片只显示一张 | 配对时间差阈值过窄（3 秒），大量实况照片无法配对 | 阈值放宽至 5 秒；新增同文件名匹配逻辑 |
-| 地图标记覆盖层不可见 | 覆盖层不透明，地图被完全遮挡 | 修复覆盖层透明度 |
-| Ctrl+C 无法退出 | Qt `eventFilter` 内 `KeyboardInterrupt` 死循环 | Windows 后台看门线程正确处理 Ctrl+C 信号 |
-| ExifTool 缺失导致崩溃 | 未安装 ExifTool 时提取元数据直接崩溃 | `ExternalToolError` 异常捕获，弹出中文警告对话框；Windows 自动检测路径 |
-
-### 三、新功能
-
-| 功能 | 说明 |
+| 变量 | 作用 |
 |------|------|
-| 多图库共存 | 支持同时管理多个图库根目录，侧边栏显示所有已添加的图库 |
-| 侧边栏文件夹过滤 | 可勾选/取消文件夹，按文件夹筛选显示的照片 |
-| 详情页全屏按钮 | 详情页新增全屏按钮，支持沉浸式查看照片 |
-| 照片地图面板 | 详情页新增地图面板，显示照片拍摄位置 |
-| 扫描状态实时反馈 | 进度条 + 已扫描/总数，扫描过程透明可见 |
-| 地图标记动态缩放 | 标记数字徽章随缩放级别动态调整大小 |
-| 全局异常捕获 | 未处理的异常记录到日志文件，方便排查问题 |
-| 全中文化 UI | 涉及 10+ 文件，包括状态栏、右键菜单、导出/分享提示、对话框、人物面板等 |
-
-### 四、本次更新：稳定性与浏览性能
-
-#### 浏览性能
-
-| 问题 | 修复前 | 修复后 |
-|------|--------|--------|
-| 浏览时应用持续占用 CPU | 图库窗口被反复重载，空闲时也有约 11 次/秒的模型重置，进程占用约 19 个核 | 重载只在真正需要时发生：空闲 0 次/秒，CPU 降到约 0.13 核 |
-| 上下滚动卡顿 | 每次只加载可见的 50 行，滚一下就撞到边界并重载 | 加载 200–1000 行的缓存窗口（前视 1 屏、后视 2 屏），滚动在窗口内不触发重载 |
-| 跨月拖动发涩 | 绘制时对未缓存的行逐行同步查库 | 绘制只读缓存，缺行异步补载后单独重绘 |
-| 滚轮一次跳太远 | 一格滚轮约 2.8 行 | 一格滚轮约 1.4 行 |
-| 扫描人脸/OCR 时看照片卡 | 推理默认按 CPU 核数开线程，一条自动扫描即可占满整机 | 推理线程限制为 `min(4, 核数÷2)`；并且**看照片、滚动、播视频时两条扫描自动暂停**，回到网格后继续 |
-
-#### 数据位置
-
-| 问题 | 修复前 | 修复后 |
-|------|--------|--------|
-| 照片文件夹里出现状态文件 | 专辑清单写死为 `<照片库>/.iphoto.album.json`；着色器缓存也因启动顺序写进库内 `.iPhoto` | 全部写入自定义工作目录；旧清单首次打开时自动迁移（保留专辑 id） |
-
-#### 正确性修复
-
-| 问题 | 修复前 | 修复后 |
-|------|--------|--------|
-| 扫描后失效照片仍留在索引 | 重扫库根时清理逻辑一行都删不掉（相对路径与绝对前缀永远匹配不上） | 正确区分"库根"与"库外目录"，重扫会清理已删除/移动的行 |
-| 老照片导致扫描中断 | Windows 上 `datetime.timestamp()` 对 1970 年前后的值抛 `OSError` | 换算不再依赖系统 `mktime`，纪元附近的值也能安全处理 |
-| 数据库损坏后无法自愈 | SQLite 连接未关闭，Windows 上文件被占用，恢复流程删不掉旧文件 | 连接统一显式关闭，损坏索引可正常重建 |
-| 无法创建子相册 | 多库改造后层级判断失效，创建必然报错 | 层级为 库(1) → 相册(2) → 子相册(3)，创建与展示均正常 |
-| 地图组件初始化时机 | 需要先手动"激活"才能取到地图控件 | 惰性构建，取用时自动初始化 |
-| 人脸扫描失败无细节 | 只记"N 个资源处理失败" | 逐个记录资源与失败原因，便于排查 |
-
-#### 测试
-
-| 项目 | 变化 |
-|------|------|
-| 测试套件 | 65 个失败 → **0 个失败**（1473 通过 / 34 跳过，连续三次结果一致） |
-| 崩溃 | 修复了因遗留线程导致的偶发进程中止；整套运行不再中断 |
-| 架构检查 | 两处层级越界已修复，`tools/check_architecture.py` 通过 |
-
----
+| `IPHOTO_EXIFTOOL_PATH` | 指定 ExifTool 可执行文件 |
+| `IPHOTO_FACE_MODEL_DIR` | 指定人脸模型目录 |
+| `IPHOTO_CLIP_MODEL_DIR` | 指定 CLIP/SigLIP2 模型目录 |
+| `IPHOTO_FACE_THREADS` | 限制人脸/OCR 推理线程数 |
+| `IPHOTO_SKIP_FACE_SCAN` | `1` 关闭启动后的自动人脸扫描 |
+| `IPHOTO_PREFER_OSMAND_NATIVE_WIDGET` | `0` 禁用 OsmAnd 原生地图组件 |
+| `IPHOTO_OSMAND_EXTENSION_ROOT` | 指定地图扩展目录 |
+| `IPHOTO_SEARCH_MIN_SIM` | 覆盖语义搜索相似度下限 |
+| `IPHOTO_SEARCH_MAX_RESULTS` | 覆盖搜索结果数量上限 |
+| `IPHOTO_DIAG` | 输出 `[DIAG]` 诊断日志 |
 
 ## 已知限制
 
-- **离线地图扩展需要与所用 Qt 版本匹配**。扩展自带的原生组件若与当前 PySide6 的 Qt 版本不一致，会加载失败并自动降级为在线地图；此时日志中会出现 `WinError 127`。
-- **CI 尚未配置**。仓库的 `.github/` 目前只有 issue 模板，架构检查与测试需要本地运行（见 `AGENT.md` 第 9 节）。
-- `tests/gui` 目录不在默认测试范围内，其中部分用例仍停留在旧的同步加载模型，尚未维护。
+- 地图扩展自带的原生组件需要与当前 PySide6/Qt 版本匹配；不匹配时会自动降级为在线地图，并在日志中记录 `WinError 127`。
+- CI 尚未配置；架构检查和测试目前需要在本地运行。
+- 本机全量测试在原生 OsmAnd 探测用例上可能触发 Qt 退出期崩溃；可用 `--ignore=tests/test_photo_map_view.py` 稳定跑完其余测试。
 
----
+## 文档
 
-## 当前项目状态（2026-11-20）
-
-### 启动方式
-
-| 方式 | 命令 / 入口 | 说明 |
-|---|---|---|
-| 桌面快捷方式 | `iPhotron.lnk` → `pythonw.exe run_iphoto.pyw` | 无控制台窗口；图标在 `%LOCALAPPDATA%\iPhoto\app.ico` |
-| 快捷方式（排障） | `iPhotron (日志).lnk` → `python.exe -m iPhoto.gui.main` | 显示控制台输出 |
-| 命令行 | `.venv\Scripts\python.exe -m iPhoto.gui.main` | 与上方等价 |
-
-`run_iphoto.pyw` 是必需的：`pythonw.exe` 启动时 `stdout`/`stderr` 为 `None`，应用写日志时会在窗口出现前退出，表现为"双击无反应"。启动器会把两个流接到 `%LOCALAPPDATA%\iPhoto\launcher.*`。
-
-### 打包（已准备，尚未构建）
-
-- `scripts/build_nuitka_windows.ps1`：Nuitka `--standalone`（onedir 形态），已包含 RapidOCR 包与 CLIP 模型目录；
-- `packaging/app.ico` + `packaging/make_icon*.py`：应用图标（多尺寸，含手工 ICO 生成器）；
-- `packaging/iPhotron.iss`：Inno Setup 安装器（装到 `%LOCALAPPDATA%\Programs\iPhotron`，免管理员，桌面/开始菜单快捷方式）；
-- `packaging/install_shortcuts.ps1`：重建桌面快捷方式（图标必须放在用户目录，仓库目录的 ACL 会让 Explorer 读不到图标文件）。
-
-CLIP 模型路径已支持打包布局与 `IPHOTO_CLIP_MODEL_DIR` 覆盖（此前硬编码 `parents[4]`，打包后指向安装目录之上一级）。
-
-### 本轮重构（结构类）
-
-| 项 | 内容 |
-|---|---|
-| 启动编排 | `bootstrap/startup_sequence.py`：阶段列表驱动，删除 `_step5_executed` 等散落标志 |
-| 加载提示 | 收敛为单一 `StartupOverlay`，移除 `_startup_overlay_active` 这类"用开关压制另一套 UI"的补丁 |
-| 搜索 | `config.SearchSettings` + `application/search/embedding_cache.py`，阈值覆盖改由配置提供 |
-| 工作区 | 嵌套目录迁移从路径 getter 移到 `bootstrap/workspace_migration.py`，启动时显式执行一次 |
-| 图库计数 | 缓存键规范化，并在扫描完成后主动失效 |
-| 异常处理 | 部分 `except Exception: pass` 收窄为具体异常并记日志（进行中） |
-
-### 本轮修复
-
-- **收藏不持久**：扫描合并会把 `is_favorite` 覆盖成默认 0，已改为"库管理字段以持久化值为准"；
-- **收藏里取消后出现黑块**：该行不再属于当前查询，现会立即从集合移除；
-- **部分 iPhone HEIC 无法解码**：pillow-heif 的安全上限（`ipco` 子 box > 100）导致，已放宽；
-- **扫描批次写库全部失败**：诊断埋点的相对导入层级写错（`iPhoto.cache.utils`），已修正；
-- **拖动圆球被拽回**：重置窗口状态时不再把行数清零，模型与滚动范围保持稳定。
-
-### 已知问题
-
-- **首次冷启动明显更慢**：操作系统的文件缓存与 Windows Defender 首次扫描所致；同一会话内再次启动会快很多（进程状态仍然全部重建，快的是 OS 缓存）。
-- **扫描早期拖动时间轴卡顿**：实测主线程停顿 p90 约 240ms、最坏 7.5 秒，约 60–70 秒后消失；窗口加载本身仅约 50ms，瓶颈在主线程上的启动期任务，尚未定位到具体一处。
-- **完整测试套件在本机会触发 Qt 退出期的原生崩溃**（`Windows fatal exception: access violation`），因此日常以定向子集 + `py_compile` + 实机启动截图验证。
-
-### 新增环境变量
-
-| 变量 | 作用 |
-|---|---|
-| `IPHOTO_CLIP_MODEL_DIR` | 覆盖 CLIP 模型目录（打包/自定义部署） |
-| `IPHOTO_SEARCH_MIN_SIM` | 覆盖语义搜索相似度下限（默认 0.24） |
-| `IPHOTO_SEARCH_MAX_RESULTS` | 覆盖返回条数上限（默认 300） |
-| `IPHOTO_DIAG` | 输出 `[DIAG]` 诊断日志（窗口加载耗时、主线程停顿等） |
-
----
+- [架构](docs/architecture.md)
+- [开发指南](docs/development.md)
+- [安全与数据位置](docs/security.md)
+- [自定义工作区](docs/custom_workspace.md)
+- [变更记录](docs/CHANGELOG.md)
+- [Windows 构建](docs/misc/BUILD_EXE.md)
+- [Linux .deb 构建](docs/misc/BUILD_DEB.md)
 
 ## 许可证
 

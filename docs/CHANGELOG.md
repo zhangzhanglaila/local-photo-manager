@@ -1,6 +1,7 @@
 # 📋 Changelog
 
-All notable changes to **iPhotron** are documented in this file.
+All notable changes to **iPhoto** are documented in this file. Entries below
+v6.1.0 are retained as historical context from the upstream iPhotron project.
 
 ---
 
@@ -35,6 +36,14 @@ into the photo folder.*
   one thread per core, so a single automatic scan saturated the machine.
 - Both scans step aside while the user is viewing media: photo detail, grid
   scrolling and video playback register "foreground viewing" and pause them.
+- The background-task popup now mirrors the real worker lifecycle: a scan is
+  `waiting` until its worker gets the AI gate and reports progress, switches to
+  `running` on that first tick (including the model-loading phase), and is
+  removed on cancellation instead of lingering as an unfinished row.
+- Sequential root scans (the primary library followed by each extra root) now
+  share one face/OCR queue and start the workers once, after the final root.
+  Previously the next root replaced the workers, discarded the first root's
+  queued rows and left both task rows stuck on "等待中".
 - Face-scan failures are logged per asset with their reason instead of a single
   "N assets could not be processed" line.
 

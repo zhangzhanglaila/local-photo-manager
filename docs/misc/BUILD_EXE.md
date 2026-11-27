@@ -1,6 +1,6 @@
 # Building the Executable with Nuitka and AOT
 
-This document outlines the process for building the iPhotron executable, including the mandatory Ahead-Of-Time (AOT) compilation step for Numba filters.
+This document outlines the process for building the iPhoto executable, including the mandatory Ahead-Of-Time (AOT) compilation step for Numba filters.
 
 ## Overview
 
@@ -51,7 +51,7 @@ Expected layout:
 The upstream source of truth for producing those files is the standalone
 [`PySide6-OsmAnd-SDK`](https://github.com/OliverZhaohaibin/PySide6-OsmAnd-SDK)
 repository. Build the runtime there first, then sync the outputs into the
-iPhotron checkout before packaging.
+iPhoto checkout before packaging.
 
 Recommended Windows command in `PySide6-OsmAnd-SDK`:
 
@@ -144,7 +144,7 @@ Important packaging rules:
 - Exclude `albumentations`, `albucore`, `pydantic`, `pydantic_core`, and
   `typing_inspection`. The People pipeline installs a lightweight
   albumentations stub because InsightFace's mask-rendering import path is not
-  used by iPhotron.
+  used by iPhoto.
 - Keep InsightFace limited to `allowed_modules=["detection", "recognition"]`.
   People clustering needs only bounding boxes and embeddings. Loading
   landmark/gender-age models in packaged builds has caused asset-level
@@ -263,7 +263,7 @@ OpenGL path when it is selected at runtime.
 ### Recommended macOS runtime sync
 
 Before building a macOS package, build the SDK runtime and sync it into the
-iPhotron extension layout:
+iPhoto extension layout:
 
 ```bash
 QT_ROOT=/opt/homebrew/opt/qt bash ../PySide6-OsmAnd-SDK/tools/osmand_render_helper_native/build_macos.sh
