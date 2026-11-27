@@ -94,49 +94,6 @@ def test_on_library_tree_updated_rebinds_asset_list_vm_and_reloads_selection() -
     )
 
 
-def test_open_album_from_path_creates_session_when_no_library_is_bound(
-    tmp_path: Path,
-) -> None:
-    album_root = tmp_path / "Album"
-    album_root.mkdir()
-    coordinator = _make_coordinator()
-
-    coordinator._context = MagicMock()
-    coordinator._context.library_session = None
-    coordinator._context.library.root.return_value = None
-    coordinator._facade = MagicMock()
-    coordinator._navigation = MagicMock()
-    coordinator._on_library_tree_updated = MagicMock()
-
-    coordinator.open_album_from_path(album_root)
-
-    coordinator._context.open_library.assert_called_once_with(album_root)
-    coordinator._on_library_tree_updated.assert_called_once_with()
-    coordinator._navigation.open_album.assert_called_once_with(album_root)
-
-
-def test_open_album_from_path_reuses_session_for_album_inside_library(
-    tmp_path: Path,
-) -> None:
-    library_root = tmp_path / "Library"
-    album_root = library_root / "Album"
-    album_root.mkdir(parents=True)
-    coordinator = _make_coordinator()
-
-    coordinator._context = MagicMock()
-    coordinator._context.library_session = None
-    coordinator._context.library.root.return_value = library_root
-    coordinator._facade = MagicMock()
-    coordinator._navigation = MagicMock()
-    coordinator._on_library_tree_updated = MagicMock()
-
-    coordinator.open_album_from_path(album_root)
-
-    coordinator._context.open_library.assert_not_called()
-    coordinator._on_library_tree_updated.assert_not_called()
-    coordinator._navigation.open_album.assert_called_once_with(album_root)
-
-
 def test_on_library_tree_updated_defers_gallery_reload_while_startup_loading() -> None:
     root = Path("/library")
     map_runtime = SimpleNamespace(package_root=lambda: Path("/session/maps"))
@@ -234,19 +191,14 @@ def test_connect_signals_wires_location_scan_updates_from_library_and_service() 
     coordinator._window.ui = MagicMock()
     coordinator._context = MagicMock()
     coordinator._facade = MagicMock()
-    coordinator._restore_preferences = MagicMock()
     coordinator._on_library_tree_updated = MagicMock()
     coordinator._on_asset_clicked = MagicMock()
     coordinator._on_favorite_clicked = MagicMock()
     coordinator._sync_selection = MagicMock()
     coordinator._on_map_asset_activated = MagicMock()
     coordinator._on_cluster_activated = MagicMock()
-    coordinator._handle_open_album_dialog = MagicMock()
-    coordinator._handle_face_name_toggle_changed = MagicMock()
-    coordinator.open_album_from_path = MagicMock()
     coordinator._on_people_cluster_activated = MagicMock()
     coordinator._on_people_group_activated = MagicMock()
-    coordinator._handle_wheel_action_changed = MagicMock()
 
     # The stub never initialises the Qt object underneath the coordinator, so
     # ``QTimer(self)`` cannot be constructed; the wiring under test does not

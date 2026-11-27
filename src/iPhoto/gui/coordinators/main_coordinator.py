@@ -29,6 +29,7 @@ from iPhoto.gui.coordinators.location_coordinator import (
     MAP_FOCUS_RETRY_INTERVAL_MS,
     LocationCoordinator,
 )
+from iPhoto.gui.coordinators.library_open_coordinator import LibraryOpenCoordinator
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.organize_coordinator import OrganizeCoordinator
@@ -296,6 +297,18 @@ class MainCoordinator(QObject):
             search=self._search,
             gallery_vm=self._gallery_vm,
             start_embedding_generation=self._start_embedding_generation,
+            parent=self,
+        )
+
+        self._library_open = LibraryOpenCoordinator(
+            window,
+            context,
+            dialog=self._dialog,
+            navigation=self._navigation,
+            status_bar=self._status_bar,
+            facade=self._facade,
+            library_root_getter=self._library_root,
+            on_library_changed=self._on_library_tree_updated,
             parent=self,
         )
 
@@ -642,7 +655,9 @@ class MainCoordinator(QObject):
         ui = self._window.ui
 
         # Menus
-        ui.open_album_action.triggered.connect(self._handle_open_album_dialog)
+        ui.open_album_action.triggered.connect(
+            self._library_open.handle_open_album_dialog
+        )
         ui.rescan_action.triggered.connect(self._status_bar.begin_scan)
         ui.rescan_action.triggered.connect(self._gallery_vm.rescan_current)
         ui.download_map_extension_action.triggered.connect(
@@ -707,7 +722,9 @@ class MainCoordinator(QObject):
         # Search back button
         ui.gallery_page.searchBackRequested.connect(self._search.on_search_back)
         # Dashboard Click
-        ui.albums_dashboard_page.albumSelected.connect(self.open_album_from_path)
+        ui.albums_dashboard_page.albumSelected.connect(
+            self._library_open.open_album_from_path
+        )
         ui.people_page.clusterActivated.connect(self._on_people_cluster_activated)
         ui.people_page.groupActivated.connect(self._on_people_group_activated)
         self._context.library.peopleIndexUpdated.connect(ui.people_page.schedule_index_refresh)
@@ -739,8 +756,10 @@ class MainCoordinator(QObject):
 
         # Navigation
         self._navigation.bindLibraryRequested.connect(self._dialog.bind_library_dialog)
-        ui.change_workspace_action.triggered.connect(self._on_change_workspace)
-        ui.run_setup_action.triggered.connect(self._on_run_setup_wizard)
+        ui.change_workspace_action.triggered.connect(
+            self._library_open.change_workspace
+        )
+        ui.run_setup_action.triggered.connect(self._library_open.run_setup_wizard)
         ui.bind_library_action.triggered.connect(self._dialog.bind_library_dialog)
         self._detail_vm.edit_requested.connect(self._edit.enter_edit_mode)
 
@@ -1184,32 +1203,6 @@ class MainCoordinator(QObject):
         session = self._session if self._session is not None else self._active_session()
         return getattr(session, "library_root", None)
 
-    def _on_run_setup_wizard(self) -> None:
-        """Re-open the first-run setup wizard from the settings menu."""
-
-        self._context.show_welcome_wizard()
-
-    def _on_change_workspace(self) -> None:
-        """Copy the workspace to a new folder, then switch the setting."""
-
-        from ..ui.controllers.workspace_relocation_controller import (
-            relocate_workspace_interactively,
-        )
-
-        root = self._context.library.root()
-        changed = relocate_workspace_interactively(
-            self._window, root, self._context.settings
-        )
-        if changed:
-            self._status_bar.show_message(
-                "存储位置已更改，请重启应用以生效。", 8000
-            )
-
-    def _handle_open_album_dialog(self):
-        path = self._dialog.open_album_dialog()
-        if path:
-            self.open_album_from_path(path)
-
     def _on_cluster_activated(self, assets: list):
         """Handle cluster click from map view to open cluster gallery.
 
@@ -1259,50 +1252,6 @@ class MainCoordinator(QObject):
         except Exception:
             self._logger.exception("Failed to open people group gallery for %s", group_id)
 
-    def open_album_from_path(self, path: Path):
-        import time
-        target = Path(path).expanduser()
-        self._logger.info("open_album_from_path: start %s", target)
-        t0 = time.monotonic()
-        if not self._ensure_session_for_open_album(target):
-            self._logger.info("open_album_from_path: session failed (%.2fs)", time.monotonic() - t0)
-            return
-        self._logger.info("open_album_from_path: session ok (%.2fs), opening album...", time.monotonic() - t0)
-        t1 = time.monotonic()
-        self._navigation.open_album(target)
-        self._logger.info("open_album_from_path: album opened (%.2fs), total=%.2fs", time.monotonic() - t1, time.monotonic() - t0)
-
-    def _ensure_session_for_open_album(self, path: Path) -> bool:
-        """Ensure standalone album opens have a session-bound query surface."""
-
-        if not path.exists() or not path.is_dir():
-            return True
-
-        current_root = self._library_root()
-        if current_root is not None and self._path_is_descendant(path, current_root):
-            return True
-
-        open_library = getattr(self._context, "open_library", None)
-        if not callable(open_library):
-            return True
-
-        try:
-            open_library(path)
-        except Exception as exc:
-            self._facade.errorRaised.emit(str(exc))
-            return False
-
-        self._on_library_tree_updated()
-        return True
-
-    @staticmethod
-    def _path_is_descendant(path: Path, root: Path) -> bool:
-        try:
-            Path(path).resolve().relative_to(Path(root).resolve())
-        except (OSError, ValueError):
-            return False
-        return True
-
     def _prepare_paths_for_mutation(self, paths: list[Path]) -> None:
         """Release preview/player handles before mutating files on disk."""
 
@@ -1326,6 +1275,11 @@ class MainCoordinator(QObject):
             return str(path)
 
     # --- Public Accessors for Window ---
+    def open_album_from_path(self, path: Path):
+        """Open an album from the window/CLI; the flow lives in its own coordinator."""
+
+        self._library_open.open_album_from_path(path)
+
     def toggle_playback(self):
         self._playback.toggle_playback()
 
