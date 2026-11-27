@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -127,3 +127,12 @@ class PersonCoverRecord:
     asset_id: str | None
     thumbnail_path: str | None
     is_custom: bool
+
+
+@dataclass(frozen=True)
+class FaceMutationResult:
+    changed_asset_ids: tuple[str, ...] = ()
+    changed_person_ids: tuple[str, ...] = ()
+    changed_group_ids: tuple[str, ...] = ()
+    person_redirects: dict[str, str] = field(default_factory=dict)
+    group_redirects: dict[str, str | None] = field(default_factory=dict)
