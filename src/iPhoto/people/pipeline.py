@@ -4,16 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
-import builtins
-import typing
 import uuid
-from collections import Counter, defaultdict, deque
+from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
-from types import ModuleType
 from typing import Callable, Sequence
 
 import numpy as np
@@ -25,9 +21,25 @@ from .repository import (
     PersonProfile,
     PersonRecord,
     compute_cluster_center,
-    normalize_vector,
 )
 from .repository_utils import profile_state_for_sample_count
+
+from .clustering_math import (  # noqa: F401 - re-exported for existing call sites
+    _extract_embedding,
+    _key_face_sort_key,
+    _normalize_bbox,
+    _quantize_value,
+    cosine_distance,
+    run_dbscan,
+)
+from .insightface_compat import (  # noqa: F401 - re-exported for existing call sites
+    _build_face_analysis_init_error,
+    _face_session_options,
+    _install_insightface_mask_renderer_stubs,
+    _install_runtime_typing_compat,
+    _patch_insightface_alignment_estimate,
+    _resolve_execution_providers,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _REQUIRED_FACE_MODULES = ("detection", "recognition")
@@ -665,289 +677,33 @@ def resolve_canonical_person_id(
     return uuid.uuid4().hex
 
 
-def run_dbscan(
-    embeddings: np.ndarray,
-    *,
-    eps: float,
-    min_samples: int,
-) -> np.ndarray:
-    if embeddings.size == 0:
-        return np.empty((0,), dtype=np.int32)
-
-    n = embeddings.shape[0]
-    normalized = np.stack([normalize_vector(v) for v in embeddings], axis=0)
-    CHUNK_SIZE = 512
-
-    # Build neighbor lists in chunks to avoid materializing the full N×N
-    # distance matrix.  For large face sets (5000+) this keeps peak memory
-    # at ~CHUNK_SIZE×N instead of N×N.
-    neighbor_map: list[list[int]] = [[] for _ in range(n)]
-    for start in range(0, n, CHUNK_SIZE):
-        end = min(start + CHUNK_SIZE, n)
-        # (chunk, n) @ (n, n) → (chunk, n)
-        similarity_chunk = normalized[start:end] @ normalized.T
-        distance_chunk = np.clip(1.0 - similarity_chunk, 0.0, 2.0)
-        for local_idx in range(distance_chunk.shape[0]):
-            global_idx = start + local_idx
-            neighbor_map[global_idx] = [
-                int(j) for j in np.flatnonzero(distance_chunk[local_idx] <= eps)
-            ]
-        del similarity_chunk, distance_chunk
-
-    unvisited = -99
-    labels = np.full(n, unvisited, dtype=np.int32)
-    cluster_id = 0
-    for point_index in range(n):
-        if labels[point_index] != unvisited:
-            continue
-
-        neighbors = neighbor_map[point_index]
-        if len(neighbors) < min_samples:
-            labels[point_index] = -1
-            continue
-
-        labels[point_index] = cluster_id
-        queue: deque[int] = deque(neighbors)
-        queued = set(neighbors)
-        while queue:
-            neighbor_index = queue.popleft()
-            queued.discard(neighbor_index)
-            if labels[neighbor_index] == -1:
-                labels[neighbor_index] = cluster_id
-            if labels[neighbor_index] != unvisited:
-                continue
-
-            labels[neighbor_index] = cluster_id
-            neighbor_neighbors = neighbor_map[neighbor_index]
-            if len(neighbor_neighbors) < min_samples:
-                continue
-            for candidate in neighbor_neighbors:
-                if labels[candidate] == unvisited and candidate not in queued:
-                    queue.append(candidate)
-                    queued.add(candidate)
-                elif labels[candidate] == -1:
-                    labels[candidate] = cluster_id
-
-        cluster_id += 1
-
-    labels[labels == unvisited] = -1
-    return labels
 
 
-def cosine_distance_matrix(embeddings: np.ndarray) -> np.ndarray:
-    """Compute full N×N cosine distance matrix (kept for callers that need it).
-
-    Prefer using :func:`run_dbscan` directly for clustering — it computes
-    distances in chunks without materializing the full matrix.
-    """
-    n = embeddings.shape[0]
-    normalized = np.stack([normalize_vector(vector) for vector in embeddings], axis=0)
-    CHUNK_SIZE = 512
-    distance = np.empty((n, n), dtype=np.float32)
-    for start in range(0, n, CHUNK_SIZE):
-        end = min(start + CHUNK_SIZE, n)
-        similarity_chunk = normalized[start:end] @ normalized.T
-        distance[start:end] = 1.0 - similarity_chunk
-    np.clip(distance, 0.0, 2.0, out=distance)
-    return distance
 
 
-def cosine_distance(left: np.ndarray, right: np.ndarray) -> float:
-    left_normalized = normalize_vector(left)
-    right_normalized = normalize_vector(right)
-    if left_normalized.size == 0 or right_normalized.size == 0:
-        return float("inf")
-    similarity = float(left_normalized @ right_normalized)
-    return float(np.clip(1.0 - similarity, 0.0, 2.0))
 
 
-def _normalize_bbox(
-    raw_bbox,
-    *,
-    image_width: int,
-    image_height: int,
-) -> tuple[int, int, int, int]:
-    box = np.asarray(raw_bbox, dtype=np.float32).flatten().tolist()
-    x1, y1, x2, y2 = [int(round(value)) for value in box[:4]]
-    x1 = max(0, min(x1, image_width - 1))
-    y1 = max(0, min(y1, image_height - 1))
-    x2 = max(x1 + 1, min(x2, image_width))
-    y2 = max(y1 + 1, min(y2, image_height))
-    return x1, y1, x2 - x1, y2 - y1
 
 
-def _extract_embedding(face) -> np.ndarray | None:
-    embedding = getattr(face, "embedding", None)
-    if embedding is None:
-        return None
-    return normalize_vector(np.asarray(embedding, dtype=np.float32).flatten())
 
 
-def _key_face_sort_key(face: FaceRecord) -> tuple[float, int]:
-    return face.confidence, face.box_w * face.box_h
 
 
-def _quantize_value(value: float, step: int) -> int:
-    return int(round(float(value) / float(step)) * step)
 
 
-def _build_face_analysis_init_error(
-    *,
-    feature_name: str,
-    model_pack: str,
-    model_dir: Path,
-    exc: Exception,
-) -> RuntimeError:
-    reason = str(exc).strip() or exc.__class__.__name__
-    model_pack_dir = model_dir / model_pack
-    if not model_pack_dir.exists():
-        return RuntimeError(
-            f"{feature_name} unavailable: InsightFace model '{model_pack}' is not cached at "
-            f"'{model_pack_dir}'. Initialization/download failed ({reason}). "
-            f"Allow one download from github.com or copy an existing '{model_pack}' model "
-            f"folder into '{model_dir}', then retry."
-        )
-    return RuntimeError(
-        f"{feature_name} unavailable: failed to initialize InsightFace model "
-        f"'{model_pack}' from '{model_pack_dir}' ({reason})."
-    )
 
 
 FACE_THREAD_LIMIT = 4
 
 
-def _face_session_options():
-    """Return bounded onnxruntime session options for face inference.
-
-    InsightFace builds its sessions through ``onnxruntime.InferenceSession``
-    without options, which defaults to one intra-op thread per core. A single
-    face scan therefore pinned every core of the machine, and the interface
-    became unresponsive for as long as the scan ran — the face scan starts on its
-    own once the file scan finishes, so this happened without the user asking for
-    it. The shared policy in :mod:`iPhoto.ai.onnx_threads` keeps face and OCR
-    scans consistent, and ``IPHOTO_FACE_THREADS`` overrides the limit for users
-    who would rather finish a scan quickly.
-    """
-
-    from iPhoto.ai.onnx_threads import THREAD_LIMIT_ENV, bounded_session_options
-
-    return bounded_session_options(THREAD_LIMIT_ENV)
 
 
-def _resolve_execution_providers() -> list[str]:
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        return ["CPUExecutionProvider"]
-
-    available = ort.get_available_providers()
-    providers: list[str] = []
-    if "CUDAExecutionProvider" in available:
-        providers.append("CUDAExecutionProvider")
-    if "CPUExecutionProvider" in available:
-        providers.append("CPUExecutionProvider")
-    return providers or ["CPUExecutionProvider"]
 
 
-def _patch_insightface_alignment_estimate() -> None:
-    try:
-        from insightface.utils import face_align
-        from skimage import transform as trans
-    except ImportError:
-        return
-
-    if getattr(face_align, "_iphoto_from_estimate_patch", False):
-        return
-
-    similarity_transform_cls = getattr(trans, "SimilarityTransform", None)
-    from_estimate = getattr(similarity_transform_cls, "from_estimate", None)
-    if from_estimate is None:
-        return
-
-    def estimate_norm(lmk, image_size=112, mode="arcface"):
-        del mode
-        assert lmk.shape == (5, 2)
-        assert image_size % 112 == 0 or image_size % 128 == 0
-        if image_size % 112 == 0:
-            ratio = float(image_size) / 112.0
-            diff_x = 0.0
-        else:
-            ratio = float(image_size) / 128.0
-            diff_x = 8.0 * ratio
-
-        dst = face_align.arcface_dst * ratio
-        dst[:, 0] += diff_x
-        tform = similarity_transform_cls.from_estimate(lmk, dst)
-        return tform.params[0:2, :]
-
-    face_align.estimate_norm = estimate_norm
-    face_align._iphoto_from_estimate_patch = True
 
 
-def _install_insightface_mask_renderer_stubs() -> None:
-    """Avoid importing albumentations for InsightFace mask rendering we do not use."""
-    if "albumentations" in sys.modules:
-        return
-
-    albumentations_module = ModuleType("albumentations")
-    core_module = ModuleType("albumentations.core")
-    transforms_module = ModuleType("albumentations.core.transforms_interface")
-
-    class ImageOnlyTransform:
-        def __init__(self, *args, **kwargs) -> None:
-            del args, kwargs
-
-    transforms_module.ImageOnlyTransform = ImageOnlyTransform
-    core_module.transforms_interface = transforms_module
-    albumentations_module.core = core_module
-
-    sys.modules["albumentations"] = albumentations_module
-    sys.modules["albumentations.core"] = core_module
-    sys.modules["albumentations.core.transforms_interface"] = transforms_module
 
 
-def _install_runtime_typing_compat() -> None:
-    """Provide typing names some third-party annotations expect at runtime."""
-    import numpy.typing as npt
-
-    compat_names = {
-        "Any": typing.Any,
-        "Callable": typing.Callable,
-        "ClassVar": typing.ClassVar,
-        "Concatenate": typing.Concatenate,
-        "Dict": typing.Dict,
-        "Final": typing.Final,
-        "Generic": typing.Generic,
-        "Iterable": typing.Iterable,
-        "List": typing.List,
-        "Literal": typing.Literal,
-        "LiteralString": typing.LiteralString,
-        "Mapping": typing.Mapping,
-        "MutableMapping": typing.MutableMapping,
-        "Never": typing.Never,
-        "NoReturn": typing.NoReturn,
-        "NotRequired": typing.NotRequired,
-        "Optional": typing.Optional,
-        "ParamSpec": typing.ParamSpec,
-        "Protocol": typing.Protocol,
-        "Required": typing.Required,
-        "Self": typing.Self,
-        "Sequence": typing.Sequence,
-        "Set": typing.Set,
-        "TypedDict": typing.TypedDict,
-        "Tuple": typing.Tuple,
-        "TypeAlias": typing.TypeAlias,
-        "TypeGuard": typing.TypeGuard,
-        "TypeVar": typing.TypeVar,
-        "Union": typing.Union,
-        "ArrayLike": npt.ArrayLike,
-        "DTypeLike": npt.DTypeLike,
-        "NDArray": npt.NDArray,
-        "ndarray": np.ndarray,
-    }
-    for name, value in compat_names.items():
-        if not hasattr(builtins, name):
-            setattr(builtins, name, value)
 
 
 def _utc_now_iso() -> str:
