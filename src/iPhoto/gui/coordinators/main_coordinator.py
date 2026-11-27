@@ -28,20 +28,15 @@ from iPhoto.config import SearchSettings
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
 from iPhoto.application.dtos import ScanStatus
+from iPhoto.gui.coordinators.ai_index_coordinator import AiIndexCoordinator
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.coordinators.view_router import ViewRouter
-from iPhoto.gui.services.embedding_bootstrap import (
-    EmbeddingIndexWorker,
-    EmbeddingInitWorker,
-    SearchModelDownloadWorker,
-)
 from iPhoto.gui.services.search_thread import (
     SearchProgress,
     SearchStage,
     SearchThread,
-    clear_search_embedding_cache,
 )
 from iPhoto.gui.ui.controllers.context_menu_controller import ContextMenuController
 from iPhoto.gui.ui.controllers.dialog_controller import DialogController
@@ -395,6 +390,15 @@ class MainCoordinator(QObject):
         )
         self._shortcut_manager.set_video_area(window.ui.video_area)
         self._shortcut_manager.set_edit_coordinator(self._edit)
+
+        self._ai_index = AiIndexCoordinator(
+            context=self._context,
+            window=self._window,
+            gallery_vm=self._gallery_vm,
+            status_bar=self._status_bar,
+            session_getter=self._active_session,
+            library_root_getter=self._ai_index_library_root,
+        )
 
         self._connect_signals()
 
@@ -1672,185 +1676,45 @@ class MainCoordinator(QObject):
         if tier in {"strict", "balanced", "loose"}:
             self._context.settings.set("agent.search_precision", tier)
 
+    # -- AI index -------------------------------------------------------------
+    # The lifecycle itself lives in ``AiIndexCoordinator``; these wrappers keep the
+    # call sites (menu actions, settings changes, search flow) unchanged.
+
     def _handle_semantic_search_toggle(self, enabled: bool) -> None:
-        """Handle semantic search toggle.
-
-        Parameters
-        ----------
-        enabled : bool
-            Whether semantic search is enabled.
-        """
-        self._context.settings.set("agent.semantic_search_enabled", enabled)
-
-        if enabled:
-            # Start embedding generation if not already done
-            self._start_embedding_generation()
-            self._status_bar.show_message(
-                tr("agent.enabled", default="Semantic search enabled")
-            )
-        else:
-            self._status_bar.show_message(
-                tr("agent.disabled", default="Semantic search disabled")
-            )
+        self._ai_index.on_semantic_search_toggled(enabled)
 
     def _on_search_model_setting_changed(self, key: str, value: object) -> None:
-        """React to a model change made by the wizard or the settings window."""
-
-        from iPhoto.agent.services import ai_features, search_models
-
-        if key == search_models.REBUILD_KEY:
-            self._rebuild_search_index()
-            return
-        if key in (ai_features.FACE_REBUILD_KEY, ai_features.OCR_REBUILD_KEY):
-            self._rebuild_ai_index("face" if key == ai_features.FACE_REBUILD_KEY else "ocr")
-            return
-        if key != search_models.SETTINGS_KEY:
-            return
-        spec = self._context.model_selection.apply(
-            "search", str(value) if value else None
-        )
-        self._logger.info("search model switched to %s", spec.key)
-
-        self._context.search_index_status.set_model(spec.key)
-        session = getattr(self._context, "library_session", None)
-        reset = getattr(session, "reset_embedding_service", None)
-        if callable(reset):
-            reset()
-        clear_search_embedding_cache()
-        if not search_models.is_installed(spec):
-            self._status_bar.show_message(
-                tr("search.model.missing", mb=spec.download_mb), 8000
-            )
-            self._download_search_model_then_index(spec)
-            return
-        # Vectors from the previous model stay on disk (so switching back is
-        # instant) but search ignores them; fill in the new model's rows.
-        self._start_embedding_generation_silent()
+        self._ai_index.on_search_model_setting_changed(key, value)
 
     def _rebuild_ai_index(self, feature: str) -> None:
-        """Re-run the face or text scan for photos that still need it.
-
-        Both workers pull the remaining ``pending`` rows as their queue drains,
-        so a library rescan is enough to backfill them; nothing is thrown away.
-        """
-
-        root = self._session.library_root if self._session is not None else None
-        if root is None:
-            self._status_bar.show_message(tr("settings.ai_state.no_library"), 6000)
-            return
-        title = (
-            tr("status.task.face") if feature == "face" else tr("status.task.ocr")
-        )
-        tasks = self._context.background_tasks
-
-        tasks.start(feature, title)
-        self._status_bar.show_message(tr("settings.ai_state.scanning", title=title), 8000)
-        try:
-            self._gallery_vm.rescan_current()
-        except Exception:  # pragma: no cover - surfaced in the status bar
-            self._logger.warning("could not start the %s rebuild", feature, exc_info=True)
-            tasks.finish(feature, failed=True)
+        self._ai_index.rebuild_ai_feature(feature)
 
     def _rebuild_search_index(self) -> None:
-        """Re-embed the whole library with the active model."""
-
-        from iPhoto.agent.services import search_models
-
-        session = getattr(self._context, "library_session", None)
-        reset = getattr(session, "reset_embedding_service", None)
-        if callable(reset):
-            reset()
-        clear_search_embedding_cache()
-        spec = self._active_search_spec()
-        if not search_models.is_installed(spec):
-            self._status_bar.show_message(
-                tr("search.model.missing", mb=spec.download_mb), 8000
-            )
-            return
-        self._status_bar.show_message(tr("search.model.rebuild_started"), 5000)
-        self._start_embedding_generation_silent(force_rebuild=True)
+        self._ai_index.rebuild_search_index()
 
     def _download_search_model_then_index(self, spec) -> None:
-        """Fetch missing weights in the background, then index with them."""
-
-        from iPhoto.gui.services import embedding_bootstrap
-
-        worker = SearchModelDownloadWorker(
-            spec,
-            tasks=self._context.background_tasks,
-            status_callback=self._show_status_message,
-            on_downloaded=self._start_embedding_generation_silent,
-        )
-        embedding_bootstrap.QThreadPool.globalInstance().start(worker)
+        self._ai_index.download_model_then_index(spec)
 
     def _show_status_message(self, message: str, timeout_ms: int = 5000) -> None:
-        """Show *message* in the status bar, marshalled onto the GUI thread."""
-
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(
-            0, lambda: self._status_bar.show_message(message, timeout_ms)
-        )
+        self._ai_index.show_status(message, timeout_ms)
 
     def _ensure_embedding_index(self) -> None:
-        """Start semantic-index generation once, if it is missing."""
-
-        if getattr(self, "_embedding_bootstrap_started", False):
-            return
-        self._embedding_bootstrap_started = True
-        try:
-            self._start_embedding_generation_silent()
-        except Exception:
-            self._logger.debug("Embedding bootstrap failed", exc_info=True)
+        self._ai_index.ensure_index()
 
     def _start_embedding_generation_silent(self, *, force_rebuild: bool = False) -> None:
-        """Start embedding generation silently in background with status bar updates."""
-
-        library_session = getattr(self._context, "library_session", None)
-        if library_session is None:
-            return
-
-        from iPhoto.gui.services import embedding_bootstrap
-
-        worker = EmbeddingIndexWorker(
-            library_session,
-            model_spec=self._active_search_spec(),
-            status=self._context.search_index_status,
-            tasks=self._context.background_tasks,
-            status_callback=self._show_status_message,
-            force_rebuild=force_rebuild,
-        )
-        embedding_bootstrap.QThreadPool.globalInstance().start(worker)
+        self._ai_index.start_generation_silent(force_rebuild=force_rebuild)
 
     def _start_embedding_generation(self) -> None:
-        """Start background embedding generation with progress UI (when user searches)."""
-
-        library_session = getattr(self._context, "library_session", None)
-        if library_session is None:
-            return
-
-        presenter = self._ai_index_presenter()
-        presenter.show_intro()
-
-        from iPhoto.gui.services import embedding_bootstrap
-
-        worker = EmbeddingInitWorker(
-            library_session,
-            model_spec=self._active_search_spec(),
-            callback=presenter.reporter(),
-        )
-        embedding_bootstrap.QThreadPool.globalInstance().start(worker)
+        self._ai_index.start_generation()
 
     def _ai_index_presenter(self) -> AiIndexStatusPresenter:
-        """Presenter for AI-index progress; created once, on first use."""
+        return self._ai_index.presenter
 
-        presenter = getattr(self, "_ai_index_status", None)
-        if presenter is None:
-            presenter = AiIndexStatusPresenter(
-                self._window.ui.gallery_page, self._status_bar
-            )
-            self._ai_index_status = presenter
-        return presenter
+    def _ai_index_library_root(self):
+        """Library root the AI rebuild commands operate on."""
+
+        session = self._session if self._session is not None else self._active_session()
+        return getattr(session, "library_root", None)
 
     def _handle_find_duplicates(self) -> None:
         """Handle find duplicates action."""
