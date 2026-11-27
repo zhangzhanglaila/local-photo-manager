@@ -202,14 +202,6 @@ class MainCoordinator(QObject):
             edit_service_getter=edit_service_getter,
         )
 
-        self._location = LocationCoordinator(
-            window=window,
-            gallery_vm=self._gallery_vm,
-            gallery_store=self._gallery_store,
-            navigation=self._navigation,
-            detail_vm=self._detail_vm,
-        )
-
         # 3. Playback Coordinator
         from iPhoto.gui.ui.controllers.player_view_controller import PlayerViewController
 
@@ -298,6 +290,19 @@ class MainCoordinator(QObject):
             window.ui.progress_bar,
             window.ui.rescan_action,
             context,
+        )
+
+        self._location = LocationCoordinator(
+            window=window,
+            gallery_vm=self._gallery_vm,
+            gallery_store=self._gallery_store,
+            navigation=self._navigation,
+            detail_vm=self._detail_vm,
+            library_getter=lambda: getattr(self._context, "library", None),
+            status_bar=self._status_bar,
+            people_service_getter=lambda: getattr(
+                self, "_playback_people_service", None
+            ),
         )
 
         self._share_controller = ShareController(
@@ -627,8 +632,8 @@ class MainCoordinator(QObject):
         ui.map_view.clusterActivated.connect(self._on_cluster_activated)
         ui.map_view.showAllRequested.connect(self._handle_map_show_all_requested)
         # Map feature buttons (in map source bar, to the right of map selector)
-        ui.map_view.btn_person_filter.clicked.connect(self._on_person_filter_toggled)
-        ui.map_view.btn_trail_toggle.clicked.connect(self._on_trail_toggle_toggled)
+        ui.map_view.btn_person_filter.clicked.connect(self._location.toggle_person_filter)
+        ui.map_view.btn_trail_toggle.clicked.connect(self._location.toggle_trail)
 
     def _connect_menu_signals(self) -> None:
         """Menu actions, buttons and the AI status surfaces."""
@@ -1711,68 +1716,6 @@ class MainCoordinator(QObject):
         """Handle single-asset map activation inside the Location context."""
 
         self._navigation.open_location_asset(rel)
-
-    def _on_person_filter_toggled(self, checked: bool) -> None:
-        """Toggle person filter panel on the map."""
-        ui = self._window.ui
-        if checked:
-            people_service = getattr(self, "_playback_people_service", None)
-            if people_service is None:
-                try:
-                    from iPhoto.people.service import PeopleService
-                    people_service = PeopleService()
-                except Exception:
-                    ui.map_view.btn_person_filter.setChecked(False)
-                    return
-            ui.map_view.show_person_filter(people_service)
-        else:
-            ui.map_view.hide_person_filter()
-
-    def _on_trail_toggle_toggled(self, checked: bool) -> None:
-        """Toggle trail/timeline display on the map."""
-        ui = self._window.ui
-        if checked:
-            try:
-                from iPhoto.application.services.trail_service import TrailService
-                library = getattr(self._context, "library", None)
-                if library is None:
-                    ui.map_view.btn_trail_toggle.setChecked(False)
-                    self._status_bar.show_message(
-                        "Trail unavailable: no library bound.", 4000
-                    )
-                    return
-                geotagged = library.get_geotagged_assets()
-                if not geotagged:
-                    ui.map_view.btn_trail_toggle.setChecked(False)
-                    self._status_bar.show_message(
-                        "No geotagged photos found — trail needs photos with GPS data.", 5000
-                    )
-                    return
-                trail_service = TrailService()
-                trail = trail_service.build_trail(geotagged, granularity="day")
-                if trail.is_empty:
-                    ui.map_view.btn_trail_toggle.setChecked(False)
-                    self._status_bar.show_message(
-                        "Trail is empty — photos may lack valid timestamps.", 5000
-                    )
-                    return
-                ui.map_view.set_trail(trail)
-                ui.map_view._trail_service = trail_service
-                ui.map_view._trail_geotagged = geotagged
-                self._status_bar.show_message(
-                    f"Trail: {trail.total_photos} photos, "
-                    f"{len(trail.segments)} segments",
-                    4000,
-                )
-            except Exception as e:
-                self._logger.warning("Failed to build trail: %s", e)
-                ui.map_view.btn_trail_toggle.setChecked(False)
-                self._status_bar.show_message(
-                    f"Failed to build trail: {e}", 5000
-                )
-        else:
-            ui.map_view.clear_trail()
-            self._status_bar.show_message("Trail hidden.", 2000)
 
     def _on_people_cluster_activated(self, person_id: str) -> None:
         QTimer.singleShot(0, lambda: self._open_people_cluster(person_id))

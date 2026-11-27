@@ -16,6 +16,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, QTimer
 
 from iPhoto.application.dtos import GeotaggedAsset
+from iPhoto.i18n import tr
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ class LocationCoordinator(QObject):
         gallery_store,
         navigation,
         detail_vm,
+        library_getter=None,
+        status_bar=None,
+        people_service_getter=None,
     ) -> None:
         super().__init__()
         self._window = window
@@ -46,6 +50,9 @@ class LocationCoordinator(QObject):
         self._gallery_store = gallery_store
         self._navigation = navigation
         self._detail_vm = detail_vm
+        self._library_getter = library_getter or (lambda: None)
+        self._status_bar = status_bar
+        self._people_service_getter = people_service_getter or (lambda: None)
         #: The photo the user came from, so "back" can reopen it.
         self._return_from_map_path: Path | None = None
         self._header_back_btn = None
@@ -149,6 +156,75 @@ class LocationCoordinator(QObject):
         if self._header_back_btn is not None:
             self._header_back_btn.hide()
         QTimer.singleShot(100, lambda: self._try_return_to_photo(path, 0))
+
+    def toggle_person_filter(self, checked: bool) -> None:
+        """Show or hide the person filter panel over the map."""
+
+        ui = self._window.ui
+        if checked:
+            people_service = self._people_service_getter()
+            if people_service is None:
+                try:
+                    from iPhoto.people.service import PeopleService
+
+                    people_service = PeopleService()
+                except Exception:
+                    ui.map_view.btn_person_filter.setChecked(False)
+                    return
+            ui.map_view.show_person_filter(people_service)
+        else:
+            ui.map_view.hide_person_filter()
+
+    def toggle_trail(self, checked: bool) -> None:
+        """Build and show the day-granularity trail, or hide it."""
+
+        ui = self._window.ui
+        status = self._status_bar
+        if not checked:
+            ui.map_view.clear_trail()
+            if status is not None:
+                status.show_message(tr("map.trail.hidden"), 2000)
+            return
+
+        library = self._library_getter()
+        if library is None:
+            ui.map_view.btn_trail_toggle.setChecked(False)
+            if status is not None:
+                status.show_message(tr("map.trail.unavailable"), 4000)
+            return
+        try:
+            from iPhoto.application.services.trail_service import TrailService
+
+            geotagged = library.get_geotagged_assets()
+            if not geotagged:
+                ui.map_view.btn_trail_toggle.setChecked(False)
+                if status is not None:
+                    status.show_message(tr("map.trail.no_gps"), 5000)
+                return
+            trail_service = TrailService()
+            trail = trail_service.build_trail(geotagged, granularity="day")
+            if trail.is_empty:
+                ui.map_view.btn_trail_toggle.setChecked(False)
+                if status is not None:
+                    status.show_message(tr("map.trail.empty"), 5000)
+                return
+            ui.map_view.set_trail(trail)
+            ui.map_view._trail_service = trail_service
+            ui.map_view._trail_geotagged = geotagged
+            if status is not None:
+                status.show_message(
+                    tr(
+                        "map.trail.summary",
+                        photos=trail.total_photos,
+                        segments=len(trail.segments),
+                    ),
+                    4000,
+                )
+        except Exception as exc:
+            _LOGGER.warning("Failed to build trail: %s", exc)
+            ui.map_view.btn_trail_toggle.setChecked(False)
+            if status is not None:
+                status.show_message(tr("map.trail.failed", message=exc), 5000)
 
     # --------------------------------------------------------------- internals
     def _add_header_back_button(self) -> None:

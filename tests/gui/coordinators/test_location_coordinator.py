@@ -18,6 +18,7 @@ from iPhoto.gui.coordinators import location_coordinator as module  # noqa: E402
 from iPhoto.gui.coordinators.location_coordinator import (  # noqa: E402
     LocationCoordinator,
 )
+from iPhoto.i18n import tr  # noqa: E402
 
 
 class _GalleryVm:
@@ -57,6 +58,30 @@ class _MapView:
     def __init__(self) -> None:
         self.focused_mode: list[bool] = []
         self.widget = None
+        self.trail = None
+        self.trail_cleared = 0
+        self.btn_trail_toggle = SimpleNamespace(checked=[], setChecked=self._trail_checked)
+        self.btn_person_filter = SimpleNamespace(checked=[], setChecked=self._person_checked)
+        self.person_filter = None
+        self.person_filter_hidden = 0
+
+    def _trail_checked(self, value: bool) -> None:
+        self.btn_trail_toggle.checked.append(value)
+
+    def _person_checked(self, value: bool) -> None:
+        self.btn_person_filter.checked.append(value)
+
+    def set_trail(self, trail) -> None:
+        self.trail = trail
+
+    def clear_trail(self) -> None:
+        self.trail_cleared += 1
+
+    def show_person_filter(self, service) -> None:
+        self.person_filter = service
+
+    def hide_person_filter(self) -> None:
+        self.person_filter_hidden += 1
 
     def set_focused_asset_mode(self, enabled: bool) -> None:
         self.focused_mode.append(enabled)
@@ -259,3 +284,120 @@ def test_header_back_button_is_created_once(qapp) -> None:
 
     button.click()
     assert navigation.all_photos == 0, "with an origin it returns to the photo instead"
+
+
+class _StatusBar:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, int | None]] = []
+
+    def show_message(self, message, timeout_ms=None) -> None:
+        self.messages.append((message, timeout_ms))
+
+
+class _Library:
+    def __init__(self, assets) -> None:
+        self._assets = assets
+
+    def get_geotagged_assets(self):
+        return self._assets
+
+
+def _make_map(*, assets=None, status_bar=None, people_service=None):
+    gallery = _GalleryVm()
+    ui = SimpleNamespace(
+        map_view=_MapView(), sidebar=_Sidebar(), main_header=_Header()
+    )
+    coordinator = LocationCoordinator(
+        window=SimpleNamespace(ui=ui),
+        gallery_vm=gallery,
+        gallery_store=_Store(),
+        navigation=_Navigation(),
+        detail_vm=_DetailVm(None),
+        library_getter=lambda: (None if assets is None else _Library(assets)),
+        status_bar=status_bar,
+        people_service_getter=lambda: people_service,
+    )
+    return coordinator, ui
+
+
+def test_hiding_the_trail_clears_it() -> None:
+    status = _StatusBar()
+    coordinator, ui = _make_map(assets=[], status_bar=status)
+
+    coordinator.toggle_trail(False)
+
+    assert ui.map_view.trail_cleared == 1
+    assert status.messages == [(tr("map.trail.hidden"), 2000)]
+
+
+def test_trail_without_a_library_unchecks_the_button() -> None:
+    status = _StatusBar()
+    coordinator, ui = _make_map(assets=None, status_bar=status)
+
+    coordinator.toggle_trail(True)
+
+    assert ui.map_view.btn_trail_toggle.checked == [False]
+    assert status.messages == [(tr("map.trail.unavailable"), 4000)]
+
+
+def test_trail_without_geotagged_photos_explains_why() -> None:
+    status = _StatusBar()
+    coordinator, ui = _make_map(assets=[], status_bar=status)
+
+    coordinator.toggle_trail(True)
+
+    assert ui.map_view.btn_trail_toggle.checked == [False]
+    assert status.messages == [(tr("map.trail.no_gps"), 5000)]
+
+
+def test_trail_build_failure_is_reported(monkeypatch) -> None:
+    status = _StatusBar()
+    coordinator, ui = _make_map(assets=[object()], status_bar=status)
+
+    class _BrokenTrailService:
+        def build_trail(self, *_args, **_kwargs):
+            raise RuntimeError("no timestamps")
+
+    import iPhoto.application.services.trail_service as trail_module
+
+    monkeypatch.setattr(trail_module, "TrailService", _BrokenTrailService)
+
+    coordinator.toggle_trail(True)
+
+    assert ui.map_view.btn_trail_toggle.checked == [False]
+    message, timeout = status.messages[-1]
+    assert message == tr("map.trail.failed", message="no timestamps")
+    assert timeout == 5000
+
+
+def test_trail_success_reports_the_counts(monkeypatch) -> None:
+    status = _StatusBar()
+    coordinator, ui = _make_map(assets=[object(), object()], status_bar=status)
+
+    class _TrailService:
+        def build_trail(self, _assets, *, granularity):
+            assert granularity == "day"
+            return SimpleNamespace(is_empty=False, total_photos=2, segments=[1, 2, 3])
+
+    import iPhoto.application.services.trail_service as trail_module
+
+    monkeypatch.setattr(trail_module, "TrailService", _TrailService)
+
+    coordinator.toggle_trail(True)
+
+    assert ui.map_view.trail is not None
+    assert status.messages[-1] == (
+        tr("map.trail.summary", photos=2, segments=3),
+        4000,
+    )
+
+
+def test_person_filter_uses_the_bound_service() -> None:
+    service = object()
+    coordinator, ui = _make_map(people_service=service)
+
+    coordinator.toggle_person_filter(True)
+    coordinator.toggle_person_filter(False)
+
+    assert ui.map_view.person_filter is service
+    assert ui.map_view.person_filter_hidden == 1
