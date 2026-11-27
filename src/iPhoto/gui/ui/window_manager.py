@@ -6,13 +6,12 @@ import sys
 from contextlib import contextmanager
 from typing import Iterable, Iterator, TYPE_CHECKING, cast
 
-from PySide6.QtCore import Property, QEvent, QObject, QPoint, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QColor,
     QMouseEvent,
     QPaintEvent,
     QPainter,
-    QPainterPath,
     QPalette,
 )
 from PySide6.QtWidgets import (

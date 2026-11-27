@@ -7,11 +7,10 @@ from ...i18n import translate_qt
 import os
 import sys
 
-from PySide6.QtCore import QCoreApplication, QMetaObject, QSize, Qt
+from PySide6.QtCore import QMetaObject, QSize, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
     QMainWindow,
     QSizeGrip,

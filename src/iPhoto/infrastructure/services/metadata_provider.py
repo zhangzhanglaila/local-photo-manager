@@ -1,5 +1,4 @@
 import mimetypes
-import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -12,7 +11,6 @@ from iPhoto.io.metadata import read_image_meta_with_exiftool, read_video_meta
 from iPhoto.people import initial_face_status
 from iPhoto.utils.hashutils import compute_file_id
 from iPhoto.utils.timeutils import to_epoch_microseconds
-from iPhoto.domain.models import MediaType
 
 logger = logging.getLogger(__name__)
 

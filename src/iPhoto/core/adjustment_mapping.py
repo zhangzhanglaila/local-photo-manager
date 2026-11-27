@@ -25,7 +25,6 @@ from .vignette_resolver import (
     DEFAULT_VIGNETTE_SOFTNESS,
     DEFAULT_VIGNETTE_STRENGTH,
 )
-from .wb_resolver import WB_DEFAULTS, WB_KEYS
 
 VIDEO_TRIM_IN_KEY = "Video_Trim_In_Sec"
 VIDEO_TRIM_OUT_KEY = "Video_Trim_Out_Sec"

@@ -16,7 +16,6 @@ import numpy as np
 
 from .records import ManualFaceRecord, PersonCoverRecord, PersonRecord
 from .repository_utils import (
-    _deserialize_embedding,
     _normalize_name,
     _serialize_embedding,
     _unique_person_ids,

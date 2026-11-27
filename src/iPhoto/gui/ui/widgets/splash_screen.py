@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QLabel, QProgressBar, QVBoxLayout, QWidget
 
 ACCENT = "#7b5e3b"

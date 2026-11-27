@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from ....application.contracts.runtime_entry_contract import RuntimeEntryContract
 from ....errors import LibraryError
 from ....config import DEFAULT_EXCLUDE, DEFAULT_INCLUDE
-from ....utils.pathutils import resolve_work_dir, get_custom_workspace_dir
+from ....utils.pathutils import get_custom_workspace_dir
 from ..widgets import dialogs
 from ....i18n import tr
 

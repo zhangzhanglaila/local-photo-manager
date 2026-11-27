@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ...config import ALBUM_MANIFEST_NAMES
 from ...errors import AlbumNotFoundError, IPhotoError
 from ...schemas import validate_album
 from ...domain.services.album_manifest import (

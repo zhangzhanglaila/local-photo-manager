@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QSize, QThreadPool, Qt, QTimer, Slot
+from PySide6.QtCore import QSize, QThreadPool, Qt, QTimer
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -29,7 +29,6 @@ from iPhoto.core.adjustment_mapping import (
     VIDEO_TRIM_OUT_KEY,
     normalise_video_trim,
 )
-from iPhoto.gui.ui.controllers.edit_preview_manager import resolve_adjustment_mapping
 from iPhoto.gui.ui.tasks.video_sidebar_preview_worker import (
     VideoSidebarPreviewResult,
     VideoSidebarPreviewWorker,

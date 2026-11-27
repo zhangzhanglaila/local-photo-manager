@@ -17,10 +17,9 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
 )
 
-from ..palette import Edit_SIDEBAR_SUB_FONT
 from ....core.light_resolver import LIGHT_KEYS, _clamp, resolve_light_vector
 from ..models.edit_session import EditSession
-from .collapsible_section import CollapsibleSection, CollapsibleSubSection
+from .collapsible_section import CollapsibleSubSection
 from .edit_strip import BWSlider
 from .thumbnail_strip_slider import ThumbnailStripSlider
 from ..tasks.thumbnail_generator_worker import ThumbnailGeneratorWorker

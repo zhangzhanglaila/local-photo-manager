@@ -19,7 +19,6 @@ from .records import (
     PersonSummary,
 )
 from .repository_utils import (
-    _key_face_sort_key,
     _unique_person_ids,
     _utc_now_iso,
 )

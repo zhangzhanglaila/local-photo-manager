@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import sqlite3
-from collections import defaultdict
 from contextlib import closing
 from pathlib import Path
 from typing import Iterable
@@ -12,21 +10,11 @@ from typing import Iterable
 import numpy as np
 
 from .records import (
-    AssetFaceAnnotation,
     FaceRecord,
-    ManualFaceRecord,
-    PeopleGroupRecord,
     PersonRecord,
-    PersonSummary,
 )
 from .repository_utils import (
     _deserialize_embedding,
-    _key_face_sort_key,
-    _normalize_name,
-    _serialize_embedding,
-    _unique_person_ids,
-    _utc_now_iso,
-    compute_cluster_center,
     profile_state_for_sample_count,
 )
 from .state_repository import FaceStateRepository

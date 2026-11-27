@@ -6,7 +6,6 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Iterator
 
 from ..config import LOCK_EXPIRE_SEC
 from ..errors import LockTimeoutError

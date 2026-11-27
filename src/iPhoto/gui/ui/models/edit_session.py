@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Tuple
 from PySide6.QtCore import QObject, Signal
 
 from ....core.light_resolver import LIGHT_KEYS
-from ....core.color_resolver import COLOR_KEYS, COLOR_RANGES, ColorStats
+from ....core.color_resolver import COLOR_KEYS, ColorStats
 from ....core.curve_resolver import DEFAULT_CURVE_POINTS
 from ....core.levels_resolver import DEFAULT_LEVELS_HANDLES
 from ....core.selective_color_resolver import DEFAULT_SELECTIVE_COLOR_RANGES

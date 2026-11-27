@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ...application.ports import AlbumRepositoryPort
 from ...cache.lock import FileLock
-from ...config import ALBUM_MANIFEST_NAMES
 from ...errors import AlbumNotFoundError, IPhotoError
 from ...schemas import validate_album
 from ...domain.services.album_manifest import (

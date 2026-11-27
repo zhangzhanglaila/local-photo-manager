@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Slot
 
 from ...i18n import tr
 from iPhoto.core.curve_resolver import DEFAULT_CURVE_POINTS

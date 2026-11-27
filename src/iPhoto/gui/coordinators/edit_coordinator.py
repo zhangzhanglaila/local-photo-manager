@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 import logging
-import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
-from PySide6.QtCore import QObject, QSize, Qt, QThreadPool, QTimer
+from PySide6.QtCore import QObject, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
-    QAbstractSlider,
-    QAbstractSpinBox,
-    QComboBox,
-    QLineEdit,
-    QPlainTextEdit,
-    QTextEdit,
     QWidget,
 )
 
@@ -33,7 +26,6 @@ from iPhoto.gui.ui.controllers.edit_fullscreen_manager import EditFullscreenMana
 from iPhoto.gui.ui.controllers.edit_view_transition import EditViewTransitionManager
 from iPhoto.gui.ui.tasks.video_trim_thumbnail_worker import VideoTrimThumbnailWorker
 from iPhoto.gui.ui.tasks.video_sidebar_preview_worker import (
-    VideoSidebarPreviewResult,
     VideoSidebarPreviewWorker,
 )
 from iPhoto.gui.ui.controllers.edit_preview_manager import resolve_adjustment_mapping
@@ -44,13 +36,8 @@ from iPhoto.media_classifier import VIDEO_EXTENSIONS
 from iPhoto.utils.logging import get_logger
 from iPhoto.utils.ffmpeg import probe_media, video_rotation_from_meta
 from iPhoto.core.adjustment_mapping import (
-    VIDEO_TRIM_IN_KEY,
-    VIDEO_TRIM_OUT_KEY,
     normalise_video_trim,
 )
-from iPhoto.core.curve_resolver import DEFAULT_CURVE_POINTS
-from iPhoto.core.levels_resolver import DEFAULT_LEVELS_HANDLES
-from iPhoto.core.selective_color_resolver import DEFAULT_SELECTIVE_COLOR_RANGES
 from ...utils.logging import diag
 
 if TYPE_CHECKING:

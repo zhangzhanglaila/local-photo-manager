@@ -12,7 +12,7 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QTimer, Slot
+from PySide6.QtCore import QTimer
 
 from ...i18n import tr
 from iPhoto.gui.detail_profile import log_detail_profile

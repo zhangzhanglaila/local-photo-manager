@@ -7,7 +7,6 @@ through ``state_repository``. Bodies moved verbatim, no SQL changed.
 
 from __future__ import annotations
 
-import sqlite3
 from contextlib import closing
 from typing import Iterable
 
@@ -16,19 +15,14 @@ import numpy as np
 from .records import (
     FaceMutationResult,
     FaceRecord,
-    ManualFaceRecord,
     PeopleGroupRecord,
     PersonRecord,
 )
 from .face_merges import FaceMergeMixin
 from .repository_utils import (
-    _deserialize_embedding,
-    _key_face_sort_key,
     _normalize_name,
     _serialize_embedding,
-    _unique_person_ids,
     _utc_now_iso,
-    compute_cluster_center,
     profile_state_for_sample_count,
 )
 

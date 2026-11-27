@@ -9,15 +9,14 @@ rows (minimise / quit), a remember checkbox and a cancel pill.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPalette
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )

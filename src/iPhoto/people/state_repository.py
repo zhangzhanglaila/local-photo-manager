@@ -15,20 +15,8 @@ from .state_profiles import ProfileStateMixin
 from .state_groups import GroupStateMixin
 from .records import (
     FaceRecord,
-    ManualFaceRecord,
     PeopleGroupRecord,
-    PersonProfile,
     PersonRecord,
-)
-from .repository_utils import (
-    _deserialize_embedding,
-    _group_id_for_member_key,
-    _group_member_key,
-    _normalize_name,
-    _serialize_embedding,
-    _unique_person_ids,
-    _utc_now_iso,
-    profile_state_for_sample_count,
 )
 
 

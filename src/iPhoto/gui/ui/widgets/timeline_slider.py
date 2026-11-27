@@ -21,7 +21,6 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
-    QPolygon,
     QRegularExpressionValidator,
 )
 from PySide6.QtWidgets import (
@@ -31,7 +30,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,

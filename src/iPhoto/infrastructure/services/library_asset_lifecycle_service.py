@@ -13,7 +13,7 @@ from typing import Any
 from ...application.ports import AssetRepositoryPort
 from ...cache.index_store import get_global_repository
 from ...cache.lock import FileLock
-from ...config import ALBUM_MANIFEST_NAMES, RECENTLY_DELETED_DIR_NAME
+from ...config import RECENTLY_DELETED_DIR_NAME
 from ...errors import IPhotoError
 from ...index_sync_service import prune_index_scope
 from ...io.scanner_adapter import process_media_paths

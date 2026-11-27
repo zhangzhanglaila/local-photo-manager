@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Iterable, Optional
 
 from ..config import (
     ALL_WORK_DIR_NAMES,
-    ALBUM_MANIFEST_NAMES,
     EXPORT_DIR_NAME,
     RECENTLY_DELETED_DIR_NAME,
 )

@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont
 from PySide6.QtWidgets import (
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,

@@ -18,13 +18,6 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QThreadPool, QTimer
 
 from iPhoto.application.dtos import AssetDTO
-from iPhoto.gui.viewmodels.asset_dto_converter import (
-    scan_row_is_thumbnail as _scan_row_is_thumbnail_fn,
-    scan_row_to_dto as _scan_row_to_dto_fn,
-)
-from iPhoto.gui.viewmodels.asset_paging import (
-    should_validate_paths as _should_validate_paths_fn,
-)
 from iPhoto.gui.viewmodels.gallery_load_worker import (
     GalleryLoadSignals,
     GalleryLoadWorker,

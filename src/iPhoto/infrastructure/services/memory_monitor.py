@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, List
 
 LOGGER = logging.getLogger(__name__)

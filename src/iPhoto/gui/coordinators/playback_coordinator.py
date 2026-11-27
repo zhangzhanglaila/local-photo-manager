@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -11,15 +10,11 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ...i18n import tr
 
-from PySide6.QtCore import QItemSelectionModel, QModelIndex, QObject, QLocale, QThreadPool, QTimer, Signal, Slot
+from PySide6.QtCore import QItemSelectionModel, QModelIndex, QObject, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QPalette
 
 from iPhoto.application.ports import EditServicePort, MapRuntimePort
 from iPhoto.config import PLAY_ASSET_DEBOUNCE_MS
-from iPhoto.gui.ui.tasks.assign_location_worker import (
-    AssignLocationRequest,
-    AssignLocationWorker,
-)
 from iPhoto.infrastructure.services.map_runtime_service import SessionMapRuntimeService
 from iPhoto.gui.detail_profile import log_detail_profile
 from .playback_info import PlaybackInfoMixin
@@ -30,10 +25,6 @@ from iPhoto.gui.coordinators.view_router import ViewRouter
 from iPhoto.gui.ui.controllers.edit_zoom_handler import EditZoomHandler
 from iPhoto.gui.ui.controllers.header_controller import HeaderController
 from iPhoto.gui.ui.icons import load_icon
-from iPhoto.gui.ui.tasks.info_panel_metadata_worker import (
-    InfoPanelMetadataResult,
-    InfoPanelMetadataWorker,
-)
 from iPhoto.gui.ui.tasks.manual_face_add_worker import ManualFaceAddWorker
 from iPhoto.gui.ui.widgets import dialogs
 from iPhoto.gui.ui.widgets.info_panel import InfoPanel

@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QRect, QRectF, QSize, Qt
+from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import (
     QColor,
-    QFont,
-    QFontMetrics,
     QIcon,
     QImage,
     QPainter,

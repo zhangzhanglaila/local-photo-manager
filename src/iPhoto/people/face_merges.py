@@ -8,19 +8,16 @@ Bodies moved verbatim from ``face_repository.py``.
 
 from __future__ import annotations
 
-import sqlite3
 from contextlib import closing
 from typing import Iterable
 
 import numpy as np
 
-from .records import FaceRecord, PeopleGroupRecord, PersonRecord
+from .records import FaceRecord, PersonRecord
 from .repository_utils import (
-    _deserialize_embedding,
     _key_face_sort_key,
     _normalize_name,
     _serialize_embedding,
-    _unique_person_ids,
     _utc_now_iso,
     compute_cluster_center,
     profile_state_for_sample_count,

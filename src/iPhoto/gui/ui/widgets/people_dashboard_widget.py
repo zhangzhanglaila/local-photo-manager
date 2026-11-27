@@ -29,7 +29,6 @@ from .people_dashboard_board import GroupBoard, PeopleBoard
 from .people_dashboard_cards import GroupCard, PeopleCard
 from .people_dashboard_dialogs import GroupPeopleDialog, MergeConfirmDialog
 from .people_dashboard_shared import (
-    CANVAS_MARGIN,
     _widget_uses_dark_theme,
     configure_people_cover_cache,
 )

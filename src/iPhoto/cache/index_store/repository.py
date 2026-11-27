@@ -17,25 +17,19 @@ from __future__ import annotations
 
 import time
 
-import json
 import sqlite3
 import threading
-import unicodedata
 from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
-from ...people.status import normalize_face_status
 from ...utils.logging import get_logger
 from ...utils.pathutils import ensure_work_dir
 from .engine import DatabaseManager
 from .migrations import SchemaMigrator
-from .queries import QueryBuilder
 from .recovery import RecoveryService
 from .asset_queries import AssetQueryMixin
 from .asset_writes import AssetWriteMixin
-from .row_mapper import db_row_to_dict, insert_rows, row_to_db_params
-from .scan_merge import merge_scan_rows as merge_scan_rows_payload
 from ...config import SQLITE_BUSY_TIMEOUT_S
 
 logger = get_logger()

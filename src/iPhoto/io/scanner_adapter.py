@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 import logging
 import mimetypes
 
-from ..application.interfaces import IMetadataProvider, IThumbnailGenerator
 from ..infrastructure.services.metadata_provider import ExifToolMetadataProvider
 from ..infrastructure.services.thumbnail_generator import PillowThumbnailGenerator
 from ..people import initial_face_status

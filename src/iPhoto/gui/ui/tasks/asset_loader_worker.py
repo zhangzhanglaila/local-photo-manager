@@ -15,25 +15,14 @@ from ....core.pairing import pair_live
 from ....utils.pathutils import ensure_work_dir
 
 from .asset_loader_utils import (
-    MEDIA_TYPE_IMAGE,
     MEDIA_TYPE_VIDEO,
-    THUMBNAIL_SUFFIX_RE,
-    THUMBNAIL_MAX_DIMENSION,
-    THUMBNAIL_MAX_BYTES,
     compute_album_path,
     normalize_featured,
     build_asset_entry,
     compute_asset_rows,
     _safe_signal_emit,
     _cached_path_exists,
-    _parse_timestamp,
-    _determine_size,
-    _is_thumbnail_candidate,
-    _is_panorama_candidate,
-    _is_featured,
     require_query_service,
-    DIR_CACHE_THRESHOLD,
-    _path_exists_direct,
 )
 
 LOGGER = logging.getLogger(__name__)
