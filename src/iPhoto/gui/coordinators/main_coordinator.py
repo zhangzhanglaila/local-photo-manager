@@ -38,6 +38,7 @@ from iPhoto.gui.coordinators.organize_coordinator import OrganizeCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator
 from iPhoto.gui.coordinators.view_router import ViewRouter
+from iPhoto.gui.coordinators.window_chrome_coordinator import WindowChromeCoordinator
 from iPhoto.gui.coordinators.window_preferences import WindowPreferences
 from iPhoto.gui.ui.controllers.context_menu_controller import ContextMenuController
 from iPhoto.gui.ui.controllers.dialog_controller import DialogController
@@ -310,6 +311,16 @@ class MainCoordinator(QObject):
             facade=self._facade,
             library_root_getter=self._library_root,
             on_library_changed=self._on_library_tree_updated,
+            parent=self,
+        )
+
+        self._chrome = WindowChromeCoordinator(
+            window,
+            context,
+            facade=self._facade,
+            status_bar=self._status_bar,
+            dialog=self._dialog,
+            on_move_finished=self._handle_move_finished_toast,
             parent=self,
         )
 
@@ -798,67 +809,14 @@ class MainCoordinator(QObject):
         )
 
     def _connect_status_bar_signals(self) -> None:
-        """Status bar panels, theme/language switches and search model sync."""
+        """Chrome wiring plus the search-model/embedding sync."""
 
-        ui = self._window.ui
-        updates = self._facade.library_updates
+        self._chrome.connect()
 
-        # Status Bar Connections (Restored)
-        # Facade Signals -> Status Bar
-        # Note: AppFacade exposes library_updates (ScannerSignals)
-        updates.scanProgress.connect(self._status_bar.handle_scan_progress)
-        updates.scanFinished.connect(self._status_bar.handle_scan_finished)
-        self._facade.scanBatchFailed.connect(self._status_bar.handle_scan_batch_failed)
-        self._facade.scanProgress.connect(self._status_bar.handle_scan_progress)
-        self._facade.scanFinished.connect(self._status_bar.handle_scan_finished)
         # Semantic search needs a CLIP index; without it every search fails with
         # "no index found". Generation is expensive, so it runs once per session and
         # only when the repository reports missing embeddings.
-        self._facade.scanFinished.connect(
-            lambda *_: self._ensure_embedding_index()
-        )
-
-        self._facade.loadStarted.connect(self._status_bar.handle_load_started)
-        self._facade.loadProgress.connect(self._status_bar.handle_load_progress)
-        self._facade.loadFinished.connect(self._status_bar.handle_load_finished)
-
-        # After the first scan completes, allow "No media found" to show.
-        self._facade.scanProgress.connect(lambda *_: ui.grid_view.set_scan_started())
-        self._context.library.scanProgress.connect(lambda *_: ui.grid_view.set_scan_started())
-        self._facade.scanFinished.connect(lambda *_: ui.grid_view.set_scan_completed())
-        self._context.library.scanFinished.connect(lambda *_: ui.grid_view.set_scan_completed())
-
-        import_service = self._facade.import_service
-        import_service.importStarted.connect(self._status_bar.handle_import_started)
-        import_service.importProgress.connect(self._status_bar.handle_import_progress)
-        import_service.importFinished.connect(self._status_bar.handle_import_finished)
-
-        move_service = self._facade.move_service
-        move_service.moveStarted.connect(self._status_bar.handle_move_started)
-        move_service.moveProgress.connect(self._status_bar.handle_move_progress)
-        move_service.moveFinished.connect(self._status_bar.handle_move_finished)
-        move_service.moveFinished.connect(self._handle_move_finished_toast)
-
-        # Error Reporting
-        self._facade.errorRaised.connect(self._dialog.show_error)
-        self._context.library.errorRaised.connect(self._dialog.show_error)
-
-        # Theme Switching (Restored)
-        ui.theme_system.triggered.connect(lambda: self._context.settings.set("ui.theme", "system"))
-        ui.theme_light.triggered.connect(lambda: self._context.settings.set("ui.theme", "light"))
-        ui.theme_dark.triggered.connect(lambda: self._context.settings.set("ui.theme", "dark"))
-
-        current_theme = self._context.settings.get("ui.theme", "system")
-        if current_theme == "light":
-            ui.theme_light.setChecked(True)
-        elif current_theme == "dark":
-            ui.theme_dark.setChecked(True)
-        else:
-            ui.theme_system.setChecked(True)
-
-        # Language Switching
-        ui.language_zh.triggered.connect(lambda: self._context.settings.set("ui.language", "zh"))
-        ui.language_en.triggered.connect(lambda: self._context.settings.set("ui.language", "en"))
+        self._facade.scanFinished.connect(lambda *_: self._ensure_embedding_index())
 
         # The search model can be changed from the wizard or the settings window;
         # both only write the setting, and this keeps the runtime in sync.
@@ -870,21 +828,6 @@ class MainCoordinator(QObject):
         self._context.model_selection.apply(
             "search", self._context.settings.get(_search_models.SETTINGS_KEY, None)
         )
-        current_lang = self._context.settings.get("ui.language", "zh")
-        if current_lang == "en":
-            ui.language_en.setChecked(True)
-        else:
-            ui.language_zh.setChecked(True)
-
-        self._context.language.languageChanged.connect(lambda _lang: ui.main_header.retranslate())
-        self._context.language.languageChanged.connect(lambda _lang: ui.sidebar.retranslate())
-        self._context.language.languageChanged.connect(
-            lambda _lang: ui.grid_view.retranslate()
-        )
-
-        # Note: keyboard shortcuts are now managed centrally by
-        # AppShortcutManager, which is created in __init__ after all
-        # coordinators are initialised.  Do not add QShortcut instances here.
 
     def _on_library_tree_updated(self) -> None:
         root = self._library_root()

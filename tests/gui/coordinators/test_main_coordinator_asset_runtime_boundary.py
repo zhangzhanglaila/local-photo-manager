@@ -8,6 +8,7 @@ from iPhoto.gui.coordinators.gallery_interaction_coordinator import (
     GalleryInteractionCoordinator,
 )
 from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
+from iPhoto.gui.coordinators.window_chrome_coordinator import WindowChromeCoordinator
 from iPhoto.gui.coordinators.window_preferences import WindowPreferences
 from iPhoto.people.service import PeopleService
 
@@ -202,6 +203,15 @@ def test_connect_signals_wires_location_scan_updates_from_library_and_service() 
     coordinator._on_cluster_activated = MagicMock()
     coordinator._on_people_cluster_activated = MagicMock()
     coordinator._on_people_group_activated = MagicMock()
+
+    coordinator._chrome = WindowChromeCoordinator(
+        coordinator._window,
+        coordinator._context,
+        facade=coordinator._facade,
+        status_bar=coordinator._status_bar,
+        dialog=coordinator._dialog,
+        on_move_finished=coordinator._handle_move_finished_toast,
+    )
 
     # The stub never initialises the Qt object underneath the coordinator, so
     # ``QTimer(self)`` cannot be constructed; the wiring under test does not
