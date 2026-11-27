@@ -187,6 +187,11 @@ class GalleryCollectionStore:
         if self._asset_query_service is asset_query_service:
             return
         self._asset_query_service = asset_query_service
+        # A different service means a different data source even when the query and
+        # the roots are unchanged. The cached total is keyed on those, so keeping it
+        # made a rebound store report the previous row count and load only that many
+        # rows — the new assets were never fetched.
+        self.invalidate_count_cache()
         self.reset_visible_window()
         self.data_changed.emit()
         # ⭐ 服务刚绑定上，如果有 pending load 就触发它
