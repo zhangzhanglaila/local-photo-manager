@@ -1,6 +1,7 @@
 """One implementation per behaviour: the map-focus retry must not be duplicated.
 
-``MainCoordinator`` defined ``_try_focus_map`` and ``_retry_focus`` twice, plus
+``MainCoordinator`` (now ``LocationCoordinator``) defined ``_try_focus_map`` and
+``_retry_focus`` twice, plus
 ``_FOCUS_MAP_MAX_RETRIES`` twice (30 then 10). Python keeps the last definition,
 so the first pair was dead code with *different* behaviour (100 ms, and it kept
 retrying even when the map view was missing). A silent override like that hides
@@ -17,12 +18,12 @@ import pytest
 
 pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 
-from iPhoto.gui.coordinators import main_coordinator as module
-from iPhoto.gui.coordinators.main_coordinator import MainCoordinator
+from iPhoto.gui.coordinators import location_coordinator as module
+from iPhoto.gui.coordinators.location_coordinator import LocationCoordinator
 
 
 def _class_definitions(name: str) -> list[ast.FunctionDef]:
-    tree = ast.parse(inspect.getsource(MainCoordinator))
+    tree = ast.parse(inspect.getsource(LocationCoordinator))
     class_node = tree.body[0]
     assert isinstance(class_node, ast.ClassDef)
     return [
@@ -38,7 +39,7 @@ def test_each_retry_helper_is_defined_once() -> None:
 
 
 def test_retry_policy_lives_in_one_place() -> None:
-    source = inspect.getsource(MainCoordinator)
+    source = inspect.getsource(LocationCoordinator)
 
     assert "_FOCUS_MAP_MAX_RETRIES" not in source, "the class-level duplicate must stay gone"
     assert module.MAP_FOCUS_MAX_RETRIES == 10
@@ -57,11 +58,11 @@ def test_missing_map_view_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
         module.QTimer, "singleShot", lambda ms, cb: scheduled.append(ms)
     )
 
-    # A plain stub keeps Qt out of it: instantiating MainCoordinator via __new__
-    # leaves an uninitialised QObject whose destruction can crash the process.
+    # A plain stub keeps Qt out of it: the method only reads ``self._window`` and
+    # schedules through ``self._retry_focus``.
     coordinator = SimpleNamespace(_window=SimpleNamespace(ui=SimpleNamespace()))
 
     with pytest.raises(AttributeError):
-        MainCoordinator._try_focus_map(coordinator, 30.0, 120.0, 0)
+        LocationCoordinator._try_focus_map(coordinator, 30.0, 120.0, 0)
 
     assert scheduled == [], "no retries are scheduled for a broken contract"

@@ -23,12 +23,16 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QAction
 
 from iPhoto.application.contracts.runtime_entry_contract import RuntimeEntryContract
-from iPhoto.application.dtos import GeotaggedAsset
 from iPhoto.config import SearchSettings
 from iPhoto.config import RECENTLY_DELETED_DIR_NAME
 from iPhoto.i18n import tr
 from iPhoto.application.dtos import ScanStatus
 from iPhoto.gui.coordinators.ai_index_coordinator import AiIndexCoordinator
+from iPhoto.gui.coordinators.location_coordinator import (
+    MAP_FOCUS_MAX_RETRIES,
+    MAP_FOCUS_RETRY_INTERVAL_MS,
+    LocationCoordinator,
+)
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
@@ -73,10 +77,6 @@ if TYPE_CHECKING:
     from iPhoto.gui.ui.main_window import MainWindow
 
 
-#: The map widget is created lazily after the Location page is first shown, so
-#: focusing waits for it. Values are policy, not implementation detail.
-MAP_FOCUS_MAX_RETRIES = 10
-MAP_FOCUS_RETRY_INTERVAL_MS = 400
 
 
 #: Search workers that were still running when the app shut down. Keeping them
@@ -101,7 +101,6 @@ class MainCoordinator(QObject):
         self._facade = context.facade
         self._logger = logging.getLogger(__name__)
         self._media_failure_cleanup_paths: set[str] = set()
-        self._return_from_map_path: Path | None = None
         self._startup_loading = True
         self._map_extension_download = MapExtensionDownloadController(
             window,
@@ -201,6 +200,14 @@ class MainCoordinator(QObject):
             asset_state_service=asset_state_service,
             adjustment_commit_port=self._adjustment_committer,
             edit_service_getter=edit_service_getter,
+        )
+
+        self._location = LocationCoordinator(
+            window=window,
+            gallery_vm=self._gallery_vm,
+            gallery_store=self._gallery_store,
+            navigation=self._navigation,
+            detail_vm=self._detail_vm,
         )
 
         # 3. Playback Coordinator
@@ -913,163 +920,24 @@ class MainCoordinator(QObject):
             return getattr(session, "map_interactions", None)
         return getattr(self._context.library, "map_interaction_service", None)
 
+    # -- Location view --------------------------------------------------------
+    # Focusing a photo on the map and getting back to it lives in
+    # ``LocationCoordinator``; these wrappers keep the signal connections intact.
+
     def _toggle_detail_map(self) -> None:
-        """Navigate to the Location view focused on the current photo."""
-        presentation = self._detail_vm.presentation.value
-        if presentation is None:
-            return
-        gps = presentation.info.get("gps")
-        if not isinstance(gps, dict):
-            return
-        lat = gps.get("lat")
-        lon = gps.get("lon")
-        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
-            return
-        rel = presentation.info.get("rel")
-        if not isinstance(rel, str) or not rel:
-            rel = presentation.path.name
-        asset = GeotaggedAsset(
-            library_relative=rel,
-            album_relative=Path(rel).name,
-            absolute_path=presentation.path,
-            album_path=presentation.path.parent,
-            asset_id=presentation.asset_id or rel,
-            latitude=float(lat),
-            longitude=float(lon),
-            is_image=not presentation.is_video,
-            is_video=bool(presentation.is_video),
-            still_image_time=None,
-            timestamp=None,
-            duration=None,
-            location_name=presentation.location,
-            live_photo_group_id=None,
-            live_partner_rel=(
-                presentation.live_motion_rel.as_posix()
-                if presentation.live_motion_rel is not None
-                else None
-            ),
-        )
-        # Remember the current photo so the header back button can return to it.
-        self._return_from_map_path = presentation.path
-        self._gallery_vm.open_location_map_focused(asset)
-        self._window.ui.map_view.set_focused_asset_mode(True)
-        # Show back button in header immediately.
-        self._add_header_back_button()
-        # Highlight sidebar immediately.
-        try:
-            self._window.ui.sidebar.select_static_node("Location")
-            self._window.ui.sidebar._tree.viewport().update()
-        except Exception:
-            pass
-        # Center map on photo location — retry quickly until native GL widget is ready.
-        QTimer.singleShot(0, lambda: self._try_focus_map(lat, lon, 0))
+        self._location.toggle_detail_map()
 
     def _handle_map_show_all_requested(self) -> None:
-        # Clear return path so we don't jump back to the previous photo
-        self._return_from_map_path = None
-        # Hide the header back button if it exists
-        btn = getattr(self, "_header_back_btn", None)
-        if btn is not None:
-            btn.hide()
-        self._gallery_vm.show_all_location_assets()
-        self._window.ui.map_view.set_focused_asset_mode(False)
-    def _add_header_back_button(self) -> None:
-        """Add a back button to the main header bar."""
-        ui = self._window.ui
-        btn = getattr(self, "_header_back_btn", None)
-        if btn is not None:
-            btn.show()
-            return
-        from PySide6.QtWidgets import QPushButton
-        btn = QPushButton("← Photo", ui.main_header)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setToolTip("Return to photo")
-        btn.setStyleSheet(
-            "QPushButton { font-size: 12px; padding: 4px 10px; "
-            "background: rgba(0,120,215,180); color: white; border: none; border-radius: 4px; }"
-            "QPushButton:hover { background: rgba(0,120,215,240); }"
-        )
-        btn.clicked.connect(self._handle_map_back_clicked)
-        header_layout = ui.main_header.layout()
-        if header_layout is not None:
-            header_layout.addWidget(btn)
-        self._header_back_btn = btn
+        self._location.show_all()
 
     def _handle_map_back_clicked(self) -> None:
-        """Back button in header: return to originating photo."""
-        btn = getattr(self, "_header_back_btn", None)
-        if btn is not None:
-            btn.hide()
-        if self._return_from_map_path is not None:
-            self._handle_return_from_map()
-        else:
-            self._navigation.open_all_photos()
-
-    def _try_focus_map(self, lat: float, lon: float, attempt: int) -> None:
-        """Center the Location map on the given coordinates at high zoom."""
-        ui = self._window.ui
-        try:
-            map_widget = ui.map_view.map_widget()
-        except RuntimeError:
-            self._retry_focus(lat, lon, attempt)
-            return
-        if map_widget is None:
-            self._retry_focus(lat, lon, attempt)
-            return
-        try:
-            map_widget.set_zoom(17.0)
-            map_widget.center_on(lon, lat)
-        except Exception:
-            logging.getLogger(__name__).debug(
-                "Could not focus the map yet (attempt %s)", attempt, exc_info=True
-            )
-            self._retry_focus(lat, lon, attempt)
-
-    def _retry_focus(self, lat: float, lon: float, attempt: int) -> None:
-        if attempt < MAP_FOCUS_MAX_RETRIES:
-            QTimer.singleShot(
-                MAP_FOCUS_RETRY_INTERVAL_MS,
-                lambda: self._try_focus_map(lat, lon, attempt + 1),
-            )
-
-    _RETURN_FROM_MAP_MAX_RETRIES = 8
+        self._location.back_clicked()
 
     def _handle_sidebar_return_from_map(self, name: str) -> None:
-        """When clicking 'Location' sidebar while already on map from detail,
-        return to the photo instead of re-navigating."""
-        if name != "Location":
-            return
-        path = self._return_from_map_path
-        if path is None:
-            return
-        self._return_from_map_path = None
-        # Tell NavigationCoordinator to skip re-navigating to Location.
-        self._navigation._pending_detail_return = path
-        # Navigate to All Photos first, then open the photo detail.
-        self._navigation.open_all_photos()
-        QTimer.singleShot(50, lambda: self._try_return_to_photo(path, 0))
+        self._location.sidebar_return(name)
 
     def _handle_return_from_map(self) -> None:
-        """When clicking All Photos after exploring from detail, reopen the photo."""
-        path = self._return_from_map_path
-        if path is None:
-            return
-        self._return_from_map_path = None
-        btn = getattr(self, "_header_back_btn", None)
-        if btn is not None:
-            btn.hide()
-        QTimer.singleShot(100, lambda: self._try_return_to_photo(path, 0))
-
-    def _try_return_to_photo(self, path: Path, attempt: int) -> None:
-        row = self._gallery_store.row_for_path(path)
-        if row is not None:
-            self._gallery_vm.open_row(row)
-            return
-        if attempt < self._RETURN_FROM_MAP_MAX_RETRIES:
-            QTimer.singleShot(
-                100 * (attempt + 1),
-                lambda: self._try_return_to_photo(path, attempt + 1),
-            )
+        self._location.return_from_map()
 
     @staticmethod
     def _resolve_map_package_root(map_runtime: object | None) -> Path:
