@@ -35,6 +35,9 @@ from iPhoto.gui.coordinators.library_open_coordinator import LibraryOpenCoordina
 from iPhoto.gui.coordinators.edit_coordinator import EditCoordinator
 from iPhoto.gui.coordinators.navigation_coordinator import NavigationCoordinator
 from iPhoto.gui.coordinators.organize_coordinator import OrganizeCoordinator
+from iPhoto.gui.coordinators.people_navigation_coordinator import (
+    PeopleNavigationCoordinator,
+)
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.coordinators.search_coordinator import SearchCoordinator
 from iPhoto.gui.coordinators.view_router import ViewRouter
@@ -157,6 +160,13 @@ class MainCoordinator(QObject):
             facade=context.facade,
             asset_state_service=asset_state_service,
             location_trash_service=self._location_trash_navigation_service,
+        )
+
+        self._people_navigation = PeopleNavigationCoordinator(
+            window,
+            self._gallery_vm,
+            self._view_router,
+            parent=self,
         )
 
         # 2. Navigation Coordinator
@@ -764,8 +774,12 @@ class MainCoordinator(QObject):
         ui.albums_dashboard_page.albumSelected.connect(
             self._library_open.open_album_from_path
         )
-        ui.people_page.clusterActivated.connect(self._on_people_cluster_activated)
-        ui.people_page.groupActivated.connect(self._on_people_group_activated)
+        ui.people_page.clusterActivated.connect(
+            self._people_navigation.on_cluster_activated
+        )
+        ui.people_page.groupActivated.connect(
+            self._people_navigation.on_group_activated
+        )
         self._context.library.peopleIndexUpdated.connect(ui.people_page.schedule_index_refresh)
         self._context.library.peopleSnapshotCommitted.connect(
             self._gallery_vm.handle_people_snapshot_committed
@@ -1067,42 +1081,6 @@ class MainCoordinator(QObject):
         """Handle single-asset map activation inside the Location context."""
 
         self._navigation.open_location_asset(rel)
-
-    def _on_people_cluster_activated(self, person_id: str) -> None:
-        QTimer.singleShot(0, lambda: self._open_people_cluster(person_id))
-
-    def _on_people_group_activated(self, group_id: str) -> None:
-        QTimer.singleShot(0, lambda: self._open_people_group(group_id))
-
-    def _open_people_cluster(self, person_id: str) -> None:
-        try:
-            query = self._window.ui.people_page.build_cluster_query(person_id)
-            if not query.asset_ids:
-                return
-            self._window.ui.people_page.prepare_for_hide()
-            self._gallery_vm.open_people_cluster_gallery(
-                query,
-                kind="person",
-                entity_id=person_id,
-            )
-            self._view_router.show_gallery()
-        except Exception:
-            self._logger.exception("Failed to open people cluster gallery for %s", person_id)
-
-    def _open_people_group(self, group_id: str) -> None:
-        try:
-            query = self._window.ui.people_page.build_group_query(group_id)
-            if not query.asset_ids:
-                return
-            self._window.ui.people_page.prepare_for_hide()
-            self._gallery_vm.open_people_cluster_gallery(
-                query,
-                kind="group",
-                entity_id=group_id,
-            )
-            self._view_router.show_gallery()
-        except Exception:
-            self._logger.exception("Failed to open people group gallery for %s", group_id)
 
     def _prepare_paths_for_mutation(self, paths: list[Path]) -> None:
         """Release preview/player handles before mutating files on disk."""
