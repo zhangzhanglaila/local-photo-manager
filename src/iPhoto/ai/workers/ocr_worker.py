@@ -46,6 +46,10 @@ class OCRWorker(QRunnable):
         self._finished = False
         self._cancelled = False
         self._paused = False
+        #: Rows accepted for this run. The worker is started after the file scan
+        #: has closed its input, so this is the real denominator for progress;
+        #: it also keeps counting if a live scan feeds more rows in while running.
+        self._admitted_total = 0
         # Images already processed in an earlier session (including ones with no
         # text) so a restart does not redo hours of OCR.
         try:
@@ -85,6 +89,7 @@ class OCRWorker(QRunnable):
             if ext in OCR_IMAGE_EXTENSIONS:
                 filtered.append(row)
 
+        self._admitted_total += len(filtered)
         self._queue.extend(filtered)
 
     @Slot()
@@ -92,9 +97,21 @@ class OCRWorker(QRunnable):
         """Signal that no more chunks will arrive."""
         self._finished = True
 
+    def resume_input(self) -> None:
+        """Reopen the queue while a follow-up root scan keeps feeding rows."""
+
+        if not self._cancelled:
+            self._finished = False
+
     def cancel(self) -> None:
         """Cancel processing."""
         self._cancelled = True
+
+    @property
+    def cancelled(self) -> bool:
+        """Whether :meth:`cancel` was requested before the worker drained."""
+
+        return self._cancelled
 
     @serialized_scan
 
@@ -110,6 +127,9 @@ class OCRWorker(QRunnable):
         """Process all queued images."""
         processed = 0
         failed = 0
+        # This runs after the AI-scan gate is acquired, so the first progress
+        # tick also tells the UI "this is the scan that is actually running".
+        self._emit_progress(processed, failed)
 
         while not self._cancelled:
             if self._paused:
@@ -134,11 +154,16 @@ class OCRWorker(QRunnable):
                 asset_id = row.get("id", "")
                 asset_rel = row.get("rel", "")
                 if not asset_id or not asset_rel:
+                    # Count the attempt: otherwise progress never reaches the
+                    # number of rows admitted to the queue.
+                    failed += 1
+                    self._emit_progress(processed, failed)
                     continue
 
                 image_path = self._library_root / asset_rel
                 if not image_path.exists():
                     failed += 1
+                    self._emit_progress(processed, failed)
                     continue
 
                 try:
@@ -157,10 +182,18 @@ class OCRWorker(QRunnable):
                     failed += 1
 
                 self._mark_processed(asset_id, asset_rel)
-                self.signals.progress.emit(processed, processed + failed)
+                self._emit_progress(processed, failed)
 
+        self._emit_progress(processed, failed)
         self.signals.finished.emit(processed, failed)
         _LOGGER.info("OCR worker finished: %d processed, %d failed", processed, failed)
+
+    def _emit_progress(self, processed: int, failed: int) -> None:
+        """Report ``(attempted, expected)`` for this run."""
+
+        done = processed + failed
+        total = max(self._admitted_total, done)
+        self.signals.progress.emit(done, total)
 
     def _mark_processed(self, asset_id: str, asset_rel: str) -> None:
         """Remember the attempt so the next launch can skip this image."""

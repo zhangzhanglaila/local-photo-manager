@@ -145,12 +145,14 @@ class TaskStatusButton(QWidget):
         self.show()
         percent = task.percent
         text = task.title
-        if percent is not None:
+        if task.waiting:
+            text = f"{task.title} · {tr('status.tasks_waiting')}"
+        elif percent is not None:
             text = f"{task.title} {percent}%"
         self._label.setText(text)
         first = task.id != self._last_task_id
         self._last_task_id = task.id
-        if percent is None:
+        if task.waiting or percent is None:
             self._bar.set_indeterminate()
         elif first or self._bar.value() == 0:
             # Show the real value as soon as the task appears, then ease.
@@ -159,6 +161,10 @@ class TaskStatusButton(QWidget):
             self._bar.set_target(percent)
         if self._popup.isVisible():
             self._popup.refresh()
+            # Keep the card's bottom edge glued above the status bar: rows
+            # finishing at the top must shrink the card upward, not leave a
+            # growing empty gap between the card and the status bar.
+            self._position_popup()
 
     # ------------------------------------------------------------------
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
@@ -185,13 +191,31 @@ class TaskStatusButton(QWidget):
         if self._popup.isVisible():
             self._popup.hide()
             return
-        self._popup.refresh()
         window = self.window()
         self._popup.setParent(window)
-        anchor = self.mapTo(window, QPoint(0, 0))
+        # Refresh *after* reparenting: a parent change can hide the popup and
+        # leave its layout unactivated, which showed a card of bare progress
+        # bars until the next tick.
+        self._popup.refresh()
+        self._position_popup()
+        self._popup.show()
+        self._popup.raise_()
+
+    def _position_popup(self) -> None:
+        """Place the card above the entry, keeping its bottom edge fixed.
+
+        The status bar never moves. If the card were positioned by its top-left
+        corner, removing finished rows would shrink it downward and leave a gap
+        between the card and the status bar. Recomputing the top from the
+        *current* height keeps the bottom glued in place.
+        """
+
         popup = self._popup
-        width = popup.width()
-        height = popup.sizeHint().height()
+        window = self.window()
+        popup.adjustSize()
+        width = max(popup.width(), popup.sizeHint().width())
+        height = max(popup.sizeHint().height(), popup.height())
+        anchor = self.mapTo(window, QPoint(0, 0))
         # Right edge aligned with the entry, opened upwards, clamped inside the
         # window so it never hangs over the desktop or past the app border.
         x = anchor.x() + self.width() - width
@@ -200,8 +224,6 @@ class TaskStatusButton(QWidget):
         x = max(margin, min(x, window.width() - width - margin))
         y = max(margin, min(y, window.height() - height - margin))
         popup.move(x, y)
-        popup.show()
-        popup.raise_()
 
 
 class TaskRow(QWidget):
@@ -209,6 +231,9 @@ class TaskRow(QWidget):
 
     def __init__(self, task: BackgroundTask, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        #: Kept for tests and for reordering rows when tasks change state.
+        self.task_id = task.id
+        self.setMinimumHeight(40)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
@@ -217,9 +242,11 @@ class TaskRow(QWidget):
         header.setContentsMargins(0, 0, 0, 0)
         self._title = QLabel(task.title, self)
         self._title.setObjectName("taskPopupTitle")
+        self._title.setMinimumHeight(16)
         header.addWidget(self._title, 1)
         self._state = QLabel("", self)
         self._state.setObjectName("taskPopupState")
+        self._state.setMinimumHeight(16)
         header.addWidget(self._state, 0, Qt.AlignmentFlag.AlignRight)
         layout.addLayout(header)
 
@@ -241,12 +268,14 @@ class TaskRow(QWidget):
             self._state.setText(tr("status.tasks_failed"))
         elif task.state == "done":
             self._state.setText(tr("status.tasks_done"))
+        elif task.waiting:
+            self._state.setText(tr("status.tasks_waiting"))
         elif task.percent is None:
             self._state.setText("…")
         else:
             self._state.setText(f"{task.percent}%")
 
-        if task.percent is None:
+        if task.waiting or task.percent is None:
             self._bar.set_indeterminate()
         elif animate:
             self._bar.set_target(task.percent)
@@ -315,7 +344,7 @@ class TaskPopup(QFrame):
                 row.deleteLater()
                 self._rows.pop(task_id, None)
 
-        for task in tasks:
+        for index, task in enumerate(tasks):
             row = self._rows.get(task.id)
             if row is None:
                 row = TaskRow(task, self)
@@ -323,11 +352,21 @@ class TaskPopup(QFrame):
                 self._layout.addWidget(row)
             else:
                 row.update_task(task)
+            # Rows are kept for the life of the task, so a task that becomes
+            # active (or stops waiting) has to be moved: simply refreshing in
+            # place left the old order, with a blocked scan first.
+            target_index = index + 1  # index 0 is the empty-state label
+            if self._layout.indexOf(row) != target_index:
+                self._layout.removeWidget(row)
+                self._layout.insertWidget(target_index, row)
 
         if tasks:
             self._timer.start()
         else:
             self._timer.stop()
+        # Activate first: ``adjustSize`` reads the layout's current size hint,
+        # and a just-reparented popup can otherwise keep the previous height.
+        self._layout.activate()
         self.adjustSize()
 
     # ------------------------------------------------------------------

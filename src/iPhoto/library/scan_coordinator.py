@@ -77,6 +77,69 @@ class ScanCoordinatorMixin:
             selection = ModelSelection()
         return selection
 
+    @staticmethod
+    def _face_worker_has_finished(worker) -> bool:
+        """Whether a ``QThread``-based face worker has already returned."""
+
+        checker = getattr(worker, "isFinished", None)
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except RuntimeError:
+            return True
+
+    @staticmethod
+    def _reopen_ai_input(worker) -> None:
+        """Let an existing worker accept rows from a follow-up root scan.
+
+        Sequential scans reuse the same worker. Between two roots it must not
+        treat the queue as drained and exit before the next root's chunks arrive.
+        """
+
+        resume = getattr(worker, "resume_input", None)
+        if callable(resume):
+            resume()
+            return
+        # Compatibility for small test doubles and older workers.
+        if hasattr(worker, "_input_closed"):
+            worker._input_closed = False
+        if hasattr(worker, "_finished"):
+            worker._finished = False
+
+    def _cancel_face_scan(self) -> None:
+        """Cancel the face worker and remove its task row immediately."""
+
+        worker = self._current_face_scanner
+        self._current_face_scanner = None
+        self._face_scan_pending_start = False
+        self._face_scan_started = False
+        self._face_scan_status_message = None
+        if worker is None:
+            return
+        try:
+            worker.cancel()
+        except RuntimeError:  # pragma: no cover - Qt object already deleted
+            LOGGER.debug("Failed to cancel face worker", exc_info=True)
+        self._emit_ai_cancelled("face")
+        self.faceScanStatusChanged.emit("")
+
+    def _cancel_ocr_scan(self) -> None:
+        """Cancel the OCR worker and remove its task row immediately."""
+
+        worker = self._current_ocr_scanner
+        self._current_ocr_scanner = None
+        self._ocr_scan_pending_start = False
+        self._ocr_scan_started = False
+        if worker is None:
+            return
+        try:
+            worker.cancel()
+        except RuntimeError:  # pragma: no cover - Qt object already deleted
+            LOGGER.debug("Failed to cancel OCR worker", exc_info=True)
+        self._emit_ai_cancelled("ocr")
+        self.ocrScanStatusChanged.emit(ScanStatus(""))
+
     def start_session_scan(
         self,
         root: Path,
@@ -98,9 +161,12 @@ class ScanCoordinatorMixin:
         walk.  Rows are queued into the workers during the scan so they are ready
         to process once the file scan finishes.
         """
-        # Prepare signals outside the lock
+        # Prepare signals outside the lock. The slots check which scanner sent
+        # the event: cancelling an old scan does not stop its queued signals, and
+        # letting a stale ``finished`` finalize the *new* scan started the OCR
+        # worker with an empty queue (it then reported "complete" after 0 rows).
         signals = ScannerSignals()
-        signals.progressUpdated.connect(self.scanProgress)
+        signals.progressUpdated.connect(self._on_scanner_progress)
         signals.chunkReady.connect(self._on_scan_chunk)
         signals.finished.connect(self._on_scan_finished)
         signals.error.connect(self._on_scan_error)
@@ -115,13 +181,13 @@ class ScanCoordinatorMixin:
             self._current_scanner_worker.cancel()
             self._current_scanner_worker = None
             self._live_scan_root = None
-        if self._current_face_scanner is not None:
-            self._current_face_scanner.cancel()
-            self._current_face_scanner = None
-        if self._current_ocr_scanner is not None:
-            self._current_ocr_scanner.cancel()
-            self._current_ocr_scanner = None
-
+        # Keep the AI workers that are already collecting rows for this library.
+        # Startup scans the primary root and then each extra root in sequence;
+        # recreating the workers on every step discarded the rows queued by the
+        # previous scan and left the old task rows "waiting" forever because the
+        # replacement worker made their finish/cancel signals look stale.
+        self._scan_generation = getattr(self, "_scan_generation", 0) + 1
+        signals._generation = self._scan_generation
         self._live_scan_root = root
         self._live_scan_buffer.clear()
 
@@ -134,9 +200,10 @@ class ScanCoordinatorMixin:
             library_root=self.root(),
             scan_service=self._services.scan_service,
         )
+        # ``signals`` is per worker; the slots read this tag back through
+        # ``self.sender()`` to drop queued events from a superseded scan.
+        signals._worker = worker
         self._current_scanner_worker = worker
-        self._face_scan_status_message = None
-        self.faceScanStatusChanged.emit("")
         face_library_root = self.root() if self.root() is not None else root
 
         # Skip face scan when disk space is critically low to avoid SQLite crashes,
@@ -163,44 +230,97 @@ class ScanCoordinatorMixin:
             self.faceScanStatusChanged.emit(tr("face.status.disabled_setting"))
 
         if _skip_face:
+            self._cancel_face_scan()
             self.faceScanStatusChanged.emit(
                 tr("face.status.skipped")
                 if not self._face_scan_status_message
                 else ""
             )
-            self._current_face_scanner = None
         else:
-            # Create the face worker but DO NOT start its thread yet.
-            # Rows will be queued via enqueue_rows() during the file scan,
-            # and the worker thread will be started after the file scan
-            # finishes (see _on_scan_finished).  This avoids CPU/memory/IO
-            # contention between the file scanner and the AI face detector.
-            face_worker = FaceScanWorker(
-                face_library_root,
-                self,
-                people_service=self._services.people_service,
-                model_pack=self._ai_model_selection().spec("face").dir_name,
-            )
-            face_worker.statusChanged.connect(self._on_face_scan_status_changed)
-            face_worker.downloadProgress.connect(self._on_face_download_progress)
-            face_worker.finished.connect(self._on_face_scan_finished)
-            self._current_face_scanner = face_worker
+            face_worker = self._current_face_scanner
+            if face_worker is not None and self._face_worker_has_finished(face_worker):
+                # The thread returned but its queued ``finished`` signal has not
+                # reached the GUI thread yet. Reap it now so the next scan gets a
+                # worker that can actually be started again.
+                self._on_face_scan_finished(face_worker)
+                face_worker = None
+            if face_worker is None:
+                # Create the face worker but DO NOT start its thread yet. Rows
+                # will be queued via enqueue_rows() during the file scan, and
+                # the thread starts once the whole scan sequence is done.
+                face_worker = FaceScanWorker(
+                    face_library_root,
+                    self,
+                    people_service=self._services.people_service,
+                    model_pack=self._ai_model_selection().spec("face").dir_name,
+                )
+                face_worker.statusChanged.connect(
+                    lambda message, worker=face_worker: self._on_face_scan_status_changed(
+                        message, worker
+                    )
+                )
+                face_worker.downloadProgress.connect(
+                    lambda downloaded, total, worker=face_worker: self._on_face_download_progress(
+                        downloaded, total, worker
+                    )
+                )
+                face_worker.finished.connect(
+                    lambda worker=face_worker: self._on_face_scan_finished(worker)
+                )
+                face_progress = getattr(face_worker, "progressChanged", None)
+                if face_progress is not None:
+                    face_progress.connect(
+                        lambda done, total, worker=face_worker: self._on_face_progress(
+                            done, total, worker
+                        )
+                    )
+                self._current_face_scanner = face_worker
+                self._face_scan_pending_start = True
+                self._face_scan_started = False
+                self._face_scan_status_message = None
+                self.faceScanStatusChanged.emit("")
+            else:
+                # A later root in the same startup sequence reuses the worker so
+                # the rows from all roots stay in one queue.
+                self._reopen_ai_input(face_worker)
+                self._face_scan_pending_start = not bool(
+                    getattr(self, "_face_scan_started", False)
+                )
 
-        # Create OCR worker if AI dependencies are available.
-        # Same pattern as face worker: create now, start after file scan.
+        # Same lifecycle for OCR: reuse the worker while this scan sequence is
+        # still collecting rows, and only start it after the final root.
         ocr_library_root = self.root() if self.root() is not None else root
-        ocr_worker = self._create_ocr_worker(ocr_library_root)
-        if ocr_worker is not None:
-            ocr_worker.signals.progress.connect(self._on_ocr_progress)
-            ocr_worker.signals.finished.connect(self._on_ocr_finished)
-            self._current_ocr_scanner = ocr_worker
-        else:
-            self._current_ocr_scanner = None
-
-        # Record that face/OCR workers are pending start (will be started in
-        # _on_scan_finished after the file scan completes).
-        self._face_scan_pending_start = not _skip_face
-        self._ocr_scan_pending_start = self._current_ocr_scanner is not None
+        if not self._ai_ocr_enabled():
+            self._cancel_ocr_scan()
+        ocr_worker = self._current_ocr_scanner
+        if ocr_worker is None and self._ai_ocr_enabled():
+            ocr_worker = self._create_ocr_worker(ocr_library_root)
+            if ocr_worker is not None:
+                ocr_worker.signals.progress.connect(
+                    lambda done, total, worker=ocr_worker: self._on_ocr_progress(
+                        done, total, worker
+                    )
+                )
+                ocr_worker.signals.finished.connect(
+                    lambda processed, failed, worker=ocr_worker: self._on_ocr_finished(
+                        processed, failed, worker
+                    )
+                )
+                ocr_worker.signals.error.connect(
+                    lambda message, worker=ocr_worker: self._on_ocr_error(
+                        message, worker
+                    )
+                )
+                self._current_ocr_scanner = ocr_worker
+                self._ocr_scan_pending_start = True
+                self._ocr_scan_started = False
+            else:
+                self._ocr_scan_pending_start = False
+        elif ocr_worker is not None:
+            self._reopen_ai_input(ocr_worker)
+            self._ocr_scan_pending_start = not bool(
+                getattr(self, "_ocr_scan_started", False)
+            )
 
         # Release lock before starting the worker
         del locker
@@ -218,12 +338,8 @@ class ScanCoordinatorMixin:
             # We don't clear the buffer immediately on stop, as the UI might still need it
             # until a new scan starts or the app closes. Setting root to None invalidates it contextually.
             self._live_scan_root = None
-        if self._current_face_scanner is not None:
-            self._current_face_scanner.cancel()
-            self._current_face_scanner = None
-        if self._current_ocr_scanner is not None:
-            self._current_ocr_scanner.cancel()
-            self._current_ocr_scanner = None
+        self._cancel_face_scan()
+        self._cancel_ocr_scan()
         self._face_scan_pending_start = False
         self._ocr_scan_pending_start = False
 
@@ -393,13 +509,37 @@ class ScanCoordinatorMixin:
 
         return []
 
+    def _sender_scan_worker(self):
+        """Return the scanner that emitted the event being handled, if any."""
+
+        return getattr(self.sender(), "_worker", None)
+
+    def _scan_event_is_stale(self) -> bool:
+        sender = self.sender()
+        generation = getattr(sender, "_generation", None)
+        if generation is not None and generation != getattr(
+            self, "_scan_generation", generation
+        ):
+            return True
+        worker = self._sender_scan_worker()
+        return worker is not None and worker is not self._current_scanner_worker
+
+    def _on_scanner_progress(self, root: Path, current: int, total: int) -> None:
+        if self._scan_event_is_stale():
+            return
+        self.scanProgress.emit(root, current, total)
+
     def _on_scan_chunk(self, root: Path, chunk: List[dict]) -> None:
         """Handle incoming scan chunks after persistence.
 
-        The scan worker already persists each chunk to disk before this signal is
-        observed. The browsing layer now treats the database as the source of
-        truth, so we only relay the invalidation event here.
+        A cancelled scan can still have ``chunkReady`` events queued; enqueueing
+        them into the new scan's AI workers mixed two libraries' rows. The scan
+        worker already persisted each chunk before this signal is observed, so
+        the browsing layer only needs the invalidation event.
         """
+
+        if self._scan_event_is_stale():
+            return
 
         if not chunk:
             return
@@ -412,7 +552,10 @@ class ScanCoordinatorMixin:
         self.scanChunkReady.emit(root, chunk)
 
     def _on_scan_finished(self, root: Path, rows: List[dict]) -> None:
+        if self._scan_event_is_stale():
+            return
         self.invalidate_geotagged_assets_cache()
+        generation = getattr(self, "_scan_generation", None)
 
         # Clear worker reference before downstream listeners react so a completed
         # scan does not still appear in-flight while final post-processing runs.
@@ -428,20 +571,11 @@ class ScanCoordinatorMixin:
             if self._live_scan_root is None:
                 self.scanFinished.emit(root, True)
             return
-        if face_scanner is not None:
-            face_scanner.finish_input()
-        if ocr_scanner is not None:
-            ocr_scanner.finish_input()
 
         if worker.cancelled:
-            # Clean up pending face/OCR workers if the scan was cancelled.
-            self._face_scan_pending_start = False
-            self._ocr_scan_pending_start = False
             self.scanFinished.emit(root, True)
             return
         if worker.failed:
-            self._face_scan_pending_start = False
-            self._ocr_scan_pending_start = False
             self.scanFinished.emit(root, False)
             return
 
@@ -467,15 +601,38 @@ class ScanCoordinatorMixin:
         # finishes, and the (CPU heavy) face scan runs afterwards.
         self._preload_search_model()
 
-        # --- Start deferred AI workers after file scan completes ---
-        # Face and OCR scanning were deferred to avoid resource contention
-        # with the filesystem walk.  Now that the file scan is done, start
-        # them so they process the rows that were queued during the scan.
+        # ``scanFinished`` is delivered synchronously. A listener can start the
+        # next root's scan (startup scans roots sequentially) or a watcher-driven
+        # rescan before this method resumes. That newer scan owns the AI input
+        # now; closing it here would make the reused workers drain before the new
+        # root's chunks arrive. The newer scan will close the input when it ends.
+        if generation is not None and generation != getattr(
+            self, "_scan_generation", generation
+        ):
+            LOGGER.debug(
+                "scan %s finished after a newer scan started; leaving AI input open",
+                root,
+            )
+            return
+        if self._current_scanner_worker is not None or self._live_scan_root is not None:
+            return
+
+        # --- Start deferred AI workers after the whole scan sequence ---
+        # Face and OCR scanning were deferred to avoid resource contention with
+        # the filesystem walk. All roots in a startup sequence feed the same
+        # workers, so only the final root closes their input and starts them.
+        if face_scanner is not None:
+            face_scanner.finish_input()
+        if ocr_scanner is not None:
+            ocr_scanner.finish_input()
+
         if (
             face_scanner is not None
             and getattr(self, "_face_scan_pending_start", False)
         ):
             self._face_scan_pending_start = False
+            self._face_scan_started = True
+            self._emit_ai_started("face")
             face_scanner.start(QThread.Priority.LowestPriority)
             self.faceScanStatusChanged.emit(tr("face.status.scanning"))
 
@@ -484,6 +641,10 @@ class ScanCoordinatorMixin:
             and getattr(self, "_ocr_scan_pending_start", False)
         ):
             self._ocr_scan_pending_start = False
+            self._ocr_scan_started = True
+            queued = len(getattr(ocr_scanner, "_queue", []) or [])
+            LOGGER.info("starting OCR with %d queued images", queued)
+            self._emit_ai_started("ocr")
             self.ocrScanStatusChanged.emit(ScanStatus("status.ocr.running"))
             self._scan_thread_pool.start(ocr_scanner)
 
@@ -529,19 +690,27 @@ class ScanCoordinatorMixin:
         ).start()
 
     def _on_scan_error(self, root: Path, message: str) -> None:
+        if self._scan_event_is_stale():
+            return
         locker = QMutexLocker(self._scan_buffer_lock)
         self._current_scanner_worker = None
+        self._live_scan_root = None
         face_scanner = self._current_face_scanner
+        ocr_scanner = self._current_ocr_scanner
         del locker
+        # Keep the workers (and the rows already queued) for a later rescan;
+        # only close their input so a running worker can drain.
         if face_scanner is not None:
             face_scanner.finish_input()
-        self._face_scan_pending_start = False
-        self._ocr_scan_pending_start = False
+        if ocr_scanner is not None:
+            ocr_scanner.finish_input()
         self.errorRaised.emit(message)
         self.scanFinished.emit(root, False)
 
     def _on_scan_batch_failed(self, root: Path, count: int) -> None:
         """Propagate partial failure notifications to the UI."""
+        if self._scan_event_is_stale():
+            return
         self.scanBatchFailed.emit(root, count)
 
     def _paths_equal(self,p1,p2) -> bool:
@@ -549,11 +718,45 @@ class ScanCoordinatorMixin:
 
         return paths_equal(p1,p2)
 
-    def _on_face_scan_status_changed(self, message: str) -> None:
+    # ------------------------------------------------------------------
+    # AI-scan task lifecycle (machine-readable)
+    # ------------------------------------------------------------------
+    def _emit_ai_started(self, feature: str) -> None:
+        signal = getattr(self, "aiScanStarted", None)
+        if signal is not None:
+            signal.emit(feature)
+
+    def _emit_ai_progress(self, feature: str, done: int, total: int) -> None:
+        signal = getattr(self, "aiScanProgress", None)
+        if signal is not None:
+            signal.emit(feature, max(0, int(done)), max(0, int(total)))
+
+    def _emit_ai_finished(self, feature: str, failed: bool) -> None:
+        signal = getattr(self, "aiScanFinished", None)
+        if signal is not None:
+            signal.emit(feature, bool(failed))
+
+    def _emit_ai_cancelled(self, feature: str) -> None:
+        signal = getattr(self, "aiScanCancelled", None)
+        if signal is not None:
+            signal.emit(feature)
+
+    def _on_face_progress(self, done: int, total: int, worker=None) -> None:
+        if worker is not None and worker is not self._current_face_scanner:
+            return
+        self._emit_ai_progress("face", done, total)
+
+    def _on_face_scan_status_changed(self, message: str, worker=None) -> None:
+        if worker is not None and worker is not self._current_face_scanner:
+            return
         self._face_scan_status_message = message or None
         self.faceScanStatusChanged.emit(message)
 
-    def _on_face_download_progress(self, downloaded: int, total: int) -> None:
+    def _on_face_download_progress(
+        self, downloaded: int, total: int, worker=None
+    ) -> None:
+        if worker is not None and worker is not self._current_face_scanner:
+            return
         if total > 0:
             pct = downloaded * 100 // total
             mb_done = downloaded / (1024 * 1024)
@@ -565,9 +768,23 @@ class ScanCoordinatorMixin:
         self._face_scan_status_message = msg
         self.faceScanStatusChanged.emit(msg)
 
-    def _on_face_scan_finished(self) -> None:
-        worker = self._current_face_scanner
+    def _on_face_scan_finished(self, worker=None) -> None:
+        current = self._current_face_scanner
+        if worker is not None and current is not None and worker is not current:
+            # A cancelled scan finished after a newer one was installed. It
+            # must not clear the new worker's task or announce completion, but
+            # still wait: dropping the last reference to a QThread that is
+            # tearing down aborts the process.
+            try:
+                worker.wait()
+            except RuntimeError:
+                pass
+            return
+        if worker is None:
+            worker = current
         self._current_face_scanner = None
+        self._face_scan_pending_start = False
+        self._face_scan_started = False
         if worker is not None:
             # ``finished`` is delivered on the GUI thread while the worker object
             # may still be tearing down. Dropping the last reference then let Qt
@@ -578,7 +795,14 @@ class ScanCoordinatorMixin:
                 worker.wait()
             except RuntimeError:
                 pass
-        self.faceScanStatusChanged.emit(tr("face.status.complete"))
+        if bool(getattr(worker, "cancelled", False)):
+            # Cancellation is not completion: drop the task row and clear the
+            # transient "scanning faces" line instead of announcing "完成".
+            self._emit_ai_cancelled("face")
+            self.faceScanStatusChanged.emit("")
+        else:
+            self._emit_ai_finished("face", False)
+            self.faceScanStatusChanged.emit(tr("face.status.complete"))
 
     # ------------------------------------------------------------------
     # Foreground media integration
@@ -623,16 +847,63 @@ class ScanCoordinatorMixin:
             LOGGER.warning("Failed to create OCR worker: %s", exc)
             return None
 
-    def _on_ocr_progress(self, processed: int, total: int) -> None:
-        # ``total`` is the number of attempts so far, not the queue size; report
-        # a count so the status bar shows the OCR backfill is still moving.
-        if processed and processed % 50 == 0:
+    def _on_ocr_progress(self, done: int, total: int, worker=None) -> None:
+        if worker is not None and worker is not self._current_ocr_scanner:
+            return
+        self._emit_ai_progress("ocr", done, total)
+        if not done:
+            return
+        if total > 0 and (done % 25 == 0 or done >= total):
             self.ocrScanStatusChanged.emit(
-                ScanStatus("status.ocr.progress", {"count": processed})
+                ScanStatus(
+                    "status.ocr.progress_total",
+                    {
+                        "percent": min(100, done * 100 // total),
+                        "done": done,
+                        "total": total,
+                    },
+                )
+            )
+        elif total <= 0 and done % 50 == 0:
+            self.ocrScanStatusChanged.emit(
+                ScanStatus("status.ocr.progress", {"count": done})
             )
 
-    def _on_ocr_finished(self, processed: int, failed: int) -> None:
-        self._current_ocr_scanner = None
+    def _on_ocr_error(self, message: str, worker=None) -> None:
+        current = self._current_ocr_scanner
+        if worker is not None and current is not None and worker is not current:
+            return
+        if worker is None or worker is current:
+            self._current_ocr_scanner = None
+            self._ocr_scan_pending_start = False
+            self._ocr_scan_started = False
+        if bool(getattr(worker, "cancelled", False)):
+            self._emit_ai_cancelled("ocr")
+            self.ocrScanStatusChanged.emit(ScanStatus(""))
+            return
+        self._emit_ai_finished("ocr", True)
+        self.ocrScanStatusChanged.emit(
+            ScanStatus("status.ocr.error", {"message": message}, completed=True)
+        )
+
+    def _on_ocr_finished(self, processed: int, failed: int, worker=None) -> None:
+        current = self._current_ocr_scanner
+        if worker is not None and current is not None and worker is not current:
+            # The old scan's worker must not report "complete" over the new one.
+            return
+        if worker is None or worker is current:
+            self._current_ocr_scanner = None
+            self._ocr_scan_pending_start = False
+            self._ocr_scan_started = False
+        cancelled = bool(getattr(worker, "cancelled", False))
+        if cancelled:
+            LOGGER.info(
+                "OCR worker cancelled after %d images (%d failed)", processed, failed
+            )
+            self._emit_ai_cancelled("ocr")
+            self.ocrScanStatusChanged.emit(ScanStatus(""))
+            return
+        self._emit_ai_finished("ocr", bool(failed and not processed))
         if processed > 0:
             LOGGER.info("OCR scan complete: %d images processed, %d failed", processed, failed)
             self.ocrScanStatusChanged.emit(

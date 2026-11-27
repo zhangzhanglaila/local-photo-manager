@@ -71,6 +71,37 @@ def _ocr_worker(tmp_path, processed: list[str]):
     return OCRWorker(_Engine(), _Repo(), library_root=tmp_path)
 
 
+def test_face_worker_reports_queued_rows_as_the_progress_total(tmp_path) -> None:
+    from iPhoto.library.workers.face_scan_worker import FaceScanWorker
+
+    worker = FaceScanWorker(tmp_path, people_service=object())
+    updates: list[tuple[int, int]] = []
+    worker.progressChanged.connect(lambda done, total: updates.append((done, total)))
+
+    worker.enqueue_rows(
+        [
+            {"id": "a", "rel": "a.jpg", "media_type": 0},
+            {"id": "b", "rel": "b.jpg", "media_type": 0},
+        ]
+    )
+    worker._scan_processed = 1
+    worker._emit_progress()
+
+    assert updates[-1] == (1, 2)
+
+
+def test_face_worker_can_reopen_its_input_for_a_followup_root(tmp_path) -> None:
+    from iPhoto.library.workers.face_scan_worker import FaceScanWorker
+
+    worker = FaceScanWorker(tmp_path, people_service=object())
+
+    worker.finish_input()
+    assert worker._input_closed is True
+
+    worker.resume_input()
+    assert worker._input_closed is False
+
+
 def test_ocr_worker_honours_pause(tmp_path) -> None:
     """A paused OCR worker must not consume queued rows."""
 

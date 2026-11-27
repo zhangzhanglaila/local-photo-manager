@@ -34,6 +34,8 @@ class FaceScanWorker(QThread):
     peopleIndexUpdated = Signal()
     statusChanged = Signal(str)
     downloadProgress = Signal(int, int)
+    #: ``(done, expected)`` for the status-bar task and the settings coverage row.
+    progressChanged = Signal(int, int)
 
     # Keep face scanning responsive to the app: detection still runs in a
     # worker thread, but each committed batch rebuilds the People snapshot and
@@ -85,14 +87,27 @@ class FaceScanWorker(QThread):
             if not is_face_scan_candidate(row):
                 continue
             self._queued_ids.add(asset_id)
+            self._scan_expected += 1
             self._queue.put(dict(row))
 
     def finish_input(self) -> None:
         self._input_closed = True
 
+    def resume_input(self) -> None:
+        """Reopen the queue while a follow-up root scan keeps feeding rows."""
+
+        if not self._cancelled:
+            self._input_closed = False
+
     def cancel(self) -> None:
         self._cancelled = True
         self._input_closed = True
+
+    @property
+    def cancelled(self) -> bool:
+        """Whether :meth:`cancel` was requested before the thread finished."""
+
+        return self._cancelled
 
     def set_video_playing(self, is_playing: bool) -> None:
         """⭐ 动态调整人脸扫描优先级：视频播放时完全暂停处理"""
@@ -130,6 +145,11 @@ class FaceScanWorker(QThread):
         # 3. This avoids competing with the file scanner for DB and disk I/O.
         if self._cancelled:
             return
+
+        # This runs after the AI-scan gate is acquired, so the first tick also
+        # tells the UI "this is the scan that is actually running" while the
+        # model is still being constructed/loaded.
+        self._emit_progress()
 
         paths = face_library_paths(self._library_root)
 
@@ -186,9 +206,14 @@ class FaceScanWorker(QThread):
                     pipeline,
                     paths.thumbnail_dir,
                 )
+                self._scan_processed += len(batch)
+                self._emit_progress()
                 if not model_ready:
                     model_ready = True
                     self.statusChanged.emit(tr("face.status.scanning"))
+                progress_message = self._progress_message()
+                if progress_message:
+                    self.statusChanged.emit(progress_message)
                 for asset_id in [str(row.get("id") or "") for row in batch if row.get("id")]:
                     self._queued_ids.discard(asset_id)
                 if committed:
@@ -227,15 +252,22 @@ class FaceScanWorker(QThread):
                 if self._input_closed:
                     return
 
+    def _emit_progress(self) -> None:
+        """Report ``(done, expected)`` without ever claiming more than 100 %."""
+
+        total = max(self._scan_expected, self._scan_processed)
+        done = min(self._scan_processed, total)
+        self.progressChanged.emit(done, total)
+
     def _progress_message(self) -> str | None:
         """Return a percentage status line, or None when the total is unknown."""
 
-        total = self._scan_expected
-        done = self._scan_processed
-        if total <= 0 or done > total:
+        total = max(self._scan_expected, self._scan_processed)
+        done = min(self._scan_processed, total)
+        if total <= 0:
             return None
         percent = min(100, done * 100 // total)
-        return f"正在扫描人脸... {percent}% ({done}/{total})"
+        return tr("face.status.progress", percent=percent, done=done, total=total)
 
     def _prime_pending_rows(self) -> None:
         self._top_up_pending_rows()

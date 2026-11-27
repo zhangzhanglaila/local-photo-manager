@@ -8,9 +8,10 @@ import pytest
 
 pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 
-from PySide6.QtWidgets import QApplication, QLabel, QProgressBar
+from PySide6.QtWidgets import QApplication, QLabel, QProgressBar, QWidget
 
 from iPhoto.gui.services.background_tasks import BackgroundTaskRegistry
+from iPhoto.i18n import tr
 from iPhoto.gui.ui.widgets.task_status_widget import (
     SmoothProgressBar,
     TaskPopup,
@@ -64,6 +65,79 @@ def test_unknown_totals_are_indeterminate(registry):
     assert registry.task("scan").percent is None
 
 
+def test_active_ai_scan_is_listed_before_a_waiting_one(registry):
+    """Only one AI scan runs at a time; the blocked one must not look current."""
+
+    registry.start("ocr", "Recognising text")
+    registry.set_state("ocr", "waiting", detail="waiting…")
+    registry.start("face", "Recognising faces")
+    registry.update("face", done=50, total=100)
+
+    assert [task.id for task in registry.tasks()] == ["face", "ocr"]
+    assert registry.latest().id == "face"
+    assert registry.task("ocr").running is True
+    assert registry.task("ocr").waiting is True
+
+
+def test_finished_tasks_sit_above_unfinished_ones(registry):
+    """The popup grows upward, so history belongs above the moving work."""
+
+    registry.start("scan", "Scanning files")
+    registry.update("scan", done=20, total=100)
+    registry.start("index", "Building the search index")
+    registry.update("index", done=100, total=100)
+    registry.finish("index")
+
+    assert [task.id for task in registry.tasks()] == ["index", "scan"]
+    assert registry.latest().id == "scan"
+
+
+def test_popup_bottom_stays_above_the_status_bar(qapp, registry):
+    """Removing a row must shrink the card upward, not leave a gap below."""
+
+    registry.start("index", "Building the search index")
+    registry.update("index", done=100, total=100)
+    registry.start("scan", "Scanning files")
+    registry.update("scan", done=20, total=100)
+
+    host = QWidget()
+    host.resize(640, 420)
+    button = TaskStatusButton(host, registry=registry)
+    button.move(420, 380)
+    try:
+        host.show()
+        button.show()
+        button._toggle_popup()
+        qapp.processEvents()
+        popup = button._popup
+        before = popup.geometry().bottom()
+        registry.finished_ttl_s = 0.0
+
+        registry.finish("index")
+        qapp.processEvents()
+
+        assert popup.isVisible() is True
+        assert popup.geometry().bottom() == before
+        assert "index" not in popup._rows
+    finally:
+        button._popup.hide()
+        button.close()
+        host.close()
+        registry.clear()
+
+
+def test_finishing_the_active_task_promotes_the_waiting_one(registry):
+    registry.start("ocr", "Recognising text")
+    registry.set_state("ocr", "waiting")
+    registry.start("face", "Recognising faces")
+    registry.update("face", done=100, total=100)
+
+    registry.finish("face")
+
+    assert registry.latest().id == "ocr"
+    assert registry.task("ocr").state == "waiting"
+
+
 def test_button_shows_the_latest_task_and_opens_the_popup(qapp, registry):
     registry.start("scan", "Scanning files")
     registry.update("scan", done=95, total=100)
@@ -82,6 +156,39 @@ def test_button_shows_the_latest_task_and_opens_the_popup(qapp, registry):
         bar = popup.findChildren(QProgressBar)[0]
         bar._step()  # easing timer; step once so the value settles
         assert bar._target == 95 or bar.value() == 95
+    finally:
+        button._popup.hide()
+        button.close()
+        registry.clear()
+
+
+def test_button_names_the_active_scan_even_when_another_is_waiting(qapp, registry):
+    """A waiting OCR scan must not steal the label from the moving face scan."""
+
+    registry.start("ocr", tr("status.task.ocr"))
+    registry.set_state("ocr", "waiting", detail=tr("status.tasks_waiting"))
+    registry.start("face", tr("status.task.face"))
+    registry.update("face", done=50, total=100)
+
+    button = TaskStatusButton(registry=registry)
+    try:
+        assert tr("status.task.face") in button._label.text()
+        assert "50%" in button._label.text()
+        assert tr("status.tasks_waiting") not in button._label.text()
+
+        button._toggle_popup()
+        assert list(button._popup._rows) == ["face", "ocr"]
+        assert button._popup._rows["ocr"]._state.text() == tr("status.tasks_waiting")
+
+        # The gate hands over: OCR starts moving and face becomes the waiter.
+        # The popup is already open, so the rows must be reordered, not just
+        # refreshed in place.
+        registry.update("ocr", done=10, total=100)
+        registry.set_state("ocr", "running")
+        registry.set_state("face", "waiting", detail=tr("status.tasks_waiting"))
+        button._popup.refresh()
+        assert button._popup._layout.itemAt(1).widget().task_id == "ocr"
+        assert button._popup._layout.itemAt(2).widget().task_id == "face"
     finally:
         button._popup.hide()
         button.close()

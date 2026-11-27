@@ -9,8 +9,9 @@ navigation column on the left and one settings page on the right.
 from __future__ import annotations
 
 import re
+import time
 
-from PySide6.QtCore import QPoint, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QFontMetrics, QPainter, QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -235,6 +236,13 @@ class SettingsDialog(QDialog):
         self._search_status = search_status
         self._model_selection = model_selection
         self._pages: list[QWidget] = []
+        #: Coverage is read from the AI databases, which change underneath the
+        #: dialog while a face/OCR scan runs. A light poll keeps "processed /
+        #: total" moving; there is no observable signal for those counters.
+        self._ai_refresh_timer = QTimer(self)
+        self._ai_refresh_timer.setInterval(1000)
+        self._ai_refresh_timer.timeout.connect(self._refresh_ai_rows)
+        self._people_cache: tuple[str, float, int] | None = None
 
         self.setWindowTitle(tr("dialog.settings_title"))
         self.setObjectName("settingsDialog")
@@ -845,7 +853,6 @@ class SettingsDialog(QDialog):
             from ....agent.services.ai_coverage import (
                 face_coverage,
                 ocr_coverage,
-                people_count,
             )
 
             if feature == "face":
@@ -853,7 +860,7 @@ class SettingsDialog(QDialog):
                 if total <= 0:
                     return tr("settings.ai_state.no_library")
                 text = tr("settings.ai_state.coverage", done=done, total=total)
-                people = people_count(root)
+                people = self._cached_people_count(root)
                 if people:
                     text = f"{text} · {tr('settings.ai_state.people', count=people)}"
                 return text
@@ -863,6 +870,24 @@ class SettingsDialog(QDialog):
             return tr("settings.ai_state.coverage", done=done, total=total)
         except Exception:  # pragma: no cover - display only
             return ""
+
+    def _cached_people_count(self, root) -> int:
+        """Count people at most every few seconds.
+
+        The face index is a separate database; opening it on every one-second
+        coverage tick made the scan and the dialog compete for SQLite.
+        """
+
+        now = time.monotonic()
+        key = str(root)
+        cache = getattr(self, "_people_cache", None)
+        if cache is not None and cache[0] == key and now - cache[1] < 5.0:
+            return cache[2]
+        from ....agent.services.ai_coverage import people_count
+
+        count = people_count(root)
+        self._people_cache = (key, now, count)
+        return count
 
     def _library_root(self):
         library = getattr(self, "_library", None)
@@ -1112,6 +1137,10 @@ class SettingsDialog(QDialog):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        # Re-read the coverage now, then keep it moving while a scan runs.
+        self._refresh_search_rows()
+        self._refresh_ai_rows()
+        self._ai_refresh_timer.start()
         parent = self.parentWidget()
         if parent is not None:
             frame = parent.frameGeometry()
@@ -1119,6 +1148,10 @@ class SettingsDialog(QDialog):
                 frame.center().x() - self.width() // 2,
                 frame.center().y() - self.height() // 2,
             )
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._ai_refresh_timer.stop()
+        super().hideEvent(event)
 
 
 __all__ = ["SettingsDialog"]

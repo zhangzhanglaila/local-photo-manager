@@ -116,5 +116,5 @@ class ScanStatus:
     """
 
     key: str
-    params: Mapping[str, int] = field(default_factory=dict)
+    params: Mapping[str, object] = field(default_factory=dict)
     completed: bool = False

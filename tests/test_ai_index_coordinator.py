@@ -74,13 +74,21 @@ class _SearchIndexStatus:
 class _BackgroundTasks:
     def __init__(self) -> None:
         self.started: list[tuple] = []
+        self.updated: list[tuple] = []
         self.finished: list[tuple] = []
+        self.states: list[tuple] = []
 
     def start(self, *args, **kwargs) -> None:
         self.started.append((args, kwargs))
 
     def update(self, *args, **kwargs) -> None:
-        pass
+        self.updated.append((args, kwargs))
+
+    def set_state(self, *args, **kwargs) -> None:
+        self.states.append((args, kwargs))
+
+    def task(self, task_id):
+        return None
 
     def finish(self, *args, **kwargs) -> None:
         self.finished.append((args, kwargs))
@@ -289,13 +297,87 @@ def test_rebuild_ai_feature_needs_a_library() -> None:
     assert gallery.rescans == 0
 
 
-def test_rebuild_ai_feature_starts_a_task_and_rescans() -> None:
+def test_rebuild_ai_feature_rescans_without_eagerly_starting_a_task() -> None:
+    """A task may never run (disabled OCR, nothing pending); the worker owns it."""
+
     coordinator, context, _session, gallery, _presenter = _make()
 
     coordinator.rebuild_ai_feature("ocr")
 
-    assert context.background_tasks.started[0][0] == ("ocr", tr("status.task.ocr"))
+    assert context.background_tasks.started == []
     assert gallery.rescans == 1
+
+
+def test_ai_scan_lifecycle_drives_the_task_registry() -> None:
+    coordinator, context, _session, _gallery, _presenter = _make()
+    tasks = context.background_tasks
+
+    coordinator._on_ai_scan_started("ocr")
+    assert tasks.started[0][0][:2] == ("ocr", tr("status.task.ocr"))
+    assert tasks.states[-1][0] == ("ocr", "waiting")
+
+    coordinator._on_ai_scan_progress("ocr", 30, 120)
+    assert tasks.updated[-1][0] == ("ocr",)
+    assert tasks.updated[-1][1] == {"done": 30, "total": 120}
+    assert tasks.states[-1][0] == ("ocr", "running")
+
+    coordinator._on_ai_scan_finished("ocr", False)
+    assert tasks.finished[-1][0] == ("ocr",)
+
+
+def test_library_signals_are_wired_to_the_real_registry() -> None:
+    """The fake-registry test above does not prove ``__init__`` connected anything."""
+
+    from PySide6.QtCore import QObject, Signal
+
+    from iPhoto.gui.services.background_tasks import BackgroundTaskRegistry
+
+    class _Library(QObject):
+        aiScanStarted = Signal(str)
+        aiScanProgress = Signal(str, int, int)
+        aiScanFinished = Signal(str, bool)
+        aiScanCancelled = Signal(str)
+
+    registry = BackgroundTaskRegistry()
+    library = _Library()
+    context = SimpleNamespace(
+        library=library,
+        background_tasks=registry,
+        model_selection=_ModelSelection(
+            SimpleNamespace(dir_name="siglip2-base", key="siglip2-base", download_mb=577)
+        ),
+        search_index_status=_SearchIndexStatus(),
+        settings=SimpleNamespace(set=lambda *a, **k: None),
+    )
+    coordinator = AiIndexCoordinator(
+        context=context,
+        window=SimpleNamespace(ui=SimpleNamespace(gallery_page=SimpleNamespace())),
+        gallery_vm=_GalleryVm(),
+        status_bar=_StatusBar(),
+        session_getter=lambda: None,
+        library_root_getter=lambda: None,
+    )
+    assert coordinator is not None  # keep the QObject alive for its connections
+
+    library.aiScanStarted.emit("ocr")
+    assert registry.task("ocr").waiting is True
+
+    library.aiScanProgress.emit("ocr", 30, 120)
+    assert registry.task("ocr").state == "running"
+    assert registry.task("ocr").percent == 25
+
+    library.aiScanFinished.emit("ocr", False)
+    assert registry.task("ocr").state == "done"
+
+    library.aiScanStarted.emit("face")
+    library.aiScanStarted.emit("ocr")
+    library.aiScanProgress.emit("face", 5, 10)
+    assert registry.task("face").state == "running"
+    assert registry.task("ocr").waiting is True
+    assert registry.task("ocr").detail == tr("status.tasks_waiting_for_face")
+
+    library.aiScanCancelled.emit("face")
+    assert registry.task("face") is None, "a cancelled AI task must not linger as waiting"
 
 
 def test_model_switch_to_a_missing_model_downloads_first(monkeypatch) -> None:

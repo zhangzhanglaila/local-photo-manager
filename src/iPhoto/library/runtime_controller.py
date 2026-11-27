@@ -70,6 +70,13 @@ class LibraryRuntimeController(
     peopleSnapshotCommitted = Signal(object)
     faceScanStatusChanged = Signal(str)
     ocrScanStatusChanged = Signal(object)
+    #: Machine-readable AI-scan lifecycle for the status-bar task list. The
+    #: human-readable signals above carry sentences; these carry a feature key
+    #: (``face``/``ocr``) plus counts so the GUI can show real progress.
+    aiScanStarted = Signal(str)
+    aiScanProgress = Signal(str, int, int)
+    aiScanFinished = Signal(str, bool)
+    aiScanCancelled = Signal(str)
 
     def __init__(
         self,
@@ -116,6 +123,10 @@ class LibraryRuntimeController(
 
         # Scanner State
         self._current_scanner_worker: Optional[ScannerWorker] = None
+        #: Monotonic token for the active file scan. A new scan increments it, so
+        #: an earlier scan's queued ``finished`` signal cannot finalize the new
+        #: scan or consume its pending AI-worker flags.
+        self._scan_generation: int = 0
         self._current_face_scanner: Optional[FaceScanWorker] = None
         self._current_ocr_scanner = None
         self._scan_thread_pool = QThreadPool.globalInstance()
@@ -127,6 +138,11 @@ class LibraryRuntimeController(
         self._face_scan_status_message: Optional[str] = None
         self._face_scan_pending_start: bool = False
         self._ocr_scan_pending_start: bool = False
+        #: Whether the current AI worker has actually been handed to Qt yet.
+        #: Sequential root scans queue rows into the same workers, so this is
+        #: what distinguishes "still collecting rows" from "already running".
+        self._face_scan_started: bool = False
+        self._ocr_scan_started: bool = False
         self._people_index_coordinator: PeopleIndexCoordinator | None = None
         self._library_session: "LibrarySession | None" = None
         self._owns_library_session = False

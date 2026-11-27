@@ -26,6 +26,19 @@ from iPhoto.gui.services.search_thread import clear_search_embedding_cache
 
 _LOGGER = logging.getLogger(__name__)
 
+#: AI scans that own a row in the background-task popup.
+_AI_FEATURES = ("face", "ocr")
+
+_AI_TASK_TITLES = {
+    "face": "status.task.face",
+    "ocr": "status.task.ocr",
+}
+
+_AI_WAIT_DETAILS = {
+    "face": "status.tasks_waiting_for_face",
+    "ocr": "status.tasks_waiting_for_ocr",
+}
+
 
 class AiIndexCoordinator(QObject):
     """Drive model downloads and index builds, and report them to the user."""
@@ -49,8 +62,79 @@ class AiIndexCoordinator(QObject):
         self._library_root_getter = library_root_getter
         self._presenter: AiIndexStatusPresenter | None = None
         self._bootstrap_started = False
+        self._bind_ai_scan_signals()
 
     # ---------------------------------------------------------------- helpers
+
+    def _bind_ai_scan_signals(self) -> None:
+        """Mirror the library's AI-scan lifecycle into the task registry.
+
+        The scan layer emits sentences for the status bar; these signals carry
+        counts, which is what lets the right-hand task entry show a real
+        percentage and stop showing a finished scan as "in progress".
+        """
+
+        library = getattr(self._context, "library", None)
+        if library is None:
+            return
+        started = getattr(library, "aiScanStarted", None)
+        if started is not None:
+            started.connect(self._on_ai_scan_started)
+        progress = getattr(library, "aiScanProgress", None)
+        if progress is not None:
+            progress.connect(self._on_ai_scan_progress)
+        finished = getattr(library, "aiScanFinished", None)
+        if finished is not None:
+            finished.connect(self._on_ai_scan_finished)
+        cancelled = getattr(library, "aiScanCancelled", None)
+        if cancelled is not None:
+            cancelled.connect(self._on_ai_scan_cancelled)
+
+    def _ai_title(self, feature: str) -> str:
+        return tr(_AI_TASK_TITLES.get(feature, "status.task.face"))
+
+    def _on_ai_scan_started(self, feature: str) -> None:
+        tasks = self._context.background_tasks
+        _LOGGER.info("AI task start: %s", feature)
+        tasks.start(feature, self._ai_title(feature), detail=tr("status.tasks_waiting"))
+        setter = getattr(tasks, "set_state", None)
+        if callable(setter):
+            # Both AI workers are queued at once, but the scan gate lets only
+            # one run. The other shows "waiting" until its first progress tick.
+            setter(feature, "waiting")
+
+    def _on_ai_scan_progress(self, feature: str, done: int, total: int) -> None:
+        tasks = self._context.background_tasks
+        tasks.update(feature, done=done, total=total)
+        setter = getattr(tasks, "set_state", None)
+        if not callable(setter):
+            return
+        setter(feature, "running", detail="")
+        get_task = getattr(tasks, "task", None)
+        if not callable(get_task):
+            return
+        for other in _AI_FEATURES:
+            if other == feature:
+                continue
+            other_task = get_task(other)
+            if other_task is not None and other_task.running:
+                setter(
+                    other,
+                    "waiting",
+                    detail=tr(_AI_WAIT_DETAILS.get(feature, "status.tasks_waiting")),
+                )
+
+    def _on_ai_scan_finished(self, feature: str, failed: bool) -> None:
+        _LOGGER.info("AI task finish: %s failed=%s", feature, failed)
+        self._context.background_tasks.finish(feature, failed=bool(failed))
+
+    def _on_ai_scan_cancelled(self, feature: str) -> None:
+        _LOGGER.info("AI task cancelled: %s", feature)
+        discard = getattr(self._context.background_tasks, "discard", None)
+        if callable(discard):
+            discard(feature)
+        else:  # pragma: no cover - only very small test doubles
+            self._context.background_tasks.finish(feature)
 
     def session(self):
         """The open library session, when there is one."""
@@ -156,12 +240,12 @@ class AiIndexCoordinator(QObject):
         if root is None:
             self._status_bar.show_message(tr("settings.ai_state.no_library"), 6000)
             return
-        title = (
-            tr("status.task.face") if feature == "face" else tr("status.task.ocr")
-        )
-        tasks = self._context.background_tasks
-
-        tasks.start(feature, title)
+        title = self._ai_title(feature)
+        # Do not start the task here: the file scan still has to run, and the
+        # worker may be disabled or finish without doing anything. The task is
+        # created by ``aiScanStarted`` when the worker actually starts, and
+        # removed by ``aiScanFinished`` — the old eager ``start`` here is what
+        # left a permanently "running" OCR row behind a face scan.
         self._status_bar.show_message(
             tr("settings.ai_state.scanning", title=title), 8000
         )
@@ -171,7 +255,6 @@ class AiIndexCoordinator(QObject):
             _LOGGER.warning(
                 "could not start the %s rebuild", feature, exc_info=True
             )
-            tasks.finish(feature, failed=True)
 
     def on_semantic_search_toggled(self, enabled: bool) -> None:
         """Persist the semantic-search switch and, when enabling, build the index."""

@@ -271,6 +271,32 @@ def test_state_row_reports_coverage(dialog, monkeypatch):
     assert "12/40" in widget._ai_state_labels["face"].text()
 
 
+def test_state_row_keeps_moving_while_the_dialog_is_open(dialog, monkeypatch):
+    """The settings page used to read coverage once, at construction time."""
+
+    widget, _settings = dialog
+    coverage = {"face": (10, 40), "ocr": (5, 40)}
+    monkeypatch.setattr(
+        ai_coverage, "face_coverage", lambda root: coverage["face"], raising=True
+    )
+    monkeypatch.setattr(
+        ai_coverage, "ocr_coverage", lambda root: coverage["ocr"], raising=True
+    )
+    monkeypatch.setattr(ai_coverage, "people_count", lambda root: 0, raising=True)
+
+    widget._refresh_ai_rows()
+    assert "10/40" in widget._ai_state_labels["face"].text()
+    assert "5/40" in widget._ai_state_labels["ocr"].text()
+
+    coverage.update(face=(25, 40), ocr=(20, 40))
+    widget._refresh_ai_rows()
+
+    assert "25/40" in widget._ai_state_labels["face"].text()
+    assert "20/40" in widget._ai_state_labels["ocr"].text()
+    # A visible settings window polls; otherwise the counts would freeze again.
+    assert widget._ai_refresh_timer.interval() == 1000
+
+
 def test_model_rows_show_the_active_pack(dialog):
     """Face and OCR present their model like 搜索模型: a value row, not a dropdown."""
 

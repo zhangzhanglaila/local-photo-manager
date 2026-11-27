@@ -58,6 +58,38 @@ def test_worker_marks_processed_assets(tmp_path) -> None:
     assert "as_new" in worker._processed
 
 
+def test_worker_reports_a_real_total_instead_of_the_attempt_count(tmp_path) -> None:
+    """The task popup needs ``done/total``; the old signal repeated done as total."""
+
+    for name in ("a.jpg", "b.jpg"):
+        (tmp_path / name).write_bytes(b"x")
+    worker = OCRWorker(_FakeEngine(), _FakeRepo(), tmp_path)
+    worker.enqueue_rows(
+        [
+            {"id": "a", "rel": "a.jpg"},
+            {"id": "b", "rel": "b.jpg"},
+        ]
+    )
+    worker.finish_input()
+    updates: list[tuple[int, int]] = []
+    worker.signals.progress.connect(lambda done, total: updates.append((done, total)))
+
+    worker._process_queue()
+
+    assert updates[0] == (0, 2), "the first tick should claim the scan and show the total"
+    assert updates[-1] == (2, 2)
+
+
+def test_worker_can_reopen_its_input_for_a_followup_root(tmp_path) -> None:
+    worker = OCRWorker(_FakeEngine(), _FakeRepo(), tmp_path)
+
+    worker.finish_input()
+    assert worker._finished is True
+
+    worker.resume_input()
+    assert worker._finished is False
+
+
 def test_repository_remembers_processed_assets(tmp_path) -> None:
     repo = OCRRepository(tmp_path)
     repo.mark_processed("as_1", "a.jpg")
