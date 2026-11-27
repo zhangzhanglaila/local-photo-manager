@@ -115,3 +115,15 @@ class PersonProfile:
     updated_at: str
     sample_count: int = 0
     profile_state: str = "unstable"
+
+
+@dataclass(frozen=True)
+class PersonCoverRecord:
+    """The cover image shown on a person card."""
+
+    person_id: str
+    face_id: str | None
+    face_key: str | None
+    asset_id: str | None
+    thumbnail_path: str | None
+    is_custom: bool
