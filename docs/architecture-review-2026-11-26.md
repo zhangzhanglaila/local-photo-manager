@@ -336,3 +336,26 @@ domain/  ◀── application/ ◀── infrastructure/    （只允许这个�
 | 空状态四布尔机 | **已验证**（4 处重复隐藏块 + 死分支） |
 | 「`_on_load_error` 引用未定义 `row_cache`」 | **未复现**：该处已重构，`_on_load_error` 当前干净（审计报告此项判为过期） |
 | preview 双窗口类、`_ACTIVE_DOWNLOAD` 细节 | 抽样复核存在，未逐行验证全部分支 |
+
+## 8. 实施进度（2026-11-27 更新）
+
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| P0 · A1 移除库根 `NameError` | 已完成 | 相册分支搬回 `_handle_exclude_album`，移根/排除相册两条路径各自独立 |
+| P0 · A2 `OrganizeService` 构造 | 已完成 | `gui/services/organize_workers.py` 统一按 `(asset_repository, library_root)` 构造（`50093d2`） |
+| P0 · A3 扫描器过期属性名 | 已完成 | `scan_coordinator` 改用 `self._services.scan_service` / `.people_service` |
+| P0 · A4 `Path.home()` 兜底 | 已完成 | 未绑定时抛 `LibraryUnavailableError` |
+| P0 · A5 模型根统一 | 已完成 | `agent/services/model_paths.py` 是唯一答案：规范根 + 兼容旧根 + 一次性迁移 |
+| P0 · A6 覆盖率服务裸 SQL | 已完成 | `ai_coverage` 只调 `face/ocr/people` 三个窄口 |
+| P0 · A7 导出子进程 | 已完成 | stderr 读线程早已就位；补上 PySide6 帧转换（`memoryview` 无 `setsize`，视频导出必崩）与 `ffmpeg/ffprobe` 统一解析（`3b7038a`） |
+| P1 · 单例收口 | 已完成 | `search_status()` / `background_tasks()` / `set_settings_provider` 在 `src/` 中已无引用 |
+| P2 · 模型层统一 | 基本完成 | 三套注册表共用 `model_paths`；`ModelSelection` 尚未抽出，切换模型仍写 settings |
+| P3 · GUI 越层收口 | 基本完成 | GUI 内 `sqlite3.connect` 为 0；`library/runtime_controller.py` 仅剩一处 `TYPE_CHECKING` 的 `LibrarySession` 类型引用（运行期无依赖）。端口 `ScanCommands`/`AssetQueryPort` 等仍未正式化 |
+| P4 · 巨类拆分 | 进行中 | `main_coordinator` 2924 → 2290 行（搜索线程、嵌入 worker、查重/智能相册 worker 已搬出）；仍有 26 个文件 >800 行 |
+| P5 · 文案与控制流 | 基本完成 | 文本驱动控制流清零并有守卫（`tests/architecture/test_no_text_based_control_flow.py`）；AI 索引/搜索/人脸扫描文案进 i18n（`08130d7`、`8c139eb`、`ff4a2ac`）；空状态机尚未合为单一枚举 |
+
+### 已知缺口（有测试记录，未修）
+
+- 扫描结果落在可视窗口之外时，画廊总数不刷新（`tests/gui/viewmodels/test_gallery_collection_store.py` 两条 `xfail(strict=True)`）。窗口不重载是刻意设计，缺的是「只刷计数」的路径。
+- `tests/gui/coordinators/test_playback_coordinator.py` 仍有 15 条用例用 `__new__` 手工桩属性，跟当前装配对不上；路线图里「不再需要 `__new__`」那一项还没做。
+- `people/state_repository.py`（1922 行）、`playback_coordinator.py`（1890 行）等 26 个文件仍在 800 行以上。
