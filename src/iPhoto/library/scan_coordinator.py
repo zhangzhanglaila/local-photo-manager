@@ -13,6 +13,7 @@ from .workers.face_scan_worker import FaceScanWorker
 from .workers.scanner_worker import ScannerSignals, ScannerWorker
 from ..utils.pathutils import paths_equal
 from ..application.dtos import ScanStatus
+from ..i18n import tr
 
 if TYPE_CHECKING:
     pass
@@ -154,18 +155,16 @@ class ScanCoordinatorMixin:
             "1", "true", "yes", "on",
         }:
             _skip_face = True
-            self.faceScanStatusChanged.emit(
-                "Face scan disabled (IPHOTO_SKIP_FACE_SCAN=1)."
-            )
+            self.faceScanStatusChanged.emit(tr("face.status.disabled_env"))
 
         # The settings switch (设置 → 智能) does the same thing without an env var.
         if not _skip_face and not self._ai_face_enabled():
             _skip_face = True
-            self.faceScanStatusChanged.emit("人脸识别已在设置中关闭。")
+            self.faceScanStatusChanged.emit(tr("face.status.disabled_setting"))
 
         if _skip_face:
             self.faceScanStatusChanged.emit(
-                "Face scan skipped."
+                tr("face.status.skipped")
                 if not self._face_scan_status_message
                 else ""
             )
@@ -478,7 +477,7 @@ class ScanCoordinatorMixin:
         ):
             self._face_scan_pending_start = False
             face_scanner.start(QThread.Priority.LowestPriority)
-            self.faceScanStatusChanged.emit("Scanning faces...")
+            self.faceScanStatusChanged.emit(tr("face.status.scanning"))
 
         if (
             ocr_scanner is not None
@@ -579,7 +578,7 @@ class ScanCoordinatorMixin:
                 worker.wait()
             except RuntimeError:
                 pass
-        self.faceScanStatusChanged.emit("Face scan complete.")
+        self.faceScanStatusChanged.emit(tr("face.status.complete"))
 
     # ------------------------------------------------------------------
     # Foreground media integration

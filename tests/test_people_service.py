@@ -28,6 +28,7 @@ from iPhoto.people.records import AssetFaceAnnotation
 from iPhoto.people.repository import FaceRecord, ManualFaceRecord, PersonRecord
 from iPhoto.people.scan_session import FaceScanSession
 from iPhoto.people import service as people_service
+from iPhoto.i18n import tr
 from iPhoto.people.service import PeopleService, face_library_paths, shared_face_model_dir
 
 
@@ -1216,9 +1217,7 @@ def test_face_scan_worker_marks_retry_error_failed_on_second_attempt(tmp_path: P
 
     assert committed is False
     assert global_repo.get_rows_by_ids(["asset-a"])["asset-a"]["face_status"] == "failed"
-    assert messages == [
-        "Some assets could not be face scanned and will be retried after a rescan."
-    ]
+    assert messages == [tr("face.status.retry_after_rescan")]
     coordinator.submit_detected_batch.assert_called_once()
     assert coordinator.submit_detected_batch.call_args.args[0] == []
 
@@ -1524,7 +1523,9 @@ def test_face_scan_worker_reports_unexpected_batch_error_reason(
     worker.run()
 
     assert global_repo.get_rows_by_ids(["asset-a"])["asset-a"]["face_status"] == "retry"
-    assert messages[-1] == "Face scanning paused: compiled dependency missing"
+    assert messages[-1] == tr(
+        "face.status.paused_reason", reason="compiled dependency missing"
+    )
 
 
 def test_scanner_worker_does_not_emit_chunk_ready_for_failed_persist(tmp_path: Path) -> None:

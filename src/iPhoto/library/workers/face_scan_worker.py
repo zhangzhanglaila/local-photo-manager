@@ -22,6 +22,7 @@ from ...people.status import (
     normalize_face_status,
 )
 from ...utils.logging import get_logger
+from ...i18n import tr
 from iPhoto.ai.scan_gate import serialized_scan
 
 LOGGER = get_logger()
@@ -98,12 +99,12 @@ class FaceScanWorker(QThread):
         if is_playing:
             self._paused_for_video = True  # 暂停处理
             self._current_batch_idle_ms = 3000  # 增加间隔到3秒
-            self.statusChanged.emit("人脸扫描已暂停（视频播放中）")
+            self.statusChanged.emit(tr("face.status.paused_playback"))
             LOGGER.info("Face scan paused due to video playback")
         else:
             self._paused_for_video = False  # 恢复处理
             self._current_batch_idle_ms = self._base_batch_idle_ms  # 恢复1秒
-            self.statusChanged.emit("正在扫描人脸...")
+            self.statusChanged.emit(tr("face.status.scanning"))
             LOGGER.info("Face scan resumed after video playback")
 
     @serialized_scan
@@ -114,7 +115,7 @@ class FaceScanWorker(QThread):
         except Exception:
             LOGGER.exception("FaceScanWorker.run crashed")
             try:
-                self.statusChanged.emit("Face scanning stopped due to an error.")
+                self.statusChanged.emit(tr("face.status.stopped_error"))
             except Exception:
                 pass
 
@@ -144,7 +145,7 @@ class FaceScanWorker(QThread):
         )
         coordinator = self._people_service.coordinator
         if coordinator is None:
-            self.statusChanged.emit("Face scanning is unavailable for this library.")
+            self.statusChanged.emit(tr("face.status.unavailable"))
             return
 
         model_ready = False
@@ -178,7 +179,7 @@ class FaceScanWorker(QThread):
                     continue
 
                 if not model_ready:
-                    self.statusChanged.emit("正在下载人脸检测模型，首次需要下载约 120MB，请稍候...")
+                    self.statusChanged.emit(tr("face.status.downloading_model"))
                 committed = self._process_batch(
                     batch,
                     coordinator,
@@ -187,7 +188,7 @@ class FaceScanWorker(QThread):
                 )
                 if not model_ready:
                     model_ready = True
-                    self.statusChanged.emit("正在扫描人脸...")
+                    self.statusChanged.emit(tr("face.status.scanning"))
                 for asset_id in [str(row.get("id") or "") for row in batch if row.get("id")]:
                     self._queued_ids.discard(asset_id)
                 if committed:
@@ -222,7 +223,7 @@ class FaceScanWorker(QThread):
                 except Exception:
                     LOGGER.warning("Failed to mark rows as retry", exc_info=True)
                 reason = str(exc).strip() or exc.__class__.__name__
-                self.statusChanged.emit(f"Face scanning paused: {reason}")
+                self.statusChanged.emit(tr("face.status.paused_reason", reason=reason))
                 if self._input_closed:
                     return
 
@@ -318,15 +319,13 @@ class FaceScanWorker(QThread):
         failed_ids = [asset_id for asset_id in retry_id_set if asset_id in retry_source_ids]
 
         if first_retry_ids:
-            self.statusChanged.emit("Some assets need a face-scan retry.")
+            self.statusChanged.emit(tr("face.status.retry_pending"))
         if failed_ids:
             self._update_face_statuses(
                 failed_ids,
                 FACE_STATUS_FAILED,
             )
-            self.statusChanged.emit(
-                "Some assets could not be face scanned and will be retried after a rescan."
-            )
+            self.statusChanged.emit(tr("face.status.retry_after_rescan"))
         retry_detected = [
             item
             for item in detected
