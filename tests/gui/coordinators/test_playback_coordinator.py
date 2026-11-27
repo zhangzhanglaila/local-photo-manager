@@ -11,6 +11,8 @@ pytest.importorskip("PySide6", reason="PySide6 is required for playback coordina
 
 from iPhoto.application.services.assign_location_service import AssignedLocationResult
 from iPhoto.gui.coordinators import playback_coordinator as playback_coordinator_module
+from iPhoto.gui.coordinators import playback_info as playback_info_module
+from iPhoto.gui.coordinators import playback_location as playback_location_module
 from iPhoto.gui.coordinators.playback_coordinator import PlaybackCoordinator
 from iPhoto.gui.ui.tasks.info_panel_metadata_worker import InfoPanelMetadataResult
 from iPhoto.gui.viewmodels.detail_viewmodel import DetailPresentation
@@ -457,7 +459,7 @@ def test_refresh_location_extension_state_initializes_search_service_with_runtim
             del args
             created_kwargs.update(kwargs)
 
-    monkeypatch.setattr(playback_coordinator_module, "OsmAndSearchService", _FakeSearchService)
+    monkeypatch.setattr(playback_location_module, "OsmAndSearchService", _FakeSearchService)
 
     enabled = PlaybackCoordinator._refresh_location_extension_state(coordinator)
 
@@ -482,7 +484,7 @@ def test_refresh_location_extension_state_falls_back_to_session_runtime_when_unb
         package_root=lambda: Path("/fallback/maps"),
     )
     monkeypatch.setattr(
-        playback_coordinator_module,
+        playback_location_module,
         "SessionMapRuntimeService",
         lambda: fallback_runtime,
     )
@@ -494,7 +496,7 @@ def test_refresh_location_extension_state_falls_back_to_session_runtime_when_unb
             del args
             created_kwargs.update(kwargs)
 
-    monkeypatch.setattr(playback_coordinator_module, "OsmAndSearchService", _FakeSearchService)
+    monkeypatch.setattr(playback_location_module, "OsmAndSearchService", _FakeSearchService)
 
     enabled = PlaybackCoordinator._refresh_location_extension_state(coordinator)
 
@@ -889,7 +891,7 @@ def test_location_assignment_ready_with_file_write_error_still_updates_library_s
     popup_parent = Mock()
     coordinator._info_panel = Mock(parentWidget=Mock(return_value=popup_parent))
     show_warning = Mock()
-    monkeypatch.setattr(playback_coordinator_module.dialogs, "show_warning", show_warning)
+    monkeypatch.setattr(playback_location_module.dialogs, "show_warning", show_warning)
     coordinator._queue_location_exiftool_missing_warning = Mock(
         side_effect=lambda: PlaybackCoordinator._show_location_exiftool_missing_warning(
             coordinator
@@ -947,7 +949,7 @@ def test_location_assignment_ready_with_non_missing_file_write_error_warns(
     popup_parent = Mock()
     coordinator._info_panel = Mock(parentWidget=Mock(return_value=popup_parent))
     show_warning = Mock()
-    monkeypatch.setattr(playback_coordinator_module.dialogs, "show_warning", show_warning)
+    monkeypatch.setattr(playback_location_module.dialogs, "show_warning", show_warning)
     coordinator._queue_location_exiftool_missing_warning = Mock()
     coordinator._queue_location_file_write_warning = Mock(
         side_effect=lambda message: PlaybackCoordinator._show_location_file_write_warning(
@@ -1004,10 +1006,10 @@ def test_handle_manual_face_submitted_queues_background_worker() -> None:
     fake_pool = Mock(start=Mock())
 
     with patch(
-        "iPhoto.gui.coordinators.playback_coordinator.ManualFaceAddWorker",
+        "iPhoto.gui.coordinators.playback_info.ManualFaceAddWorker",
         return_value=fake_worker,
     ) as worker_cls, patch(
-        "iPhoto.gui.coordinators.playback_coordinator.QThreadPool.globalInstance",
+        "iPhoto.gui.coordinators.playback_info.QThreadPool.globalInstance",
         return_value=fake_pool,
     ):
         PlaybackCoordinator._handle_manual_face_submitted(
@@ -1068,10 +1070,10 @@ def test_handle_manual_face_submitted_immediately_refreshes_info_panel_with_pend
     fake_pool = Mock(start=Mock())
 
     with patch(
-        "iPhoto.gui.coordinators.playback_coordinator.ManualFaceAddWorker",
+        "iPhoto.gui.coordinators.playback_info.ManualFaceAddWorker",
         return_value=fake_worker,
     ), patch(
-        "iPhoto.gui.coordinators.playback_coordinator.QThreadPool.globalInstance",
+        "iPhoto.gui.coordinators.playback_info.QThreadPool.globalInstance",
         return_value=fake_pool,
     ):
         PlaybackCoordinator._handle_manual_face_submitted(
