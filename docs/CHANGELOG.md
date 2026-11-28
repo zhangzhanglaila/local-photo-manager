@@ -68,6 +68,14 @@ into the photo folder.*
   a tooltip rather than visible text. Settings navigation, checkboxes, dropdowns,
   action rows and the OCR photo list use the pointing-hand cursor with the
   existing hover state.
+- The settings window now follows the reference overlay more closely: a dimmed
+  backdrop over the main window (click it to dismiss), a 48 px drop shadow, a
+  1000×760 card that always shrinks to stay smaller than the main window,
+  180 ms fade/slide open and 160 ms fade/close, a floating close button without
+  a title row, iconised navigation with an animated accent bar, a centred 680 px
+  content column, 6 px scrollbars, iOS-style switches on every boolean row and
+  focus rings on switches/dropdowns. The shadow belongs to a static sibling of the
+  card, so the live status rows and spinners never re-blur the whole panel.
 - 设置 → 智能 now has a **查看 OCR 结果** page: a back arrow returns to settings,
   the left column lists recognized photos with thumbnails, and the right pane
   shows every text line found in the selected photo.

@@ -2,34 +2,51 @@
 
 The toolbar used to hide every application option behind a "..." menu. Settings
 now opens the same options in a dedicated window, drawn like the reference
-application: a rounded frameless card, a title row with its own close button, a
-navigation column on the left and one settings page on the right.
+application: a rounded frameless card with a drop shadow, a floating close
+button, a dimmed main window behind it, an icon navigation column on the left
+and one settings page on the right. Clicking the dim layer or pressing Escape
+dismisses the card with a short fade.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import time
 
 from PySide6.QtCore import (
     QCoreApplication,
+    QEasingCurve,
+    QEvent,
     QObject,
     QPoint,
+    QParallelAnimationGroup,
+    QPropertyAnimation,
     QRectF,
     QRunnable,
     QSize,
     Qt,
     QThreadPool,
     QTimer,
+    QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QAction, QColor, QFont, QFontMetrics, QPainter, QPalette
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QFontMetrics,
+    QPainter,
+    QPalette,
+    QPen,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -64,6 +81,25 @@ _SPEED_KEYS = {1: "medium", 2: "fast", 3: "fastest"}
 
 _ACCENT_LIGHT = "#7B5E3B"
 _ACCENT_DARK = "#C9A86C"
+
+#: Card geometry and the transparent ring reserved for its drop shadow.
+_CARD_WIDTH = 1000
+_CARD_HEIGHT = 760
+_CARD_MIN_WIDTH = 760
+_CARD_MIN_HEIGHT = 520
+_SHADOW_MARGIN = 28
+
+#: One 16 px line icon per navigation page, in nav order.
+_NAV_ICONS = (
+    "settings.general.svg",
+    "settings.browsing.svg",
+    "settings.export.svg",
+    "settings.library.svg",
+    "settings.intelligence.svg",
+)
+
+#: Offscreen test runs cannot drive QPropertyAnimation; keep them instant.
+_ANIMATIONS = os.environ.get("QT_QPA_PLATFORM", "").casefold() != "offscreen"
 
 
 class _AsyncValue(QWidget):
@@ -269,8 +305,198 @@ def _plain(text: str) -> str:
     return _ACCELERATOR_RE.sub("", text).replace("&", "")
 
 
+_PAGE_COLUMN_WIDTH = 680
+
+
+class _PageColumn(QWidget):
+    """A 680 px content column that shrinks with the window and stays centred."""
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt style
+        hint = super().sizeHint()
+        return QSize(_PAGE_COLUMN_WIDTH, hint.height())
+
+
+class _SettingsSwitch(QCheckBox):
+    """A small iOS-style switch used for every boolean settings row.
+
+    QCheckBox is kept as the base class so the existing action wiring, keyboard
+    handling (Space) and ``isChecked()`` checks keep working; only the painting
+    is replaced.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # 36x20 track + a 2 px ring so the focus outline is never clipped.
+        self.setFixedSize(40, 24)
+        self._offset = 1.0 if self.isChecked() else 0.0
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(160)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim.valueChanged.connect(self._on_anim)
+        self.toggled.connect(self._animate)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt style
+        return QSize(40, 24)
+
+    def hitButton(self, pos: QPoint) -> bool:  # noqa: N802 - Qt style
+        # The whole switch should be clickable, not just the tiny indicator.
+        return self.rect().contains(pos)
+
+    def sync_offset(self) -> None:
+        """Snap the knob to the current state without animating."""
+
+        self._anim.stop()
+        self._offset = 1.0 if self.isChecked() else 0.0
+        self.update()
+
+    def _on_anim(self, value: object) -> None:
+        self._offset = float(value)
+        self.update()
+
+    def _animate(self, checked: bool) -> None:
+        if not _ANIMATIONS:
+            self.sync_offset()
+            return
+        self._anim.stop()
+        self._anim.setStartValue(self._offset)
+        self._anim.setEndValue(1.0 if checked else 0.0)
+        self._anim.start()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt style
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if not self.isEnabled():
+            painter.setOpacity(0.45)
+
+        dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        accent = QColor(_ACCENT_DARK if dark else _ACCENT_LIGHT)
+        if self.isChecked():
+            track = accent
+            border = QColor(0, 0, 0, 0)
+            knob = QColor("#FFFFFF")
+        else:
+            track = QColor(255, 255, 255, 24) if dark else QColor(0, 0, 0, 16)
+            border = QColor(255, 255, 255, 44) if dark else QColor(0, 0, 0, 28)
+            knob = QColor(180, 180, 186) if dark else QColor(142, 142, 160)
+
+        track_rect = QRectF(2.5, 2.5, 35.0, 19.0)
+        painter.setPen(QPen(border, 1) if border.alpha() else Qt.PenStyle.NoPen)
+        painter.setBrush(track)
+        painter.drawRoundedRect(track_rect, 9.5, 9.5)
+
+        knob_x = 4.0 + 16.0 * self._offset
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(0, 0, 0, 36))
+        painter.drawEllipse(QRectF(knob_x, 5.5, 14.0, 14.0))
+        painter.setBrush(knob)
+        painter.drawEllipse(QRectF(knob_x, 5.0, 14.0, 14.0))
+
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(accent.red(), accent.green(), accent.blue(), 170), 1.5))
+            painter.drawRoundedRect(QRectF(0.75, 0.75, 38.5, 22.5), 11.0, 11.0)
+
+
+class _SettingsScrim(QWidget):
+    """The dim layer between the application and the settings card."""
+
+    clicked = Signal()
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._opacity = 0.0
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(160)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim.valueChanged.connect(self._on_anim)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.hide()
+
+    def _on_anim(self, value: object) -> None:
+        self._opacity = float(value)
+        self.update()
+
+    def fade_in(self, *, animate: bool = True) -> None:
+        self.show()
+        self.raise_()
+        if not animate:
+            self._anim.stop()
+            self._opacity = 1.0
+            self.update()
+            return
+        self._anim.stop()
+        self._anim.setStartValue(0.0)
+        self._anim.setEndValue(1.0)
+        self._anim.start()
+
+    def fade_out(self, *, animate: bool = True, on_done=None) -> None:
+        if not animate:
+            self._anim.stop()
+            self._opacity = 0.0
+            self.hide()
+            if on_done is not None:
+                on_done()
+            return
+        self._anim.stop()
+        self._anim.setStartValue(self._opacity)
+        self._anim.setEndValue(0.0)
+
+        def _finished() -> None:
+            self._anim.finished.disconnect(_finished)
+            self.hide()
+            if on_done is not None:
+                on_done()
+
+        self._anim.finished.connect(_finished)
+        self._anim.start()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt style
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, int(102 * self._opacity)))
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt style
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
 class _SettingsNavDelegate(QStyledItemDelegate):
-    """Rounded navigation rows with the accent bar used by the sidebar."""
+    """Rounded navigation rows with icons and an animated accent bar."""
+
+    def __init__(self, view: QListWidget) -> None:
+        super().__init__(view)
+        self._view = view
+        self._accent_row = -1
+        self._accent_scale = 1.0
+        self._accent_anim = QVariantAnimation(self)
+        self._accent_anim.setDuration(180)
+        self._accent_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._accent_anim.valueChanged.connect(self._on_accent_value)
+
+    def _on_accent_value(self, value: object) -> None:
+        self._accent_scale = float(value)
+        self._view.viewport().update()
+
+    def set_selected_row(self, row: int, *, animate: bool = True) -> None:
+        """Grow the accent bar for *row*; the previous row simply loses it."""
+
+        if row == self._accent_row:
+            return
+        self._accent_row = row
+        self._accent_anim.stop()
+        if not animate or not _ANIMATIONS:
+            self._accent_scale = 1.0
+            self._view.viewport().update()
+            return
+        self._accent_scale = 0.0
+        self._accent_anim.setStartValue(0.0)
+        self._accent_anim.setEndValue(1.0)
+        self._accent_anim.start()
 
     def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:  # noqa: N802
         return QSize(option.rect.width(), 40)
@@ -286,25 +512,48 @@ class _SettingsNavDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         if selected or hovered:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(pill if selected else QColor(pill.red(), pill.green(), pill.blue(), 130))
-            painter.drawRoundedRect(QRectF(rect).adjusted(0, 1, 0, -1), 10, 10)
+            painter.setBrush(
+                pill if selected else QColor(pill.red(), pill.green(), pill.blue(), 130)
+            )
+            painter.drawRoundedRect(QRectF(rect).adjusted(0, 1, 0, -1), 8, 8)
+
+        colour = QColor(option.palette.color(QPalette.ColorRole.Text))
+        if not selected:
+            colour.setAlpha(170)
 
         if selected:
             accent = QColor(_ACCENT_DARK if dark else _ACCENT_LIGHT)
-            painter.setBrush(accent)
-            painter.setPen(Qt.PenStyle.NoPen)
-            bar = QRectF(rect.left(), rect.center().y() - 8, 3, 16)
-            painter.drawRoundedRect(bar, 1.5, 1.5)
+            height = 16.0 * (self._accent_scale if index.row() == self._accent_row else 1.0)
+            if height > 0.1:
+                painter.setBrush(accent)
+                painter.setPen(Qt.PenStyle.NoPen)
+                bar = QRectF(
+                    rect.left(),
+                    rect.center().y() - height / 2.0,
+                    3.0,
+                    height,
+                )
+                painter.drawRoundedRect(bar, 1.5, 1.5)
+
+        row = index.row()
+        icon_x = rect.left() + 16
+        if 0 <= row < len(_NAV_ICONS):
+            icon = load_icon(
+                _NAV_ICONS[row],
+                color=colour.name(QColor.NameFormat.HexArgb),
+                size=(16, 16),
+            )
+            painter.drawPixmap(QPoint(icon_x, rect.center().y() - 8), icon.pixmap(16, 16))
+            text_left = icon_x + 16 + 10
+        else:
+            text_left = icon_x
 
         font = QFont(option.font)
         font.setPixelSize(14)
         font.setWeight(QFont.Weight.DemiBold if selected else QFont.Weight.Medium)
         painter.setFont(font)
-        colour = QColor(option.palette.color(QPalette.ColorRole.Text))
-        if not selected:
-            colour.setAlpha(170)
         painter.setPen(colour)
-        text_rect = rect.adjusted(16, 0, -8, 0)
+        text_rect = rect.adjusted(text_left - rect.left(), 0, -8, 0)
         text = index.data(Qt.ItemDataRole.DisplayRole) or ""
         elided = QFontMetrics(font).elidedText(
             text, Qt.TextElideMode.ElideRight, text_rect.width()
@@ -318,40 +567,14 @@ class _SettingsNavDelegate(QStyledItemDelegate):
 
 
 class _SettingsTitleBar(QWidget):
-    """Frameless title row: title on the left, close button on the right."""
+    """Invisible drag strip; the close button floats over the card instead."""
 
     def __init__(self, dialog: "SettingsDialog") -> None:
         super().__init__(dialog)
         self.setObjectName("settingsTitleBar")
-        self.setFixedHeight(56)
+        self.setFixedHeight(32)
         self._dialog = dialog
         self._press_offset: QPoint | None = None
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(24, 0, 12, 0)
-        layout.setSpacing(8)
-
-        self.title_label = QLabel(tr("dialog.settings_title"), self)
-        self.title_label.setObjectName("settingsTitleLabel")
-        layout.addWidget(self.title_label, 1)
-
-        self.close_button = QToolButton(self)
-        self.close_button.setObjectName("settingsCloseButton")
-        glyph = QColor(self.palette().color(QPalette.ColorRole.WindowText))
-        glyph.setAlpha(160)
-        self.close_button.setIcon(
-            load_icon(
-                "window.close.svg",
-                color=glyph.name(QColor.NameFormat.HexArgb),
-                size=(14, 14),
-            )
-        )
-        self.close_button.setIconSize(QSize(14, 14))
-        self.close_button.setFixedSize(32, 32)
-        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.close_button.setToolTip("Close")
-        self.close_button.clicked.connect(dialog.close)
-        layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignVCenter)
 
     # Frameless windows are moved by dragging their title row.
     def mousePressEvent(self, event) -> None:  # noqa: N802
@@ -468,17 +691,72 @@ class SettingsDialog(QDialog):
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self.resize(900, 620)
-        self.setMinimumSize(760, 520)
+        self.resize(_CARD_WIDTH + 2 * _SHADOW_MARGIN, _CARD_HEIGHT + 2 * _SHADOW_MARGIN)
+        self.setMinimumSize(
+            _CARD_MIN_WIDTH + 2 * _SHADOW_MARGIN,
+            _CARD_MIN_HEIGHT + 2 * _SHADOW_MARGIN,
+        )
+
+        #: The scrim lives in the main window, not in this top-level window.
+        self._scrim: _SettingsScrim | None = None
+        self._scrim_parent = parent if isinstance(parent, QWidget) else None
+        self._allow_close = False
+        self._close_anim: QParallelAnimationGroup | None = None
+        self._open_anim: QParallelAnimationGroup | None = None
+        self._opening = False
+        self._closing = False
+        self._open_target: QPoint | None = None
+        self._opening_guard = QTimer(self)
+        self._opening_guard.setSingleShot(True)
+        self._opening_guard.timeout.connect(self._end_open_guard)
+        self._close_guard = QTimer(self)
+        self._close_guard.setSingleShot(True)
+        self._close_guard.timeout.connect(self._finish_close)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        self._shell = QWidget(self)
+        #: Full-window host: the shell sits inside it with a transparent ring
+        #: reserved for the drop shadow, so the shadow never gets clipped.
+        self._card_host = QWidget(self)
+        self._card_host.setObjectName("settingsCardHost")
+        outer.addWidget(self._card_host)
+
+        self._shadow_panel = QWidget(self._card_host)
+        self._shadow_panel.setObjectName("settingsShadowPanel")
+        self._shadow_panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._shadow_panel.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+        shadow = QGraphicsDropShadowEffect(self._shadow_panel)
+        shadow.setBlurRadius(48)
+        shadow.setOffset(0, 12)
+        shadow.setColor(QColor(0, 0, 0, 60))
+        self._shadow_effect = shadow
+        self._shadow_panel.setGraphicsEffect(shadow)
+
+        self._shell = QWidget(self._card_host)
         self._shell.setObjectName("settingsShell")
         self._shell.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        outer.addWidget(self._shell)
+
+        self.close_button = QToolButton(self._shell)
+        self.close_button.setObjectName("settingsCloseButton")
+        glyph = QColor(self.palette().color(QPalette.ColorRole.WindowText))
+        glyph.setAlpha(160)
+        self.close_button.setIcon(
+            load_icon(
+                "window.close.svg",
+                color=glyph.name(QColor.NameFormat.HexArgb),
+                size=(16, 16),
+            )
+        )
+        self.close_button.setIconSize(QSize(16, 16))
+        self.close_button.setFixedSize(32, 32)
+        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_button.setToolTip("Close")
+        self.close_button.clicked.connect(self.close)
+        self.close_button.raise_()
 
         shell_layout = QVBoxLayout(self._shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
@@ -496,10 +774,12 @@ class SettingsDialog(QDialog):
 
         self._nav = QListWidget(body)
         self._nav.setObjectName("settingsNav")
-        self._nav.setFixedWidth(210)
+        self._nav.setFixedWidth(220)
         self._nav.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._nav.setItemDelegate(_SettingsNavDelegate(self._nav))
+        self._nav_delegate = _SettingsNavDelegate(self._nav)
+        self._nav.setItemDelegate(self._nav_delegate)
         self._nav.setFrameShape(QFrame.Shape.NoFrame)
+        self._nav.setSpacing(2)
         self._nav.setMouseTracking(True)
         self._nav.setCursor(Qt.CursorShape.PointingHandCursor)
         self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -511,6 +791,7 @@ class SettingsDialog(QDialog):
         shell_layout.addWidget(body, 1)
 
         self._build_pages()
+        self._nav.currentRowChanged.connect(self._nav_delegate.set_selected_row)
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
         # Clicking the already-selected 智能 row while the OCR browser is open
         # does not emit currentRowChanged; itemClicked still returns to settings.
@@ -518,7 +799,9 @@ class SettingsDialog(QDialog):
             lambda item: self._stack.setCurrentIndex(self._nav.row(item))
         )
         self._nav.setCurrentRow(0)
+        self._nav_delegate.set_selected_row(0, animate=False)
         self.setStyleSheet(self._stylesheet())
+        self._sync_card_geometry()
         # Values are populated asynchronously: constructing this window used to
         # import onnxruntime/torch and open three SQLite databases on the GUI
         # thread, so simply opening 设置 froze the whole application.
@@ -755,11 +1038,22 @@ class SettingsDialog(QDialog):
         content = QWidget(self)
         content.setObjectName("settingsPageContent")
         content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        layout = QVBoxLayout(content)
+        outer = QHBoxLayout(content)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        column = _PageColumn(content)
+        column.setObjectName("settingsPageColumn")
+        column.setMaximumWidth(_PAGE_COLUMN_WIDTH)
+        column.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        outer.addStretch(1)
+        outer.addWidget(column, 0)
+        outer.addStretch(1)
+
+        layout = QVBoxLayout(column)
         layout.setContentsMargins(32, 24, 32, 24)
         layout.setSpacing(6)
 
-        heading = QLabel(title, content)
+        heading = QLabel(title, column)
         heading.setObjectName("settingsPageTitle")
         layout.addWidget(heading)
         layout.addSpacing(12)
@@ -825,9 +1119,9 @@ class SettingsDialog(QDialog):
         return row
 
     def _checkbox(self, action: QAction) -> QCheckBox:
-        box = QCheckBox(self)
-        box.setCursor(Qt.CursorShape.PointingHandCursor)
+        box = _SettingsSwitch(self)
         box.setChecked(action.isChecked())
+        box.sync_offset()
         box.toggled.connect(action.setChecked)
         action.toggled.connect(box.setChecked)
         return box
@@ -1045,15 +1339,16 @@ class SettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(root)))
 
     def _ai_toggle(self, key: str, default: bool) -> QCheckBox:
-        """A checkbox bound to one of the local-AI switches."""
+        """A switch bound to one of the local-AI feature switches."""
 
-        box = QCheckBox(self)
+        box = _SettingsSwitch(self)
         checked = (
             bool(self._settings.get(key, default))
             if self._settings is not None
             else default
         )
         box.setChecked(checked)
+        box.sync_offset()
         box.toggled.connect(lambda value: self._set_ai_switch(key, value))
         return box
 
@@ -1396,21 +1691,29 @@ class SettingsDialog(QDialog):
             popup_selection = "#ECECEC"
             hover = "rgba(0, 0, 0, 0.06)"
 
+        accent = _ACCENT_DARK if dark else _ACCENT_LIGHT
+        if hasattr(self, "_shadow_effect"):
+            self._shadow_effect.setColor(QColor(0, 0, 0, 104 if dark else 60))
+
         return (
             f"QDialog#settingsDialog {{ background: transparent; }}"
+            "QWidget#settingsCardHost { background: transparent; }"
+            f"QWidget#settingsShadowPanel {{ background-color: {shell};"
+            "  border-radius: 12px; }"
             f"QWidget#settingsShell {{ background-color: {shell}; border-radius: 12px;"
             f"  border: 1px solid {divider}; }}"
             f"QWidget#settingsBody {{ background-color: {body_bg};"
             "  border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }"
-            f"QWidget#settingsTitleBar {{ border-bottom: 1px solid {divider}; }}"
-            f"QLabel#settingsTitleLabel {{ font-size: 15px; font-weight: 600; color: {text}; }}"
+            "QWidget#settingsTitleBar { background: transparent; border: none; }"
             f"QToolButton#settingsCloseButton {{ border: none; border-radius: 8px;"
             "  background: transparent; }"
             f"QToolButton#settingsCloseButton:hover {{ background-color: {hover}; }}"
+            f"QToolButton#settingsCloseButton:focus {{ border: 1px solid {accent}; }}"
             f"QListWidget#settingsNav {{ background-color: {nav_bg}; border: none;"
             f"  border-right: 1px solid {divider}; border-bottom-left-radius: 12px;"
-            "  padding: 18px 12px; outline: 0; }"
+            "  padding: 24px 12px; outline: 0; }"
             f"QWidget#settingsPage {{ background-color: {body_bg}; }}"
+            "QWidget#settingsPageColumn, QWidget#settingsPageContent { background: transparent; }"
             f"QWidget#ocrResultsPage, QWidget#ocrResultsBody {{ background-color: {body_bg}; }}"
             f"QWidget#ocrResultsHeader {{ background-color: {body_bg};"
             f"  border-bottom: 1px solid {divider}; }}"
@@ -1422,9 +1725,9 @@ class SettingsDialog(QDialog):
             f"QLabel#settingsPathLabel {{ font-size: 13px; color: {muted}; }}"
             f"QLabel#settingsSectionLabel {{ font-size: 12px; font-weight: 600;"
             f"  color: {muted}; padding-left: 4px; padding-bottom: 2px; }}"
-            "QScrollArea#settingsScroll, QWidget#settingsPageContent { background: transparent; }"
-            f"QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}"
-            f"QScrollBar::handle:vertical {{ background: {divider}; border-radius: 5px;"
+            "QScrollArea#settingsScroll { background: transparent; }"
+            f"QScrollBar:vertical {{ background: transparent; width: 6px; margin: 0; }}"
+            f"QScrollBar::handle:vertical {{ background: {divider}; border-radius: 3px;"
             "  min-height: 32px; }"
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
             "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }"
@@ -1437,6 +1740,7 @@ class SettingsDialog(QDialog):
             f"  border: 1px solid {divider}; border-radius: 8px; font-size: 13px;"
             f"  background-color: {field_bg}; color: {text}; }}"
             f"QComboBox:hover {{ background-color: {hover}; }}"
+            f"QComboBox:focus {{ border: 1px solid {accent}; }}"
             # The popup is its own top-level view: without an explicit background
             # and text colour it renders as a black plate with unreadable labels.
             f"QComboBox QAbstractItemView {{ background-color: {popup_bg}; color: {text};"
@@ -1446,8 +1750,6 @@ class SettingsDialog(QDialog):
             "  border-radius: 6px; }"
             f"QComboBox QAbstractItemView::item:selected {{ background-color: {popup_selection};"
             f"  color: {text}; }}"
-            f"QCheckBox {{ color: {text}; }}"
-            "QCheckBox::indicator { width: 18px; height: 18px; }"
         )
 
     # ------------------------------------------------------------------
@@ -1459,20 +1761,229 @@ class SettingsDialog(QDialog):
             return
         super().keyPressEvent(event)
 
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt style
+        # The transparent shadow ring belongs to this window; treat it like the
+        # dark scrim and dismiss on click.
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and hasattr(self, "_shell")
+            and not self._shell.geometry().contains(event.position().toPoint())
+        ):
+            self.close()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt style
+        super().resizeEvent(event)
+        self._sync_card_geometry()
+
+    def eventFilter(self, obj: QObject, event) -> bool:  # noqa: N802 - Qt style
+        if obj is self._scrim_parent:
+            if event.type() == QEvent.Type.Resize and self._scrim is not None:
+                try:
+                    self._scrim.setGeometry(self._scrim_parent.rect())
+                except RuntimeError:
+                    # The main window is being torn down with the dialog open.
+                    self._scrim = None
+            elif (
+                event.type() == QEvent.Type.WindowActivate
+                and self.isVisible()
+                and not self._opening
+                and not self._closing
+            ):
+                # The dim layer covers the client area but not the OS title bar;
+                # activating the main window from there should dismiss settings.
+                QTimer.singleShot(0, self.close)
+        return super().eventFilter(obj, event)
+
+    def _sync_card_geometry(self) -> None:
+        """Place the card and its keyboard focus ring inside the shadow margin."""
+
+        if not hasattr(self, "_shell"):
+            return
+        rect = self.rect().adjusted(
+            _SHADOW_MARGIN,
+            _SHADOW_MARGIN,
+            -_SHADOW_MARGIN,
+            -_SHADOW_MARGIN,
+        )
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        self._shadow_panel.setGeometry(rect)
+        self._shell.setGeometry(rect)
+        self.close_button.move(rect.width() - 16 - self.close_button.width(), 16)
+        self.close_button.raise_()
+
+    def _center_on_parent(self) -> None:
+        """Keep the whole window smaller than the main window, then centre it."""
+
+        parent = self.parentWidget()
+        screen = parent.screen() if parent is not None else self.screen()
+        available = screen.availableGeometry() if screen is not None else None
+
+        # The window includes the transparent ring reserved for the shadow, so
+        # leave a 20 px gap on every side of the main window.
+        max_window_w = _CARD_WIDTH + 2 * _SHADOW_MARGIN
+        max_window_h = _CARD_HEIGHT + 2 * _SHADOW_MARGIN
+        if parent is not None:
+            max_window_w = min(max_window_w, max(480, parent.width() - 40))
+            max_window_h = min(max_window_h, max(400, parent.height() - 40))
+        if available is not None:
+            max_window_w = min(max_window_w, max(480, available.width() - 40))
+            max_window_h = min(max_window_h, max(400, available.height() - 40))
+
+        card_w = max(560, min(_CARD_WIDTH, max_window_w - 2 * _SHADOW_MARGIN))
+        card_h = max(420, min(_CARD_HEIGHT, max_window_h - 2 * _SHADOW_MARGIN))
+        self.setMinimumSize(
+            min(_CARD_MIN_WIDTH, card_w) + 2 * _SHADOW_MARGIN,
+            min(_CARD_MIN_HEIGHT, card_h) + 2 * _SHADOW_MARGIN,
+        )
+        self.resize(card_w + 2 * _SHADOW_MARGIN, card_h + 2 * _SHADOW_MARGIN)
+
+        if parent is not None:
+            frame = parent.frameGeometry()
+            x = frame.center().x() - self.width() // 2
+            y = frame.center().y() - self.height() // 2
+        elif available is not None:
+            x = available.center().x() - self.width() // 2
+            y = available.center().y() - self.height() // 2
+        else:
+            return
+
+        if available is not None:
+            x = min(max(x, available.left() + 20), available.right() - self.width() - 20)
+            y = min(max(y, available.top() + 20), available.bottom() - self.height() - 20)
+        self.move(x, y)
+
+    def _ensure_scrim(self) -> None:
+        parent = self._scrim_parent
+        if parent is None or not parent.isVisible():
+            return
+        if self._scrim is None:
+            self._scrim = _SettingsScrim(parent)
+            self._scrim.clicked.connect(self.close)
+            parent.installEventFilter(self)
+        self._scrim.setGeometry(parent.rect())
+        self._scrim.fade_in(animate=_ANIMATIONS)
+
+    def _remove_scrim(self) -> None:
+        scrim = self._scrim
+        self._scrim = None
+        if self._scrim_parent is not None:
+            try:
+                self._scrim_parent.removeEventFilter(self)
+            except RuntimeError:
+                pass
+        if scrim is not None:
+            try:
+                scrim.hide()
+                scrim.deleteLater()
+            except RuntimeError:
+                pass
+
+    def _end_open_guard(self) -> None:
+        """Never leave the card invisible if a platform stalls the fade."""
+
+        self._opening = False
+        self._opening_guard.stop()
+        if self._open_anim is not None:
+            self._open_anim.stop()
+        self.setWindowOpacity(1.0)
+        if self._open_target is not None:
+            self.move(self._open_target)
+
+    def _start_open_animation(self) -> None:
+        if self._open_anim is not None:
+            self._open_anim.stop()
+        target = self.pos()
+        self._open_target = target
+        self.move(target.x(), target.y() + 8)
+
+        group = QParallelAnimationGroup(self)
+        opacity = QPropertyAnimation(self, b"windowOpacity", group)
+        opacity.setDuration(180)
+        opacity.setStartValue(0.0)
+        opacity.setEndValue(1.0)
+        opacity.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        slide = QPropertyAnimation(self, b"pos", group)
+        slide.setDuration(180)
+        slide.setStartValue(QPoint(target.x(), target.y() + 8))
+        slide.setEndValue(target)
+        slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def _done() -> None:
+            self.setWindowOpacity(1.0)
+            self.move(target)
+            self._opening = False
+
+        group.finished.connect(_done)
+        group.start()
+        self._open_anim = group
+
+    def _start_close_animation(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        self._opening_guard.stop()
+        if self._open_anim is not None:
+            self._open_anim.stop()
+
+        if self._scrim is not None:
+            self._scrim.fade_out(animate=_ANIMATIONS)
+
+        if not _ANIMATIONS:
+            self._finish_close()
+            return
+
+        target = self.pos()
+        group = QParallelAnimationGroup(self)
+        opacity = QPropertyAnimation(self, b"windowOpacity", group)
+        opacity.setDuration(160)
+        opacity.setStartValue(self.windowOpacity())
+        opacity.setEndValue(0.0)
+        opacity.setEasingCurve(QEasingCurve.Type.InCubic)
+
+        slide = QPropertyAnimation(self, b"pos", group)
+        slide.setDuration(160)
+        slide.setStartValue(target)
+        slide.setEndValue(QPoint(target.x(), target.y() + 6))
+        slide.setEasingCurve(QEasingCurve.Type.InCubic)
+
+        group.finished.connect(self._finish_close)
+        group.start()
+        self._close_anim = group
+        # If the platform stalls the opacity/pos animation, still close.
+        self._close_guard.start(300)
+
+    def _finish_close(self) -> None:
+        self._close_guard.stop()
+        self._opening_guard.stop()
+        if self._open_anim is not None:
+            self._open_anim.stop()
+        self._allow_close = True
+        self._remove_scrim()
+        self.close()
+
     def showEvent(self, event) -> None:  # noqa: N802
+        self._opening = True
+        self._center_on_parent()
+        self._sync_card_geometry()
+        if _ANIMATIONS:
+            self.setWindowOpacity(0.0)
         super().showEvent(event)
+        self._ensure_scrim()
         # Values are already probed in the background from __init__; refresh once
         # more in case the dialog was hidden while a scan progressed.
         self._refresh_search_rows()
         self._refresh_ai_rows()
         self._ai_refresh_timer.start()
-        parent = self.parentWidget()
-        if parent is not None:
-            frame = parent.frameGeometry()
-            self.move(
-                frame.center().x() - self.width() // 2,
-                frame.center().y() - self.height() // 2,
-            )
+        if _ANIMATIONS:
+            self._opening_guard.start(400)
+            self._start_open_animation()
+        else:
+            self._opening = False
 
     def hideEvent(self, event) -> None:  # noqa: N802
         self._ai_refresh_timer.stop()
@@ -1481,13 +1992,25 @@ class SettingsDialog(QDialog):
     def closeEvent(self, event) -> None:  # noqa: N802
         self._closed = True
         self._ai_refresh_timer.stop()
-        # Connections are owned by this QObject and disappear with it. Do not
-        # disconnect manually: PySide emits a RuntimeWarning when a worker has
-        # already finished and the connection no longer exists.
-        page = getattr(self, "_ocr_results_page", None)
-        if page is not None:
-            page.shutdown()
-        super().closeEvent(event)
+
+        if (
+            self._allow_close
+            or not self.isVisible()
+            or not _ANIMATIONS
+            or QCoreApplication.closingDown()
+        ):
+            # Connections are owned by this QObject and disappear with it. Do
+            # not disconnect manually: PySide emits a RuntimeWarning when a
+            # worker has already finished and the connection no longer exists.
+            page = getattr(self, "_ocr_results_page", None)
+            if page is not None:
+                page.shutdown()
+            self._remove_scrim()
+            super().closeEvent(event)
+            return
+
+        event.ignore()
+        self._start_close_animation()
 
 
 __all__ = ["SettingsDialog"]

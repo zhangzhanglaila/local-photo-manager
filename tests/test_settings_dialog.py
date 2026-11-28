@@ -15,6 +15,8 @@ import pytest
 
 pytest.importorskip("PySide6.QtWidgets", reason="Qt widgets are required")
 
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QMainWindow
 
 from iPhoto.gui.ui.widgets.main_header import MainHeaderWidget
@@ -103,6 +105,57 @@ def test_settings_navigation_uses_the_pointing_hand_cursor(chrome) -> None:
     finally:
         dialog.close()
         dialog.deleteLater()
+
+
+def test_settings_window_has_a_shadow_dim_layer_and_switches(chrome, qapp) -> None:
+    """The card floats over a dimmed main window instead of a bare dialog."""
+
+    window, header = chrome
+    # The clamp is meaningful only for a realistically sized main window.
+    window.resize(1200, 800)
+    qapp.processEvents()
+
+    dialog = SettingsDialog(header, None, window)
+    dialog.show()
+    qapp.processEvents()
+    try:
+        assert dialog._shadow_panel.graphicsEffect() is not None
+        assert dialog._shadow_panel.geometry() == dialog._shell.geometry()
+        assert dialog._scrim is not None
+        assert dialog._scrim.geometry() == window.rect()
+        assert dialog._nav.width() == 220
+        assert dialog.width() <= window.width()
+        assert dialog.height() <= window.height()
+
+        switches = dialog.findChildren(QCheckBox)
+        assert switches, "settings pages must expose their boolean rows"
+        assert {type(switch).__name__ for switch in switches} == {"_SettingsSwitch"}
+        assert switches[0].size().width() == 40
+        assert switches[0].size().height() == 24
+    finally:
+        dialog.close()
+        try:
+            dialog.deleteLater()
+        except RuntimeError:
+            pass
+
+
+def test_clicking_the_dim_layer_closes_settings(chrome, qapp) -> None:
+    window, header = chrome
+
+    dialog = SettingsDialog(header, None, window)
+    dialog.show()
+    qapp.processEvents()
+    scrim = dialog._scrim
+    assert scrim is not None
+
+    QTest.mouseClick(scrim, Qt.MouseButton.LeftButton, pos=scrim.rect().center())
+    qapp.processEvents()
+    try:
+        visible = dialog.isVisible()
+    except RuntimeError:
+        visible = False
+    assert not visible
 
 
 def test_choice_controls_drive_the_shared_actions(chrome) -> None:
