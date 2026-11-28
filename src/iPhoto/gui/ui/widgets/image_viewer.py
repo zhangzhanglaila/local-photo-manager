@@ -208,6 +208,11 @@ class ImageViewer(QWidget):
             return
         self._loading_overlay.hide()
 
+    def set_loading_text(self, text: str) -> None:
+        """Set the copy shown by the loading overlay."""
+
+        self._loading_overlay.setText(text)
+
     def set_wheel_action(self, action: str) -> None:
         """Control how the viewer reacts to wheel gestures.
 

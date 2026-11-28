@@ -91,6 +91,12 @@ class OCRRepository:
             CREATE INDEX IF NOT EXISTS idx_ocr_regions_asset
             ON ocr_regions(asset_id);
 
+            -- The settings browser pages assets ordered by relative path while
+            -- also asking for the minimum path per asset; this covering index
+            -- keeps that grouping and ordering off a full table scan.
+            CREATE INDEX IF NOT EXISTS idx_ocr_regions_asset_rel
+            ON ocr_regions(asset_id, asset_rel);
+
             -- Every image the OCR worker touched, including ones with no text.
             -- Without this the worker re-processed the whole library on every
             -- launch because "no regions" left no trace.
@@ -401,13 +407,15 @@ class OCRRepository:
         ).fetchone()
         return row[0]
 
-    def list_assets_with_text(self, limit: int = 500) -> list:
-        """Return up to *limit* photos with all their OCR lines.
+    def list_assets_with_text(self, limit: int = 500, offset: int = 0) -> list:
+        """Return a page of photos with all their OCR lines.
 
         The settings browser needs whole photos, not search hits. Grouping in
         SQL would concatenate text without its reading order, so the selected
         assets are fetched once and their regions are joined in Python by
-        vertical position.
+        vertical position. ``offset`` lets the browser load further pages
+        without materialising every asset at once; the asset id is the tie
+        breaker so equal paths cannot be skipped or repeated between pages.
         """
 
         from ..ocr.models import OCRAssetText
@@ -419,15 +427,15 @@ class OCRRepository:
                 SELECT asset_id, MIN(asset_rel) AS asset_rel
                 FROM ocr_regions
                 GROUP BY asset_id
-                ORDER BY asset_rel
-                LIMIT ?
+                ORDER BY asset_rel, asset_id
+                LIMIT ? OFFSET ?
             )
             SELECT r.asset_id, s.asset_rel, r.text, r.confidence
             FROM ocr_regions r
             JOIN selected s ON s.asset_id = r.asset_id
-            ORDER BY s.asset_rel, r.box_y, r.box_x
+            ORDER BY s.asset_rel, s.asset_id, r.box_y, r.box_x
             """,
-            (max(1, int(limit)),),
+            (max(1, int(limit)), max(0, int(offset))),
         ).fetchall()
 
         grouped: list = []

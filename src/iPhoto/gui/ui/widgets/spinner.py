@@ -26,6 +26,10 @@ class Spinner(QWidget):
         self._timer.timeout.connect(self._advance)
 
     def start(self) -> None:
+        # Hidden spinners (for example the value rows on a settings page that
+        # has not been opened yet) should not keep a 60 fps timer alive.
+        if not self.isVisible():
+            return
         if not self._timer.isActive():
             self._timer.start()
 

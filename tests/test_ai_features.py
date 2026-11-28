@@ -216,14 +216,18 @@ def test_ocr_results_page_lists_photos_and_their_text(qapp, tmp_path):
     page = OcrResultsPage(tmp_path)
     page.reload()
     try:
-        _wait_until(qapp, lambda: page._list.count() == 2)
-        assert [page._list.item(i).text() for i in range(page._list.count())] == [
-            "a.jpg",
-            "b.jpg",
-        ]
+        _wait_until(qapp, lambda: page._model.loaded_count() == 2)
+        assert [
+            page._model.asset_at(i).asset_rel
+            for i in range(page._model.loaded_count())
+        ] == ["a.jpg", "b.jpg"]
         assert "Hello" in page._text.toPlainText()
+        _wait_until(qapp, lambda: page._preview.pixmap() is not None)
+        assert page._preview.pixmap() is not None
+        assert page._preview._wheel_action == "zoom"
 
-        page._list.setCurrentRow(1)
+        page._list.setCurrentIndex(page._model.index(1, 0))
+        _wait_until(qapp, lambda: "b.jpg" in page._preview_cache)
         qapp.processEvents()
         assert "World" in page._text.toPlainText()
 
@@ -232,6 +236,61 @@ def test_ocr_results_page_lists_photos_and_their_text(qapp, tmp_path):
         back = QSignalSpy(page.backRequested)
         page.back_button.click()
         assert back.count() == 1
+    finally:
+        page.shutdown()
+        page.deleteLater()
+        qapp.processEvents()
+
+
+def test_ocr_results_page_pages_through_every_asset(qapp, tmp_path):
+    """The virtualised list must be able to reach the last OCR asset."""
+
+    from PySide6.QtCore import QModelIndex
+
+    from iPhoto.ai.db.ocr_database import OCRRepository
+    from iPhoto.ai.ocr.models import OCRRegion
+    from iPhoto.gui.ui.widgets.ocr_results_page import (
+        OCR_RESULTS_PAGE_SIZE,
+        OcrResultsPage,
+    )
+
+    total = OCR_RESULTS_PAGE_SIZE + 75
+    repository = OCRRepository(tmp_path)
+    try:
+        repository.store_regions_batch(
+            [
+                (
+                    f"id{i}",
+                    f"p{i:03}.jpg",
+                    [OCRRegion("text", 0.9, 0, 0, 10, 5)],
+                    10,
+                    5,
+                )
+                for i in range(total)
+            ]
+        )
+    finally:
+        repository.close()
+
+    page = OcrResultsPage(tmp_path)
+    page.reload()
+    try:
+        _wait_until(
+            qapp,
+            lambda: page._model.loaded_count() == OCR_RESULTS_PAGE_SIZE,
+        )
+        assert page._model.total() == total
+        assert page._model.canFetchMore(QModelIndex())
+
+        page._model.fetchMore(QModelIndex())
+        _wait_until(qapp, lambda: page._model.loaded_count() == total)
+        assert not page._model.canFetchMore(QModelIndex())
+
+        ids = {
+            page._model.asset_at(i).asset_id
+            for i in range(page._model.loaded_count())
+        }
+        assert len(ids) == total, "paging must not repeat or skip assets"
     finally:
         page.shutdown()
         page.deleteLater()
@@ -365,6 +424,15 @@ def test_smart_page_shows_face_and_text_rows(dialog):
         assert expected in text, expected
 
 
+def test_scrolling_suspends_the_expensive_card_shadow(dialog, qapp):
+    """The drop shadow is re-blurred on every repaint; scrolling pauses it."""
+
+    widget, _settings = dialog
+    widget._on_page_scrolled(0)
+    assert not widget._shadow_effect.isEnabled()
+    _wait_until(qapp, lambda: widget._shadow_effect.isEnabled())
+
+
 def test_toggling_writes_the_switch(dialog):
     widget, settings = dialog
 
@@ -433,6 +501,8 @@ def test_model_rows_show_the_active_pack(dialog, qapp):
 
     widget, _settings = dialog
     page = widget._pages[4]
+    # Probes start lazily when 智能 is opened, not while the dialog is hidden.
+    widget._nav.setCurrentRow(4)
 
     _wait_until(qapp, lambda: "buffalo_l" in widget._pack_labels["face"].text())
     _wait_until(qapp, lambda: "PP-OCRv5" in widget._pack_labels["ocr"].text())

@@ -124,11 +124,14 @@ class _AsyncValue(QWidget):
         self.spinner.start()
 
     def set_value(self, text: str) -> None:
-        self.label.setText(text)
-        self.label.setVisible(bool(text))
-        self.setToolTip("")
-        self.spinner.stop()
-        self.spinner.hide()
+        if self.label.text() != text:
+            self.label.setText(text)
+            self.label.setVisible(bool(text))
+        if self.toolTip():
+            self.setToolTip("")
+        if self.spinner.isVisible():
+            self.spinner.stop()
+            self.spinner.hide()
 
     def set_loading(self) -> None:
         self.label.clear()
@@ -306,6 +309,7 @@ def _plain(text: str) -> str:
 
 
 _PAGE_COLUMN_WIDTH = 680
+_AI_PAGE_INDEX = 4
 
 
 class _PageColumn(QWidget):
@@ -673,6 +677,7 @@ class SettingsDialog(QDialog):
         self._meta_values: dict | None = None
         self._ai_values: dict | None = None
         self._closed = False
+        self._ai_probes_started = False
         #: Coverage is read from the AI databases, which change underneath the
         #: dialog while a face/OCR scan runs. A light poll keeps "processed /
         #: total" moving; each poll runs off the GUI thread.
@@ -735,6 +740,14 @@ class SettingsDialog(QDialog):
         shadow.setColor(QColor(0, 0, 0, 60))
         self._shadow_effect = shadow
         self._shadow_panel.setGraphicsEffect(shadow)
+        # A QGraphicsDropShadowEffect re-blurs the whole card on every repaint.
+        # While the user scrolls a settings page that costs ~20 ms per step
+        # (measured on the 智能 page), so suspend the effect during the gesture
+        # and restore it shortly after the scrollbar stops.
+        self._shadow_idle_timer = QTimer(self)
+        self._shadow_idle_timer.setSingleShot(True)
+        self._shadow_idle_timer.setInterval(120)
+        self._shadow_idle_timer.timeout.connect(self._restore_shadow)
 
         self._shell = QWidget(self._card_host)
         self._shell.setObjectName("settingsShell")
@@ -754,7 +767,7 @@ class SettingsDialog(QDialog):
         self.close_button.setIconSize(QSize(16, 16))
         self.close_button.setFixedSize(32, 32)
         self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.close_button.setToolTip("Close")
+        self.close_button.setToolTip(tr("window.close"))
         self.close_button.clicked.connect(self.close)
         self.close_button.raise_()
 
@@ -793,6 +806,7 @@ class SettingsDialog(QDialog):
         self._build_pages()
         self._nav.currentRowChanged.connect(self._nav_delegate.set_selected_row)
         self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav.currentRowChanged.connect(self._on_nav_changed)
         # Clicking the already-selected 智能 row while the OCR browser is open
         # does not emit currentRowChanged; itemClicked still returns to settings.
         self._nav.itemClicked.connect(
@@ -802,11 +816,10 @@ class SettingsDialog(QDialog):
         self._nav_delegate.set_selected_row(0, animate=False)
         self.setStyleSheet(self._stylesheet())
         self._sync_card_geometry()
-        # Values are populated asynchronously: constructing this window used to
-        # import onnxruntime/torch and open three SQLite databases on the GUI
-        # thread, so simply opening 设置 froze the whole application.
-        self._schedule_meta_probe()
-        self._schedule_ai_probe()
+        # Do not probe face/OCR/search state here: resolving the device imports
+        # onnxruntime and torch (about 0.7 s) and the import lock starves the GUI
+        # thread, so the first paint of the settings window used to wait for it.
+        # Probes start when 智能 is opened for the first time (see _on_nav_changed).
 
     # ------------------------------------------------------------------
     # Construction helpers
@@ -1073,6 +1086,7 @@ class SettingsDialog(QDialog):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(content)
+        scroll.verticalScrollBar().valueChanged.connect(self._on_page_scrolled)
 
         page = QWidget(self)
         page.setObjectName("settingsPage")
@@ -1755,6 +1769,40 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
     # Behaviour
     # ------------------------------------------------------------------
+    def _on_nav_changed(self, row: int) -> None:
+        """Start the expensive AI probes only once 智能 is actually opened."""
+
+        if row == _AI_PAGE_INDEX:
+            first_visit = not self._ai_probes_started
+            self._ensure_ai_probes()
+            if not first_visit:
+                self._refresh_search_rows()
+                self._refresh_ai_rows()
+            if not self._ai_refresh_timer.isActive():
+                self._ai_refresh_timer.start()
+            return
+        self._ai_refresh_timer.stop()
+
+    def _ensure_ai_probes(self) -> None:
+        if self._ai_probes_started:
+            return
+        self._ai_probes_started = True
+        self._schedule_meta_probe()
+        self._schedule_ai_probe()
+
+    def _on_page_scrolled(self, _value: int) -> None:
+        """Suspend the expensive card shadow while a page is scrolling."""
+
+        if not self._closing and self._shadow_effect.isEnabled():
+            self._shadow_effect.setEnabled(False)
+        self._shadow_idle_timer.start()
+
+    def _restore_shadow(self) -> None:
+        if self._closing:
+            return
+        if not self._shadow_effect.isEnabled():
+            self._shadow_effect.setEnabled(True)
+
     def keyPressEvent(self, event) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:
             self.close()
@@ -1970,15 +2018,15 @@ class SettingsDialog(QDialog):
         self._opening = True
         self._center_on_parent()
         self._sync_card_geometry()
+        self._shadow_idle_timer.stop()
+        self._restore_shadow()
         if _ANIMATIONS:
             self.setWindowOpacity(0.0)
         super().showEvent(event)
         self._ensure_scrim()
-        # Values are already probed in the background from __init__; refresh once
-        # more in case the dialog was hidden while a scan progressed.
-        self._refresh_search_rows()
-        self._refresh_ai_rows()
-        self._ai_refresh_timer.start()
+        # The AI probes are deferred until 智能 is opened; if the dialog was
+        # hidden while that page was selected, refresh it again now.
+        self._on_nav_changed(self._nav.currentRow())
         if _ANIMATIONS:
             self._opening_guard.start(400)
             self._start_open_animation()

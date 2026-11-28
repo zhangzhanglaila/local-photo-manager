@@ -12,8 +12,16 @@ from __future__ import annotations
 
 import logging
 import sys
+from importlib.metadata import PackageNotFoundError, version
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _package_version(name: str) -> str:
+    try:
+        return version(name)
+    except (PackageNotFoundError, ValueError):
+        return ""
 
 
 def search_device(status: "object | None" = None) -> str:
@@ -34,30 +42,30 @@ def search_device(status: "object | None" = None) -> str:
             return "CUDA" if torch.cuda.is_available() else "CPU"
         except Exception:  # pragma: no cover - driver issues
             return "CPU"
-    # Not loaded yet: the encoder picks CUDA when torch can see a device.
-    return "CUDA" if _torch_has_cuda() else "CPU"
 
-
-def _torch_has_cuda() -> bool:
-    try:
-        import torch
-
-        return bool(torch.cuda.is_available())
-    except Exception:  # pragma: no cover - torch may be missing
-        return False
+    # Do not import torch just to label the settings row: importing it takes
+    # hundreds of milliseconds and holds the import lock, which froze the first
+    # paint of the settings window. CUDA wheels carry ``+cuXXX`` in their
+    # distribution version; the live status object replaces this guess once the
+    # encoder actually starts.
+    version_text = _package_version("torch").lower()
+    return "CUDA" if "+cu" in version_text else "CPU"
 
 
 def onnx_device() -> str:
     """Return ``"CUDA"`` or ``"CPU"`` for the ONNX Runtime based scans."""
 
-    try:
-        import onnxruntime as ort
+    ort = sys.modules.get("onnxruntime")
+    if ort is not None:
+        try:
+            providers = set(ort.get_available_providers())
+        except Exception:  # pragma: no cover - driver issues
+            return "CPU"
+        return "CUDA" if "CUDAExecutionProvider" in providers else "CPU"
 
-        providers = set(ort.get_available_providers())
-    except Exception:  # pragma: no cover - onnxruntime may be missing
-        _LOGGER.debug("onnxruntime unavailable for device detection", exc_info=True)
-        return "CPU"
-    return "CUDA" if "CUDAExecutionProvider" in providers else "CPU"
+    # As above, avoid importing onnxruntime for a label. The CUDA build is
+    # distributed as ``onnxruntime-gpu``; the plain package is CPU-only.
+    return "CUDA" if _package_version("onnxruntime-gpu") else "CPU"
 
 
 __all__ = ["onnx_device", "search_device"]
