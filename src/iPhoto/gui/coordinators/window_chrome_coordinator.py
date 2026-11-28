@@ -116,6 +116,9 @@ class WindowChromeCoordinator(QObject):
         self._context.language.languageChanged.connect(
             lambda _lang: ui.grid_view.retranslate()
         )
+        self._context.language.languageChanged.connect(
+            lambda _lang: ui.title_bar.retranslate()
+        )
 
 
 __all__ = ["WindowChromeCoordinator"]

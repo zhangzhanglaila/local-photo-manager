@@ -89,6 +89,7 @@ def _make(settings: _Settings):
     grid = _Grid()
     header = _Retranslatable()
     sidebar = _Retranslatable()
+    title_bar = _Retranslatable()
     library = SimpleNamespace(
         scanProgress=_Signal(),
         scanFinished=_Signal(),
@@ -119,6 +120,7 @@ def _make(settings: _Settings):
         grid_view=grid,
         main_header=header,
         sidebar=sidebar,
+        title_bar=title_bar,
         theme_system=_Action(),
         theme_light=_Action(),
         theme_dark=_Action(),
@@ -171,3 +173,4 @@ def test_theme_and_language_actions_write_settings_and_retranslate() -> None:
     assert ui.grid_view.retranslated == 1
     assert ui.main_header.retranslated == 1
     assert ui.sidebar.retranslated == 1
+    assert ui.title_bar.retranslated == 1

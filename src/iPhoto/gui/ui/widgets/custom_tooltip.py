@@ -152,34 +152,34 @@ class FloatingToolTip(QWidget):
     def sizeHint(self) -> QSize:  # noqa: D401 - Qt documents the contract
         """Qt override: compute the popup size for the current tooltip text."""
 
+        inset = self._padding + self._border_width
         if not self._last_text:
-            edge = 2 * (self._padding + self._border_width)
+            edge = 2 * inset
             return QSize(edge, edge)
 
         metrics = QFontMetrics(self._font)
-        available_width = max(0, self._MAX_WIDTH - 2 * self._padding)
+        max_text_width = max(0, self._MAX_WIDTH - 2 * inset)
         text_rect = metrics.boundingRect(
-            QRect(0, 0, available_width, 0),
+            QRect(0, 0, max_text_width, 0),
             Qt.AlignmentFlag.AlignLeft
             | Qt.AlignmentFlag.AlignTop
             | Qt.TextFlag.TextWordWrap,
             self._last_text,
         )
-        # Clamp the preferred width so extremely long words do not push the
-        # popup beyond the maximum width budget.  ``boundingRect`` may report a
-        # width that equals ``available_width`` when wrapping occurs, therefore
-        # ``max`` maintains the configured padding even when the text fits on a
-        # single line.
-        width = min(text_rect.width(), available_width) + 2 * (
-            self._padding + self._border_width
+        # Keep one pixel of slack next to the widest line.  The painter used to
+        # receive a rectangle one pixel narrower than the measured text, which
+        # wrapped the last glyph of a short hint (``最小化`` became two lines).
+        # Measure again at that final width so the height matches the lines the
+        # painter will actually produce.
+        text_width = min(text_rect.width() + 1, max_text_width)
+        text_rect = metrics.boundingRect(
+            QRect(0, 0, text_width, 0),
+            Qt.AlignmentFlag.AlignLeft
+            | Qt.AlignmentFlag.AlignTop
+            | Qt.TextFlag.TextWordWrap,
+            self._last_text,
         )
-        # Add extra line height as safety margin — some platforms misreport
-        # boundingRect height for multi-line text with TextWordWrap.
-        line_height = metrics.lineSpacing()
-        height = text_rect.height() + line_height + 2 * (
-            self._padding + self._border_width
-        )
-        return QSize(width, height)
+        return QSize(text_width + 2 * inset, text_rect.height() + 2 * inset)
 
     def minimumSizeHint(self) -> QSize:  # noqa: D401 - mirrors :meth:`sizeHint`
         """Qt override: defer to :meth:`sizeHint` for layout calculations."""
@@ -227,8 +227,11 @@ class FloatingToolTip(QWidget):
         if self._last_text:
             painter.setFont(self._font)
             painter.setPen(self._text_colour)
+            # Use the full widget rectangle, not the half-pixel-inset fill path:
+            # otherwise the text area is one pixel narrower than ``sizeHint``
+            # measured and the last glyph wraps onto a new line.
             text_inset = self._padding + self._border_width
-            text_rect = QRectF(paint_rect).adjusted(
+            text_rect = outer_rect.adjusted(
                 text_inset,
                 text_inset,
                 -text_inset,

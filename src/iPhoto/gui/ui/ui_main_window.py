@@ -361,14 +361,9 @@ class Ui_MainWindow(object):
             translate_qt("MainWindow", "iPhoto", None)
         )
         self.window_title_label.setText(MainWindow.windowTitle())
-        self.minimize_button.setToolTip(
-            translate_qt("MainWindow", "Minimize", None)
-        )
+        self.title_bar.retranslate(MainWindow.isMaximized())
         self.fullscreen_button.setToolTip(
             translate_qt("MainWindow", "Enter Full Screen", None)
-        )
-        self.close_button.setToolTip(
-            translate_qt("MainWindow", "Close", None)
         )
         self.selection_button.setText(
             translate_qt("MainWindow", "Select", None)

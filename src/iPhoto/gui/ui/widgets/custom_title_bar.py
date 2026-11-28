@@ -24,6 +24,7 @@ from .main_window_metrics import (
     TITLE_CONTROL_GLYPH_SIZE,
 )
 from ..icon import load_icon
+from ....i18n import tr
 
 
 class CaptionButton(QToolButton):
@@ -120,6 +121,7 @@ class CustomTitleBar(QWidget):
 
     def __init__(self, parent: QWidget | None = None, window_title: str = "") -> None:
         super().__init__(parent)
+        self._maximized = False
         self.setObjectName("windowTitleBar")
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -148,9 +150,9 @@ class CustomTitleBar(QWidget):
         self.close_button = CaptionButton(self.window_controls, danger=True)
 
         # Order used by the reference title bar: minimise, maximise, close.
-        self.minimize_button.configure("window.minimize.svg", "Minimize")
-        self.maximize_button.configure("window.maximize.svg", "Maximize")
-        self.close_button.configure("window.close.svg", "Close")
+        self.minimize_button.configure("window.minimize.svg", tr("window.minimize"))
+        self.maximize_button.configure("window.maximize.svg", tr("window.maximize"))
+        self.close_button.configure("window.close.svg", tr("window.close"))
 
         # ``window_manager`` and the UI contract still address the middle button
         # by its historical name; it now owns maximise/restore.
@@ -179,6 +181,26 @@ class CustomTitleBar(QWidget):
         spacer.setFixedWidth(self.window_controls.sizeHint().width())
         spacer.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout.addWidget(spacer, 0)
+
+    def set_maximized(self, maximized: bool) -> None:
+        """Keep the caption glyph and its tooltip in sync with the window state."""
+
+        self._maximized = bool(maximized)
+        if self._maximized:
+            self.maximize_button.set_glyph("window.restore.svg")
+            self.maximize_button.setToolTip(tr("window.restore"))
+        else:
+            self.maximize_button.set_glyph("window.maximize.svg")
+            self.maximize_button.setToolTip(tr("window.maximize"))
+
+    def retranslate(self, maximized: bool | None = None) -> None:
+        """Refresh every caption tooltip after a language switch."""
+
+        if maximized is not None:
+            self._maximized = bool(maximized)
+        self.minimize_button.setToolTip(tr("window.minimize"))
+        self.close_button.setToolTip(tr("window.close"))
+        self.set_maximized(self._maximized)
 
     def configure_header_button(self, button: QToolButton, icon_name: str, tooltip: str) -> None:
         """Normalize header button appearance to the design defaults.

@@ -660,17 +660,12 @@ class FramelessWindowManager(QObject):
         return screen
 
     def _update_window_control_icons(self) -> None:
-        """Sync the caption glyph with the window's maximised state."""
+        """Sync the caption glyph and its translated tooltip with the state."""
 
-        button = getattr(self._ui.title_bar, "maximize_button", None)
-        if button is None:
+        title_bar = getattr(self._ui, "title_bar", None)
+        if title_bar is None:
             return
-        if self._window.isMaximized():
-            button.set_glyph("window.restore.svg")
-            button.setToolTip("Restore")
-        else:
-            button.set_glyph("window.maximize.svg")
-            button.setToolTip("Maximize")
+        title_bar.set_maximized(self._window.isMaximized())
 
     def _update_title_bar(self) -> None:
         self._ui.window_title_label.setText(self._window.windowTitle())

@@ -286,6 +286,12 @@ _ZH: dict[str, str] = {
     "generic.cancel": "取消",
     "generic.close": "关闭",
 
+    # -- Window controls --
+    "window.minimize": "最小化",
+    "window.maximize": "最大化",
+    "window.restore": "还原",
+    "window.close": "关闭",
+
     # -- Gallery context menu --
     "menu.copy": "复制",
     "menu.reveal": "在文件管理器中显示",
@@ -597,6 +603,7 @@ _ZH: dict[str, str] = {
     'ocr.results.no_library': '未打开照片库',
     'ocr.results.count': '显示 {shown} / {total} 张照片',
     'ocr.results.text_placeholder': '选择左侧照片查看识别文字',
+    'ocr.results.preview_loading': '正在加载图片…',
     'ocr.results.no_text': '这张照片没有识别到文字',
     'ocr.results.failed': 'OCR 结果加载失败：{message}',
     'settings.ai_state.coverage': '已处理 {done}/{total}',
@@ -889,6 +896,12 @@ _EN: dict[str, str] = {
     "generic.ok": "OK",
     "generic.cancel": "Cancel",
     "generic.close": "Close",
+
+    # -- Window controls --
+    "window.minimize": "Minimize",
+    "window.maximize": "Maximize",
+    "window.restore": "Restore",
+    "window.close": "Close",
 
     # -- Gallery context menu --
     "menu.copy": "Copy",
@@ -1201,6 +1214,7 @@ _EN: dict[str, str] = {
     'ocr.results.no_library': 'No photo library is open',
     'ocr.results.count': 'Showing {shown} of {total} photos',
     'ocr.results.text_placeholder': 'Select a photo to see its recognized text',
+    'ocr.results.preview_loading': 'Loading image…',
     'ocr.results.no_text': 'No text was found in this photo',
     'ocr.results.failed': 'Could not load OCR results: {message}',
     'settings.ai_state.coverage': '{done}/{total} processed',
