@@ -46,6 +46,19 @@ into the photo folder.*
   queued rows and left both task rows stuck on "等待中".
 - Face-scan failures are logged per asset with their reason instead of a single
   "N assets could not be processed" line.
+- The face worker now reads the canonical `extension/models/` root instead of
+  the legacy `src/extension/models/`. The settings page could report a model as
+  installed while `FaceAnalysis` looked in the old tree and tried to download a
+  duplicate; the worker now also says “loading” rather than “downloading” when
+  the pack in its actual model directory is complete.
+- The Windows build script and packaging docs now take face packs from
+  `extension/models/` and bundle each extracted `buffalo_*` directory, never the
+  legacy `src/extension/models/` tree or its `.zip` archives. A release built
+  after the stale tree was removed used to fail its existence check outright;
+  before that it could ship an archive InsightFace never reads.
+- Face-download progress is translated and no longer claims a fixed 120 MB: the
+  English UI used to show the hard-coded Chinese string, and the real download
+  depends on the selected pack (`buffalo_l` is ~275 MB, `buffalo_s` ~122 MB).
 - Opening 设置 no longer imports ONNX Runtime/torch or opens the index/OCR/people
   databases on the GUI thread. Model, device, search-index and face/OCR coverage
   values load in background probes and show a spinner until they arrive, so the

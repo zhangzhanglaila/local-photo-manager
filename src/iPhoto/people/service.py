@@ -27,11 +27,13 @@ def _default_shared_face_model_dir() -> Path:
     if override:
         return Path(override).expanduser()
 
-    package_root = Path(__file__).resolve().parents[2]
-    return package_root / "extension" / "models"
+    # Use the one canonical model root. The old
+    # ``src/extension/models`` calculation made the settings page report a
+    # model as installed (it reads ``extension/models``) while FaceAnalysis
+    # only looked in ``src/extension/models`` and downloaded a second copy.
+    from ..agent.services.model_paths import install_root
 
-
-_SHARED_FACE_MODEL_DIR = _default_shared_face_model_dir()
+    return install_root()
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,8 @@ class ManualFaceAddResult:
 
 def shared_face_model_dir() -> Path:
     """Return the shared cache directory for downloaded face models."""
-    return _SHARED_FACE_MODEL_DIR
+
+    return _default_shared_face_model_dir()
 
 
 def face_library_paths(library_root: Path) -> FaceLibraryPaths:

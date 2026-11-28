@@ -156,8 +156,19 @@ class FaceScanWorker(QThread):
         def _on_download_progress(downloaded: int, total: int) -> None:
             self.downloadProgress.emit(downloaded, total)
 
-        from ...agent.services import face_models
-
+        # Check the exact directory FaceAnalysis will use. ``face_models`` may
+        # prefer a legacy/canonical copy, but the pipeline is rooted at
+        # ``paths.model_dir``; a status must not claim "downloading" when the
+        # pack in that root is already complete.
+        pack_dir = paths.model_dir / self._model_pack
+        pack_files = (
+            {path.name for path in pack_dir.glob("*.onnx")}
+            if pack_dir.is_dir()
+            else set()
+        )
+        model_installed = any(
+            name.startswith("det_") for name in pack_files
+        ) and any(name.startswith("w600k") for name in pack_files)
         pipeline = FaceClusterPipeline(
             model_root=paths.model_dir,
             model_pack=self._model_pack,
@@ -199,7 +210,11 @@ class FaceScanWorker(QThread):
                     continue
 
                 if not model_ready:
-                    self.statusChanged.emit(tr("face.status.downloading_model"))
+                    self.statusChanged.emit(
+                        tr("face.status.loading_model")
+                        if model_installed
+                        else tr("face.status.downloading_model")
+                    )
                 committed = self._process_batch(
                     batch,
                     coordinator,

@@ -123,7 +123,7 @@ Description: Folder-native local photo album manager
 
    ```bash
    find "$APP_ROOT" -path '*insightface*' -o -path '*onnxruntime*'
-   find "$APP_ROOT/extension/models" -name 'det_500m.onnx' -o -name 'w600k_mbf.onnx'
+   find "$APP_ROOT/extension/models" -name 'det_*.onnx' -o -name 'w600k*.onnx'
    ```
 
 2. **Create the `control` file** — save the content from the section above to `"$PKG_ROOT/DEBIAN/control"` and ensure it is not world-writable:
@@ -188,5 +188,5 @@ sudo apt remove iPhoto
 | Binary not found after install | Wrong install path in staging tree, or launcher points to the wrong standalone executable | Ensure the launcher under `usr/local/bin/` points to the executable copied into `/opt/iPhoto/` |
 | Location view falls back unexpectedly after install | `maps/tiles/extension/` was not included in the package | Re-stage the standalone bundle and verify the `.deb` contents include `World_basemap_2.obf`, resources, and Linux map binaries |
 | Native maps fail with GLX/XCB startup errors | The runtime was installed correctly, but the desktop session lacks XWayland/XCB GL integration | Install/enable XWayland and rerun, or set `IPHOTO_PREFER_OSMAND_NATIVE_WIDGET=0` to force the helper-backed Python OBF path |
-| People scan is unavailable in the installed app | The standalone build was produced without the optional face runtime | Rebuild the standalone app with `insightface`, `onnxruntime`, and `src/extension/models` included before staging the `.deb` |
+| People scan is unavailable in the installed app | The standalone build was produced without the optional face runtime | Rebuild the standalone app with `insightface`, `onnxruntime`, and `extension/models/buffalo_l` included before staging the `.deb` |
 | People scan starts but never creates clusters | The model cache or an InsightFace submodel/dependency is missing from `/opt/iPhoto/` | Verify `extension/models`, exclude unused `albumentations`/`pydantic` packages at the Nuitka stage, and keep InsightFace limited to detection and recognition |

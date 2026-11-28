@@ -177,7 +177,7 @@ def test_face_library_paths_live_under_dot_iphoto(tmp_path: Path) -> None:
     assert paths.state_db_path == paths.root_dir / "face_state.db"
     assert paths.thumbnail_dir == paths.root_dir / "thumbnails"
     assert paths.model_dir == shared_face_model_dir()
-    assert paths.model_dir == Path(__file__).resolve().parents[1] / "src" / "extension" / "models"
+    assert paths.model_dir == Path(__file__).resolve().parents[1] / "extension" / "models"
 
 
 def test_default_shared_face_model_dir_can_be_overridden(

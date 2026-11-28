@@ -758,13 +758,17 @@ class ScanCoordinatorMixin:
         if worker is not None and worker is not self._current_face_scanner:
             return
         if total > 0:
-            pct = downloaded * 100 // total
-            mb_done = downloaded / (1024 * 1024)
-            mb_total = total / (1024 * 1024)
-            msg = f"正在下载人脸检测模型... {pct}% ({mb_done:.1f}/{mb_total:.1f} MB)"
+            msg = tr(
+                "face.status.downloading_progress",
+                percent=downloaded * 100 // total,
+                done_mb=downloaded / (1024 * 1024),
+                total_mb=total / (1024 * 1024),
+            )
         else:
-            mb_done = downloaded / (1024 * 1024)
-            msg = f"正在下载人脸检测模型... {mb_done:.1f} MB"
+            msg = tr(
+                "face.status.downloading_progress_unknown",
+                done_mb=downloaded / (1024 * 1024),
+            )
         self._face_scan_status_message = msg
         self.faceScanStatusChanged.emit(msg)
 

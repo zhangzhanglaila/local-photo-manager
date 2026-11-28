@@ -121,12 +121,13 @@ python -m pip install -e ".[ai-demo]"
 
 The app may download InsightFace models at runtime when the model cache is
 missing, but release builds should still bundle the checked-in model cache when
-available. The expected source layout is:
+available. The canonical source layout is:
 
 | Path | Purpose |
 |---|---|
-| `src/extension/models/buffalo_s/` | InsightFace `buffalo_s` ONNX model files |
-| `src/extension/models/buffalo_s.zip` | Optional upstream model pack archive |
+| `extension/models/buffalo_l/` | InsightFace `buffalo_l` ONNX model files (default pack) |
+| `extension/models/buffalo_s/` | InsightFace `buffalo_s` ONNX model files (smaller pack) |
+| `extension/models/buffalo_*.zip` | Upstream archives; never read at runtime, do not ship |
 
 At runtime the default model root is resolved from the installed package as
 `extension/models`. It can be overridden for debugging with:
@@ -138,7 +139,10 @@ $env:IPHOTO_FACE_MODEL_DIR = "D:\path\to\models"
 Important packaging rules:
 
 - Include `insightface` and `onnxruntime` in the Nuitka bundle.
-- Include `src/extension/models` as `extension/models`.
+- Include each extracted face pack directory as its own target:
+  `extension/models/buffalo_l=extension/models/buffalo_l` (and `buffalo_s` when
+  present). Do not ship the `.zip` archives; InsightFace only reads the
+  extracted directories.
 - Do not rely on installing `insightface` or `onnxruntime` next to an already
   built executable; standalone/no-site builds will not load those packages.
 - Exclude `albumentations`, `albucore`, `pydantic`, `pydantic_core`, and
@@ -156,7 +160,8 @@ Nuitka command, include the equivalent flags:
 ```bash
 --include-package=insightface
 --include-package=onnxruntime
---include-data-dir=src/extension/models=extension/models
+--include-data-dir=extension/models/buffalo_l=extension/models/buffalo_l
+--include-data-dir=extension/models/buffalo_s=extension/models/buffalo_s
 --nofollow-import-to=albumentations
 --nofollow-import-to=albucore
 --nofollow-import-to=pydantic
@@ -296,7 +301,8 @@ nuitka --standalone \
     --include-package=iPhoto \
     --include-package=insightface \
     --include-package=onnxruntime \
-    --include-data-dir=src/extension/models=extension/models \
+    --include-data-dir=extension/models/buffalo_l=extension/models/buffalo_l \
+    --include-data-dir=extension/models/buffalo_s=extension/models/buffalo_s \
     --output-dir=dist \
     src/iPhoto/gui/main.py
 ```
@@ -325,7 +331,8 @@ nuitka --standalone \
     --include-package=iPhoto \
     --include-package=insightface \
     --include-package=onnxruntime \
-    --include-data-dir=src/extension/models=extension/models \
+    --include-data-dir=extension/models/buffalo_l=extension/models/buffalo_l \
+    --include-data-dir=extension/models/buffalo_s=extension/models/buffalo_s \
     --assume-yes-for-downloads \
     --output-dir=dist \
     src/iPhoto/gui/main.py
@@ -348,7 +355,7 @@ Notes:
 | `--include-package=iPhoto` | Ensures all iPhoto sub-packages (including the AOT `.so`/`.pyd`) are included |
 | `--include-package=insightface` | Bundles the InsightFace runtime used by People scanning |
 | `--include-package=onnxruntime` | Bundles the ONNX runtime used by InsightFace models |
-| `--include-data-dir=src/extension/models=extension/models` | Bundles the shared face model cache |
+| `--include-data-dir=extension/models/buffalo_l=extension/models/buffalo_l` | Bundles an extracted face model pack (repeat per pack; never the `.zip`) |
 | `--nofollow-import-to=albumentations` and related pydantic packages | Avoids unused InsightFace mask-rendering dependencies that are not needed for People clustering |
 | QRhi `.qsb` data files | Required for macOS/Metal and OpenGL QRhi media previews; include `image_viewer_rhi.*`, `image_viewer_overlay.*`, and `video_renderer.*` |
 

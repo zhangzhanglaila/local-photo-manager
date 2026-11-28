@@ -111,7 +111,7 @@ pip install -e .
 | 用途 | 默认位置 | 覆盖变量 |
 |------|----------|----------|
 | 语义搜索 CLIP/SigLIP2 | `extension/models/` | `IPHOTO_CLIP_MODEL_DIR` |
-| 人脸识别 | `src/extension/models/` | `IPHOTO_FACE_MODEL_DIR` |
+| 人脸识别 | `extension/models/` | `IPHOTO_FACE_MODEL_DIR` |
 | OCR（RapidOCR） | `extension/models/rapidocr/` | 首次使用自动下载 |
 | 地图扩展 | `src/maps/tiles/extension/` | `IPHOTO_OSMAND_EXTENSION_ROOT` |
 

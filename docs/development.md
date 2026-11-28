@@ -136,7 +136,7 @@ Model locations:
 | Purpose | Default | Override |
 |---------|---------|----------|
 | Semantic search CLIP/SigLIP2 | `extension/models/` | `IPHOTO_CLIP_MODEL_DIR` |
-| Face recognition | `src/extension/models/` | `IPHOTO_FACE_MODEL_DIR` |
+| Face recognition | `extension/models/` | `IPHOTO_FACE_MODEL_DIR` |
 | OCR (RapidOCR) | `extension/models/rapidocr/` | auto-download |
 | Maps extension | `src/maps/tiles/extension/` | `IPHOTO_OSMAND_EXTENSION_ROOT` |
 

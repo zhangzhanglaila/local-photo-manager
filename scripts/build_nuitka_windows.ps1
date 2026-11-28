@@ -51,15 +51,26 @@ $mainScript = Join-Path $srcRoot 'iPhoto\gui\main.py'
 $nativeBuildScript = Join-Path $repoRoot 'tools\osmand_render_helper_native\build_native_widget_msvc.ps1'
 $nativeDistDir = Join-Path $repoRoot 'tools\osmand_render_helper_native\dist-msvc'
 $extensionBinDir = Join-Path $srcRoot 'maps\tiles\extension\bin'
-$faceModelDir = Join-Path $srcRoot 'extension\models'
-# CLIP lives at the repository root, not next to the face models.
-$clipModelDir = Join-Path $repoRoot 'extension\models\clip-vit-base-patch32'
+# One canonical model root for every registry. Face packs are the extracted
+# ``buffalo_*`` directories; the .zip files are only upstream downloads and are
+# never read at runtime, so they are not shipped.
+$faceModelRoot = Join-Path $repoRoot 'extension\models'
+$clipModelDir = Join-Path $faceModelRoot 'clip-vit-base-patch32'
+$faceModelPacks = @()
+if (Test-Path -LiteralPath $faceModelRoot) {
+    $faceModelPacks = @(
+        Get-ChildItem -LiteralPath $faceModelRoot -Directory -Filter 'buffalo_*' |
+            Sort-Object Name
+    )
+}
 
 Assert-Exists $repoRoot
 Assert-Exists $srcRoot
 Assert-Exists $mainScript
 Assert-Exists $nativeBuildScript
-Assert-Exists $faceModelDir
+if ($faceModelPacks.Count -eq 0) {
+    Write-Warning "No face model packs under $faceModelRoot; the packaged app will download them on first use."
+}
 
 if (-not $PythonExe) {
     $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
@@ -131,7 +142,6 @@ $arguments = @(
     # and text search silently stops working in the packaged build.
     '--include-package=rapidocr_onnxruntime',
     "--output-dir=$OutputDir",
-    "--include-data-dir=$faceModelDir=extension/models",
     "--include-data-dir=$clipModelDir=extension/models/clip-vit-base-patch32",
     "--include-data-dir=$(Join-Path $srcRoot 'iPhoto\schemas')=iPhoto/schemas",
     "--include-data-dir=$(Join-Path $srcRoot 'iPhoto\gui\ui\icon')=iPhoto/gui/ui/icon",
@@ -154,6 +164,18 @@ $arguments = @(
     "--include-data-file=$(Join-Path $srcRoot 'maps\style.json')=maps/style.json",
     "--include-data-dir=$(Join-Path $srcRoot 'maps\map_widget\qml')=maps/map_widget/qml"
 )
+
+# Bundle each extracted face pack (not the archives) so a release build works
+# offline and FaceAnalysis finds ``<install>/extension/models/<pack>``.
+foreach ($facePack in $faceModelPacks) {
+    $hasDetector = Get-ChildItem -LiteralPath $facePack.FullName -Filter 'det_*.onnx' -File -ErrorAction SilentlyContinue
+    $hasRecogniser = Get-ChildItem -LiteralPath $facePack.FullName -Filter 'w600k*.onnx' -File -ErrorAction SilentlyContinue
+    if (-not $hasDetector -or -not $hasRecogniser) {
+        Write-Warning "Skipping incomplete face pack $($facePack.FullName): det_*.onnx and w600k*.onnx are both required."
+        continue
+    }
+    $arguments += "--include-data-dir=$($facePack.FullName)=extension/models/$($facePack.Name)"
+}
 
 if ($IconPath) {
     Assert-Exists $IconPath
