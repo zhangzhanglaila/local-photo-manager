@@ -93,6 +93,18 @@ def test_settings_window_opens_without_waiting_for_slow_value_probes(
         dialog.deleteLater()
 
 
+def test_settings_navigation_uses_the_pointing_hand_cursor(chrome) -> None:
+    from PySide6.QtCore import Qt
+
+    _window, header = chrome
+    dialog = SettingsDialog(header, None)
+    try:
+        assert dialog._nav.cursor().shape() == Qt.CursorShape.PointingHandCursor
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_choice_controls_drive_the_shared_actions(chrome) -> None:
     _window, header = chrome
 

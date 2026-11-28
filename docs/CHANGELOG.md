@@ -50,6 +50,11 @@ into the photo folder.*
   databases on the GUI thread. Model, device, search-index and face/OCR coverage
   values load in background probes and show a spinner until they arrive, so the
   window is usable immediately even while an AI scan holds the databases.
+- The loading indicator now matches Weflow's settings UI: a 14 px `Loader2`-style
+  270° arc in the muted text colour, spinning once per second, with “加载中…” as
+  a tooltip rather than visible text. Settings navigation, checkboxes, dropdowns,
+  action rows and the OCR photo list use the pointing-hand cursor with the
+  existing hover state.
 - 设置 → 智能 now has a **查看 OCR 结果** page: a back arrow returns to settings,
   the left column lists recognized photos with thumbnails, and the right pane
   shows every text line found in the selected photo.

@@ -144,6 +144,7 @@ class OcrResultsPage(QWidget):
 
         self._list = QListWidget(self._splitter)
         self._list.setObjectName("ocrResultsList")
+        self._list.setCursor(Qt.CursorShape.PointingHandCursor)
         self._list.setIconSize(QSize(82, 82))
         self._list.setSpacing(4)
         self._list.setUniformItemSizes(True)

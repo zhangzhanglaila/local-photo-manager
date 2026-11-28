@@ -78,20 +78,26 @@ class _AsyncValue(QWidget):
         self.spinner = Spinner(14, self)
         layout.addWidget(self.spinner, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.label = QLabel(tr("preview.loading"), self)
+        self.label = QLabel("", self)
         self.label.setObjectName("settingsPathLabel")
         self.label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.label.setWordWrap(False)
         layout.addWidget(self.label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.label.hide()
+        self.setToolTip(tr("settings.loading"))
         self.spinner.start()
 
     def set_value(self, text: str) -> None:
         self.label.setText(text)
+        self.label.setVisible(bool(text))
+        self.setToolTip("")
         self.spinner.stop()
         self.spinner.hide()
 
     def set_loading(self) -> None:
-        self.label.setText(tr("preview.loading"))
+        self.label.clear()
+        self.label.hide()
+        self.setToolTip(tr("settings.loading"))
         self.spinner.show()
         self.spinner.start()
 
@@ -495,6 +501,7 @@ class SettingsDialog(QDialog):
         self._nav.setItemDelegate(_SettingsNavDelegate(self._nav))
         self._nav.setFrameShape(QFrame.Shape.NoFrame)
         self._nav.setMouseTracking(True)
+        self._nav.setCursor(Qt.CursorShape.PointingHandCursor)
         self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body_layout.addWidget(self._nav)
 
@@ -819,6 +826,7 @@ class SettingsDialog(QDialog):
 
     def _checkbox(self, action: QAction) -> QCheckBox:
         box = QCheckBox(self)
+        box.setCursor(Qt.CursorShape.PointingHandCursor)
         box.setChecked(action.isChecked())
         box.toggled.connect(action.setChecked)
         action.toggled.connect(box.setChecked)
@@ -827,6 +835,8 @@ class SettingsDialog(QDialog):
     def _combo(self, actions) -> QComboBox:
         actions = list(actions)
         combo = QComboBox(self)
+        combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        combo.view().setCursor(Qt.CursorShape.PointingHandCursor)
         for action in actions:
             combo.addItem(_plain(action.text()))
         checked = next((i for i, action in enumerate(actions) if action.isChecked()), 0)
@@ -1077,7 +1087,7 @@ class SettingsDialog(QDialog):
             return tr("settings.ai_state.no_library")
         pair = values.get(feature)
         if not pair:
-            return tr("preview.loading")
+            return tr("settings.loading")
         done, total = pair
         if total <= 0:
             return tr("settings.ai_state.no_library")
